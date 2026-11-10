@@ -7,7 +7,8 @@
  */
 import { Writer, Emit, hostAction, TYPE_EXACT, TYPE_FILL, modBorder, modGraphicsLayer, modDimensionConstraints, modScroll, modClipRect, modVisibility, modClipRoundedRect, TYPE_WEIGHT, modWidthIn, modHeightIn, modWidth, modHeight, modPadding, modOffset, modBackground, modBackgroundId, modSemantics, modClick, SEMANTICS_MODE_SET, hostNamedAction,
     HOST_ACTION_STRING_TYPE, valueFloatExpressionChange, valueFloatChange,
-    valueIntegerChange, valueStringChange, valueIntegerExpressionChange, OP }
+    valueIntegerChange, valueStringChange, valueIntegerExpressionChange, OP,
+    BITMAP_TYPE_RAW8888, BITMAP_ENCODING_EMPTY }
     from "./Writer";
 import { floatToRawIntBits, idFromNanBits, asNanBits, f32FromBits } from "./WireBuffer";
 import { HEADER_KEY_TO_TAG, Tag } from "./Header";
@@ -515,7 +516,7 @@ function* eachResource(section: J): Generator<[string, J, J]> {
 
 /** PaintBundle command ids (PaintBundle.java). */
 const PB = { TEXT_SIZE: 1, COLOR: 4, STROKE_WIDTH: 5, STROKE_CAP: 7, STYLE: 8,
-             SHADER: 9, ALPHA: 12, STROKE_JOIN: 15, COLOR_ID: 19 };
+             SHADER: 9, ALPHA: 12, STROKE_JOIN: 15, FILTER_BITMAP: 17, COLOR_ID: 19 };
 const STYLE: Record<string, number> = { fill: 0, stroke: 1, fillandstroke: 2 };
 /**
  * The direct-key paint form emits in a FIXED order, not the order the keys appear in the
@@ -611,7 +612,7 @@ const VAR2_BITS = (0xff800000 | (0x310000 + 71)) >>> 0;
 
 const PB_GRADIENT = 11, GRAD_LINEAR = 0, GRAD_RADIAL = 1, GRAD_SWEEP = 2, GRAD_RADIAL2 = 3;
 const PAINT_KEYS_ORDER = ["shader", "color", "alpha", "strokeJoin", "strokeCap", "style", "width",
-                          "textSize", "radialGradient", "sweepGradient"];
+                          "textSize", "radialGradient", "sweepGradient", "filterBitmap"];
 /** Keys that select the two-circle (focal) radialGradient (FOCAL_RADIAL_KEYS upstream). */
 const FOCAL_RADIAL_KEYS = ["startX", "startY", "startR", "startRadius", "endX", "endY", "endR",
                            "endRadius", "focalX", "focalY", "focalR", "focalRadius"];
@@ -1541,6 +1542,9 @@ export class Parser {
         } else if (key === "strokeJoin") {
             ints.push(PB.STROKE_JOIN | ((JOIN[String(src.strokeJoin).toLowerCase()] ?? 0) << 16));
         } else if (key === "textSize") ints.push(PB.TEXT_SIZE, this.fbits(src.textSize));
+        // Paint.setFilterBitmap: false draws a scaled bitmap with nearest-neighbour sampling
+        // (crisp pixels), true (the default) smooths it.
+        else if (key === "filterBitmap") ints.push(PB.FILTER_BITMAP | ((src.filterBitmap === false ? 0 : 1) << 16));
         else if (key === "linearGradient") this.gradient(src.linearGradient, ints, false);
         else if (key === "sweepGradient") this.gradient(src.sweepGradient, ints, true);
         else if (key === "radialGradient") this.radialGradient(src.radialGradient, ints);
@@ -1703,12 +1707,33 @@ export class Parser {
      * `file` needs a reader, because the converter core deliberately has no filesystem
      * dependency; the CLI supplies one. Without it, `file` raises rather than silently
      * producing a document with no image in it.
+     *
+     * The exception is a bitmap the host draws into: `{"width": W, "height": H, "export":
+     * true | "name"}` with no bytes is an empty W x H bitmap (ENCODING_EMPTY: the player
+     * allocates it), named so the host can supply its pixels (NAMED_VARIABLE IMAGE_TYPE).
+     * `export` also names a bitmap with bytes, as its default picture.
      */
     private declareBitmap(name: string, value: J): number {
         let spec: Record<string, J> = typeof value === "string"
             ? { file: value } : (value as Record<string, J>);
         if (!spec || typeof spec !== "object") {
             throw new NotImplementedComponent(`bitmap '${name}': expected an object`);
+        }
+        const exported = spec.export === true ? name
+            : typeof spec.export === "string" && spec.export ? spec.export : null;
+        if (!("base64" in spec) && !("file" in spec) && "width" in spec && "height" in spec) {
+            const w = Number(spec.width), h = Number(spec.height);
+            if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 0xffff && h <= 0xffff)) {
+                throw new NotImplementedComponent(`bitmap '${name}': width and height must be whole numbers 1..65535`);
+            }
+            if (!exported) {
+                throw new NotImplementedComponent(
+                    `bitmap '${name}' has no pixels: add "export" so the host can supply them, or give 'file' or 'base64'`);
+            }
+            const id = this.writer.allocDataId();
+            this.writer.addBitmap(id, w, h, new Uint8Array(0), BITMAP_TYPE_RAW8888, BITMAP_ENCODING_EMPTY);
+            this.writer.setImageName(id, exported);
+            return id;
         }
         let data: Uint8Array;
         if ("base64" in spec) {
@@ -1739,6 +1764,7 @@ export class Parser {
         const [width, height] = pngSize(data);
         const imageId = this.writer.allocDataId();
         this.writer.addBitmap(imageId, width, height, data);
+        if (exported) this.writer.setImageName(imageId, exported);
         return imageId;
     }
 

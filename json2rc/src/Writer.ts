@@ -110,7 +110,9 @@ export const TYPE_FILL = 1;
 export const TYPE_WEIGHT = 3;
 // BitmapData.TYPE_* / ENCODING_* (BitmapData.java)
 export const BITMAP_TYPE_PNG = 1;
+export const BITMAP_TYPE_RAW8888 = 3;
 export const BITMAP_ENCODING_INLINE = 0;
+export const BITMAP_ENCODING_EMPTY = 3;   // the player allocates it, the host fills it
 export const TYPE_WRAP = 2;
 const INT_MAX = 2147483647;
 
@@ -1098,6 +1100,14 @@ export class Writer {
         this.buffer.writeInt(id);
         this.buffer.writeInt(value | 0);
         return id;
+    }
+
+    /** Name a bitmap id so the host can supply its pixels (NAMED_VARIABLE IMAGE_TYPE 3). */
+    setImageName(id: number, name: string): void {
+        this.buffer.start(OP.NAMED_VARIABLE);
+        this.buffer.writeInt(id);
+        this.buffer.writeInt(3);
+        this.buffer.writeUtf8(name);
     }
 
     /** RemoteComposeWriter.setStringName: name an existing text id (NAMED_VARIABLE STRING_TYPE 0). */

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HOST_ACTION_STRING_TYPE = exports.SEMANTICS_MODE_SET = exports.Writer = exports.TYPE_WRAP = exports.BITMAP_ENCODING_INLINE = exports.BITMAP_TYPE_PNG = exports.TYPE_WEIGHT = exports.TYPE_FILL = exports.TYPE_EXACT = exports.OP = void 0;
+exports.HOST_ACTION_STRING_TYPE = exports.SEMANTICS_MODE_SET = exports.Writer = exports.TYPE_WRAP = exports.BITMAP_ENCODING_EMPTY = exports.BITMAP_ENCODING_INLINE = exports.BITMAP_TYPE_RAW8888 = exports.BITMAP_TYPE_PNG = exports.TYPE_WEIGHT = exports.TYPE_FILL = exports.TYPE_EXACT = exports.OP = void 0;
 exports.refusedOperations = refusedOperations;
 exports.javaHashMapOrder = javaHashMapOrder;
 exports.modWidth = modWidth;
@@ -141,7 +141,9 @@ exports.TYPE_FILL = 1;
 exports.TYPE_WEIGHT = 3;
 // BitmapData.TYPE_* / ENCODING_* (BitmapData.java)
 exports.BITMAP_TYPE_PNG = 1;
+exports.BITMAP_TYPE_RAW8888 = 3;
 exports.BITMAP_ENCODING_INLINE = 0;
+exports.BITMAP_ENCODING_EMPTY = 3; // the player allocates it, the host fills it
 exports.TYPE_WRAP = 2;
 const INT_MAX = 2147483647;
 /** CoreText parameters in WRITE ORDER, with (name, tag, type, default). */
@@ -1082,6 +1084,13 @@ class Writer {
         this.buffer.writeInt(id);
         this.buffer.writeInt(value | 0);
         return id;
+    }
+    /** Name a bitmap id so the host can supply its pixels (NAMED_VARIABLE IMAGE_TYPE 3). */
+    setImageName(id, name) {
+        this.buffer.start(exports.OP.NAMED_VARIABLE);
+        this.buffer.writeInt(id);
+        this.buffer.writeInt(3);
+        this.buffer.writeUtf8(name);
     }
     /** RemoteComposeWriter.setStringName: name an existing text id (NAMED_VARIABLE STRING_TYPE 0). */
     setStringName(id, name) {
