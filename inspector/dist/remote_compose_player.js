@@ -1426,6 +1426,8 @@ var RC = (() => {
   _Header.FEATURE_MEASURE_VERSION = 17;
   _Header.FEATURE_TOUCH_VERSION = 18;
   _Header.FEATURE_PRIORITY_FIX = 23;
+  /** Which layout optimizations a document allows (CoreDocument.OPTIMIZATION_*; default all). */
+  _Header.FEATURE_OPTIMIZATION_LEVEL = 28;
   // Data types
   _Header.DATA_TYPE_INT = 0;
   _Header.DATA_TYPE_FLOAT = 1;
@@ -3847,12 +3849,37 @@ var RC = (() => {
   var _ComponentMeasure = class _ComponentMeasure {
     constructor(id, x, y, w, h, visibility = _ComponentMeasure.VISIBLE) {
       this.mAllowsAnimation = true;
+      // The constraints this component was last measured with in this pass (Java's measure
+      // cache): a measure asking again with the same ones, or with its own measured size as
+      // the fixed size on one axis, can keep the result.
+      this.mMinWidth = -1;
+      this.mMaxWidth = -1;
+      this.mMinHeight = -1;
+      this.mMaxHeight = -1;
+      this.mHasCache = false;
       this.mId = id;
       this.mX = x;
       this.mY = y;
       this.mW = w;
       this.mH = h;
       this.mVisibility = visibility;
+    }
+    setCachedConstraints(minWidth, maxWidth, minHeight, maxHeight) {
+      this.mMinWidth = minWidth;
+      this.mMaxWidth = maxWidth;
+      this.mMinHeight = minHeight;
+      this.mMaxHeight = maxHeight;
+      this.mHasCache = true;
+    }
+    clearCache() {
+      this.mHasCache = false;
+    }
+    hasCachedConstraints(minWidth, maxWidth, minHeight, maxHeight) {
+      if (!this.mHasCache) return false;
+      if (this.mMinWidth === minWidth && this.mMaxWidth === maxWidth && this.mMinHeight === minHeight && this.mMaxHeight === maxHeight) return true;
+      if (this.mMinWidth === minWidth && this.mMaxWidth === maxWidth && minHeight === this.mH && maxHeight === this.mH) return true;
+      if (this.mMinHeight === minHeight && this.mMaxHeight === maxHeight && minWidth === this.mW && maxWidth === this.mW) return true;
+      return false;
     }
     getX() {
       return this.mX;
@@ -4882,6 +4909,8 @@ var RC = (() => {
       // ComponentValue applying before that saw null and the reader threw — two width
       // expressions in one document were enough.)
       this.mComponentValues = [];
+      /** Java Component.hasChildWithComputedLayout: any descendant with a computed layout. */
+      this.mChildComputedMemo = null;
       this.mComponentId = componentId;
       this.mAnimationId = animationId;
       this.mX = x;
@@ -5336,6 +5365,41 @@ var RC = (() => {
     hasComputedLayout() {
       return false;
     }
+    /**
+     * Java VariableSupport, for the measure cache: CoreText, TextLayout, ImageLayout and
+     * Custom implement it, so a container with one of them as a direct child is measured
+     * every time (hasDynamicComputes).
+     */
+    isVariableSupportComponent() {
+      return false;
+    }
+    /**
+     * Java Component.hasDynamicComputes: whether anything in the component's own operation
+     * list reads variables, in which case the measure cache does not apply to it. Java's list
+     * after inflation holds the component-level data operations (ComponentData), the
+     * modifiers (as one object, not VariableSupport) and the child components.
+     */
+    hasDynamicComputes() {
+      return false;
+    }
+    hasChildWithComputedLayout() {
+      if (this.mChildComputedMemo !== null) return this.mChildComputedMemo;
+      let found = false;
+      for (const op of this.childComponentsForCache()) {
+        if (op.hasComputedLayout() || op.hasChildWithComputedLayout()) {
+          found = true;
+          break;
+        }
+      }
+      this.mChildComputedMemo = found;
+      return found;
+    }
+    /** The child components, as Java's mList holds them after inflation. */
+    childComponentsForCache() {
+      const out = [];
+      for (const op of this.getList()) if (op instanceof _Component) out.push(op);
+      return out;
+    }
     applyComputedLayout(_type, _context, _m, _parent) {
       return false;
     }
@@ -5416,7 +5480,18 @@ var RC = (() => {
         }
       }
     }
+    /**
+     * The root itself needs measuring; the components under it keep their state, as Java's
+     * (Component.invalidateMeasure walks up, never down). Marking the whole tree here made
+     * every component "needs measure" through a resize's pass, which turned the measure
+     * cache off for all of them. A component whose content changed marks itself and its
+     * parents; the per-pass constraints check covers the rest.
+     */
     invalidateMeasure() {
+      this.mNeedsMeasure = true;
+    }
+    /** Every component in the tree needs measuring (the first layout's state). */
+    invalidateMeasureAll() {
       this.mNeedsMeasure = true;
       this.invalidateMeasureChildren(this);
     }
@@ -15800,6 +15875,9 @@ var RC = (() => {
       this.mScrollModifier = null;
       this.mScrollContentDimension = 0;
       this.mScrollHostDimension = 0;
+      /** The operations at the component's own level (not modifiers, not content): Java's ComponentData in mList. */
+      this.mComponentDataOps = [];
+      this.mDynamicMemo = null;
     }
     getWidthModifier() {
       return this.mWidthMod;
@@ -15820,6 +15898,8 @@ var RC = (() => {
       this.mChildrenComponents = [];
       this.mComponentModifiers = [];
       this.mContentOps = [];
+      this.mComponentDataOps = [];
+      this.mDynamicMemo = null;
       this.mPaddingLeft = 0;
       this.mPaddingRight = 0;
       this.mPaddingTop = 0;
@@ -15935,6 +16015,7 @@ var RC = (() => {
           this.mChildrenComponents.push(op);
           op.inflate();
         } else {
+          this.mComponentDataOps.push(op);
           if (this.mDrawContentOperations !== null) {
             this.mDrawContentOperations.push(op);
           } else {
@@ -15995,6 +16076,29 @@ var RC = (() => {
     }
     hasComputedLayout() {
       return this.mComputedLayoutModifiers !== null;
+    }
+    hasDynamicComputes() {
+      if (this.mDynamicMemo !== null) return this.mDynamicMemo;
+      let dynamic = false;
+      for (const op of this.mComponentDataOps) {
+        if (op instanceof Component) continue;
+        if (op instanceof ComponentValue) continue;
+        if (typeof op.updateVariables === "function") {
+          dynamic = true;
+          break;
+        }
+      }
+      if (!dynamic) for (const c of this.mChildrenComponents) {
+        if (c.isVariableSupportComponent()) {
+          dynamic = true;
+          break;
+        }
+      }
+      this.mDynamicMemo = dynamic;
+      return dynamic;
+    }
+    childComponentsForCache() {
+      return this.mChildrenComponents;
     }
     applyComputedLayout(type, context, m, parent) {
       if (this.mComputedLayoutModifiers !== null) {
@@ -16595,21 +16699,39 @@ var RC = (() => {
     constructor() {
       super(...arguments);
       this.mCachedWrapSize = new Size();
-      this.mLastMeasurePass = null;
-      this.mLastMinW = -1;
-      this.mLastMaxW = -1;
-      this.mLastMinH = -1;
-      this.mLastMaxH = -1;
     }
+    /**
+     * Java LayoutManager.measure, with its measure cache (CoreDocument OPTIMIZATION_MEASURE_CACHE
+     * and OPTIMIZATION_CONSTRAINTS_CACHE, both on by default): a component that does not need
+     * measuring, reads no variables in its own list (hasDynamicComputes), has no descendant
+     * with a computed layout, and is asked again with the constraints it was measured with in
+     * this pass (or with its measured size as the fixed size on one axis) keeps its result.
+     * Without it a flow measures each child four times per pass and nested flows multiply.
+     */
     measure(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
-      if (this.mLastMeasurePass === measure && this.mLastMinW === minWidth && this.mLastMaxW === maxWidth && this.mLastMinH === minHeight && this.mLastMaxH === maxHeight && !this.mNeedsMeasure) {
+      const m = measure.get(this);
+      const doc = context.getContext()?.getDocument?.() ?? null;
+      if (doc && doc.isConstraintsCacheEnabled() && doc.isMeasureCacheEnabled() && !this.hasDynamicComputes() && !this.hasChildWithComputedLayout() && !this.hasDirtyModifier() && m.hasCachedConstraints(minWidth, maxWidth, minHeight, maxHeight)) {
         return;
       }
-      this.mLastMeasurePass = measure;
-      this.mLastMinW = minWidth;
-      this.mLastMaxW = maxWidth;
-      this.mLastMinH = minHeight;
-      this.mLastMaxH = maxHeight;
+      this.measureUncached(context, minWidth, maxWidth, minHeight, maxHeight, measure);
+      m.setCachedConstraints(minWidth, maxWidth, minHeight, maxHeight);
+    }
+    /**
+     * A modifier of this component waiting to be re-evaluated (its variable changed): the
+     * measure would come out differently. Java re-evaluates them before the layout pass;
+     * here a size bound to an expression its parent re-evaluates in its own measure
+     * (componentWidth() of the parent) is picked up during the pass, by the measure that
+     * finds it dirty, so a cached result from earlier in the pass would be stale.
+     */
+    hasDirtyModifier() {
+      for (const mod of [this.getWidthModifier(), this.getHeightModifier(), this.getWidthInModifier(), this.getHeightInModifier()]) {
+        if (mod && mod.isDirty?.()) return true;
+      }
+      for (const mod of this.mComponentModifiers) if (mod.isDirty?.()) return true;
+      return false;
+    }
+    measureUncached(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
       this.updatePadding();
       const selfMeasure = measure.get(this);
       const padding_w = this.mPaddingLeft + this.mPaddingRight;
@@ -20739,6 +20861,10 @@ var RC = (() => {
       this.mAutosize = autosize;
       this.mFlags = flags;
     }
+    /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
+    isVariableSupportComponent() {
+      return true;
+    }
     registerListening(context) {
       if (this.mTextId !== -1) {
         context.listensTo(this.mTextId, this);
@@ -21887,6 +22013,10 @@ var RC = (() => {
       this.mAlphaBits = alphaBits;
       this.mOutAlpha = isNaNBits(alphaBits) ? 1 : intBitsToFloat(alphaBits);
     }
+    /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
+    isVariableSupportComponent() {
+      return true;
+    }
     registerListening(context) {
       if (this.mBitmapId !== -1) {
         context.listensTo(this.mBitmapId, this);
@@ -22914,6 +23044,10 @@ var RC = (() => {
 
   // ../kobento-ts/src/core/operations/layout/managers/Custom.ts
   var _Custom = class _Custom extends LayoutManager {
+    /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
+    isVariableSupportComponent() {
+      return true;
+    }
     constructor(componentId, animationId, configId, properties) {
       super(componentId, animationId);
       this.mConfigId = configId;
@@ -24008,6 +24142,7 @@ var RC = (() => {
   var FONT_SCALE = 1;
   var _CoreDocument = class _CoreDocument {
     constructor(clock = SYSTEM_CLOCK) {
+      this.mOptimizationLevel = _CoreDocument.OPTIMIZATION_ALL;
       this.mOperations = [];
       this.mRootLayoutComponent = null;
       /** Ops re-evaluated before every layout pass — see registerVariables. */
@@ -24046,6 +24181,13 @@ var RC = (() => {
       this.mTextData = /* @__PURE__ */ new Map();
       this.mReferencedOperations = /* @__PURE__ */ new Map();
       this.mArrays = /* @__PURE__ */ new Map();
+      /**
+       * The document was invalidated (a size bound to a value that changed, a resize) since the
+       * layout of the current frame started: paint asks for one more frame to lay it out.
+       * Component-level invalidations (a StateLayout setting its panes' visibility while it
+       * measures, a text re-measuring) do not count: they settle within the pass.
+       */
+      this.mRelayoutRequested = false;
       /** Integer expressions by id. Mirrors `CoreDocument.mIntegerExpressions`. */
       this.mIntegerExpressions = /* @__PURE__ */ new Map();
       /**
@@ -24058,6 +24200,24 @@ var RC = (() => {
       this.mModifierRan = /* @__PURE__ */ new Set();
       this.mClock = clock;
       this.mTimeVariables = new TimeVariables(clock);
+    }
+    setOptimizationLevel(mask) {
+      this.mOptimizationLevel = mask;
+    }
+    getOptimizationLevel() {
+      return this.mOptimizationLevel;
+    }
+    isMeasureCacheEnabled() {
+      return (this.mOptimizationLevel & _CoreDocument.OPTIMIZATION_MEASURE_CACHE) !== 0;
+    }
+    isConstraintsCacheEnabled() {
+      return (this.mOptimizationLevel & _CoreDocument.OPTIMIZATION_CONSTRAINTS_CACHE) !== 0;
+    }
+    isRelayoutBoundaryEnabled() {
+      return (this.mOptimizationLevel & _CoreDocument.OPTIMIZATION_LAYOUT_BOUNDARIES) !== 0;
+    }
+    isFlatMeasurePassEnabled() {
+      return (this.mOptimizationLevel & _CoreDocument.OPTIMIZATION_FLAT_MEASURE_PASS) !== 0;
     }
     /** Lazily collect all ColorTheme operations from the operation tree. */
     getThemedColors() {
@@ -24175,6 +24335,7 @@ var RC = (() => {
     }
     invalidateMeasure() {
       if (this.mRootLayoutComponent) this.mRootLayoutComponent.invalidateMeasure();
+      this.mRelayoutRequested = true;
     }
     getOperations() {
       return this.mOperations;
@@ -24413,6 +24574,8 @@ var RC = (() => {
     seedTouchVersion(context) {
       const declared = this.getProperty(Header.FEATURE_TOUCH_VERSION);
       context.setTouchVersion(typeof declared === "number" ? declared : 1);
+      const opt = this.getProperty(Header.FEATURE_OPTIMIZATION_LEVEL);
+      if (typeof opt === "number" && opt !== -1) this.setOptimizationLevel(opt);
     }
     seedDensityBehavior(context) {
       const declared = this.getProperty(Header.DOC_DENSITY_BEHAVIOR);
@@ -24500,6 +24663,7 @@ var RC = (() => {
           }
         }
       }
+      this.mRelayoutRequested = false;
       if (this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
         this.mRootLayoutComponent.layoutTree(context);
       }
@@ -24575,6 +24739,8 @@ var RC = (() => {
       context.setMode("UNSET" /* UNSET */);
       const pc2 = context.getPaintContext();
       if (pc2 && pc2.doesNeedsRepaint() || this.mRootLayoutComponent && (this.mRootLayoutComponent.needsRepaint() || this.mRootLayoutComponent.needsBoundsAnimation())) {
+        this.mNeedsRepaintFlag = 1;
+      } else if (this.mRelayoutRequested && this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
         this.mNeedsRepaintFlag = 1;
       } else {
         this.mNeedsRepaintFlag = this.mRemoteComposeState.getOpsToUpdate(context, this.mClock.millis());
@@ -24912,6 +25078,14 @@ var RC = (() => {
       return this.toString();
     }
   };
+  // Layout optimizations (Java CoreDocument.OPTIMIZATION_*): a bit mask, all on by default;
+  // a document can narrow it with the header's FEATURE_OPTIMIZATION_LEVEL.
+  _CoreDocument.OPTIMIZATION_NONE = 0;
+  _CoreDocument.OPTIMIZATION_MEASURE_CACHE = 1;
+  _CoreDocument.OPTIMIZATION_LAYOUT_BOUNDARIES = 2;
+  _CoreDocument.OPTIMIZATION_FLAT_MEASURE_PASS = 4;
+  _CoreDocument.OPTIMIZATION_CONSTRAINTS_CACHE = 8;
+  _CoreDocument.OPTIMIZATION_ALL = 1 | 2 | 4 | 8;
   _CoreDocument.MAJOR_VERSION = 1;
   _CoreDocument.MINOR_VERSION = 1;
   _CoreDocument.PATCH_VERSION = 0;
