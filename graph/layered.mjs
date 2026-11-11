@@ -86,7 +86,7 @@ export function layered(graph, { dummyPrefix = "__d" } = {}) {
         const key = `${c.path[0]}\u0000${c.path[c.path.length - 1]}`;
         (groups.get(key) ?? groups.set(key, []).get(key)).push(c);
     }
-    for (const g of groups.values()) g.forEach((c, k) => { c.offset = (k - (g.length - 1) / 2) * 10; });
+    for (const g of groups.values()) g.forEach((c, k) => { c.offset = (k - (g.length - 1) / 2) * 16; });
 
     const layers = [];
     for (const n of nodes.values()) (layers[n.rank] ??= []).push(n.id);
@@ -149,8 +149,11 @@ function orderLayers(layers, chains) {
  *
  * @param size (id) => {w, h} for real nodes and edge labels (other dummies are dummyW wide);
  *             w is the extent across the ranks, h along them
+ * @param pad  optional (id) => [before, after]: room kept clear on either side across the ranks
  */
-export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6 } = {}) {
+export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6, pad = null } = {}) {
+    // pad(id) -> [before, after]: room to keep clear beside an item, across the ranks.
+    const padOf = (id) => (pad && pad(id)) || [0, 0];
     const { layers, nodes, chains } = L;
     const dim = new Map();
     for (const n of nodes.values()) dim.set(n.id, n.dummy && !n.edgeLabel ? { w: dummyW, h: 0 } : size(n.id));
@@ -162,34 +165,72 @@ export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6 } 
         }
     }
     const x = new Map();
-    const gap = (a, b) => (dim.get(a).w + dim.get(b).w) / 2 + nodeSep;
-    const place = (layer, want) => {
+    const gap = (a, b) => (dim.get(a).w + dim.get(b).w) / 2 + nodeSep + padOf(a)[1] + padOf(b)[0];
+    // The closest legal placement of a rank to the positions wanted, each weighted.
+    const place = (layer, want, weight) => {
         // x_i >= x_{i-1} + gap_i. With off_i the summed gaps, y_i = x_i - off_i is nondecreasing:
-        // fit y to (want_i - off_i) by pool-adjacent-violators.
+        // fit y to (want_i - off_i), weighted, by pool-adjacent-violators.
         const off = [0];
         for (let i = 1; i < layer.length; i++) off.push(off[i - 1] + gap(layer[i - 1], layer[i]));
         const blocks = [];
         layer.forEach((id, i) => {
-            blocks.push({ sum: want[i] - off[i], n: 1 });
+            const w = weight ? weight[i] : 1;
+            blocks.push({ sw: w, swy: w * (want[i] - off[i]), n: 1 });
             while (blocks.length > 1) {
                 const b = blocks[blocks.length - 1], a = blocks[blocks.length - 2];
-                if (a.sum / a.n <= b.sum / b.n) break;
-                blocks.pop(); a.sum += b.sum; a.n += b.n;
+                if (a.swy / a.sw <= b.swy / b.sw) break;
+                blocks.pop(); a.sw += b.sw; a.swy += b.swy; a.n += b.n;
             }
         });
         let i = 0;
-        for (const b of blocks) for (let k = 0; k < b.n; k++, i++) x.set(layer[i], b.sum / b.n + off[i]);
+        for (const b of blocks) for (let k = 0; k < b.n; k++, i++) x.set(layer[i], b.swy / b.sw + off[i]);
     };
+    // Links between two dummies pull hardest, so long edges come out straight (Graphviz's
+    // omega weights: 1 between real nodes, 2 with one dummy, 8 between dummies).
+    const isDummy = (id) => nodes.get(id).dummy;
+    const omega = (a, b) => (isDummy(a) && isDummy(b) ? 8 : isDummy(a) || isDummy(b) ? 2 : 1);
     for (const l of layers) place(l, l.map(() => 0));
     for (let it = 0; it < 16; it++) {
         const goingDown = it % 2 === 0;
         const ranks = goingDown ? [...layers.keys()] : [...layers.keys()].reverse();
         for (const r of ranks) {
-            const want = layers[r].map((id) => {
+            const want = [], weight = [];
+            for (const id of layers[r]) {
                 const ns = [...((goingDown ? up : down).get(id) ?? []), ...(it > 8 ? ((goingDown ? down : up).get(id) ?? []) : [])];
-                return ns.length ? ns.reduce((s, n) => s + x.get(n), 0) / ns.length : x.get(id);
+                let sw = 0, swx = 0;
+                for (const n of ns) { const w = omega(id, n); sw += w; swx += w * x.get(n); }
+                want.push(sw ? swx / sw : x.get(id));
+                weight.push(Math.max(1, sw));
+            }
+            place(layers[r], want, weight);
+        }
+    }
+    // Then line up each long edge: its dummies (two or more) are pulled to one position, as far
+    // as the ranks' order and gaps allow. It starts at the median of where they are; when a rank
+    // cannot let one of them get there, the run moves to where that one could go instead (the
+    // dummy farthest from the target), so it stays straight rather than jog around the crowded
+    // rank. A run that still has to bend is straight wherever it can be.
+    const runs = chains.map(({ path }) => path.slice(1, -1)).filter((d) => d.length >= 2);
+    const runOf = new Map();
+    runs.forEach((d, i) => d.forEach((id) => runOf.set(id, i)));
+    const target = runs.map((d) => {
+        const xs = d.map((id) => x.get(id)).sort((a, b) => a - b);
+        return xs[Math.floor(xs.length / 2)];
+    });
+    for (let it = 0; it < 10 && runs.length; it++) {
+        if (it > 0) {
+            let moved = false;
+            runs.forEach((d, i) => {
+                let far = target[i], dev = 0.5;
+                for (const id of d) if (Math.abs(x.get(id) - target[i]) > dev) { dev = Math.abs(x.get(id) - target[i]); far = x.get(id); }
+                if (far !== target[i]) { target[i] = far; moved = true; }
             });
-            place(layers[r], want);
+            if (!moved) break;
+        }
+        for (const l of layers) {
+            if (!l.some((id) => runOf.has(id))) continue;
+            place(l, l.map((id) => (runOf.has(id) ? target[runOf.get(id)] : x.get(id))),
+                     l.map((id) => (runOf.has(id) ? 50 : 1)));
         }
     }
     const rankTop = [], rankH = [];
@@ -200,7 +241,10 @@ export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6 } 
         y += h + rankSep;
     }
     let minX = Infinity, maxX = -Infinity;
-    for (const [id, cx] of x) { minX = Math.min(minX, cx - dim.get(id).w / 2); maxX = Math.max(maxX, cx + dim.get(id).w / 2); }
+    for (const [id, cx] of x) {
+        minX = Math.min(minX, cx - dim.get(id).w / 2 - padOf(id)[0]);
+        maxX = Math.max(maxX, cx + dim.get(id).w / 2 + padOf(id)[1]);
+    }
     for (const [id, cx] of x) x.set(id, cx - minX);
     return { x, dim, rankTop, rankH, width: maxX - minX, height: y - rankSep };
 }

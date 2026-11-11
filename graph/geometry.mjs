@@ -11,6 +11,7 @@
 import { coordinates } from "./layered.mjs";
 import { ROOT } from "./compound.mjs";
 import { lookFor, lookForGroup, lookForLabel, lookSize, groupSize } from "./looks.mjs";
+import { allChains, spacing } from "./routes.mjs";
 
 export const SPACING = { TB: { node: 24, rank: 56 }, LR: { node: 16, rank: 72 } };
 
@@ -32,7 +33,7 @@ export function axes(dir) {
  *   port(id, p), band(id), crossOf(id)    in flow/cross screen terms (see routes.mjs)
  * }
  */
-export function geometry(graph, T, measure, dir = "TB") {
+export function geometry(graph, T, measure, dir = "TB", exitRoom = null) {
     const { tb, fs, spacing } = axes(dir);
     const toFC = ({ w, h }) => (tb ? { w, h } : { w: h, h: w });     // screen -> (cross, flow)
     const toScreen = ({ w, h }) => (tb ? { w, h } : { w: h, h: w }); // (cross, flow) -> screen
@@ -42,7 +43,8 @@ export function geometry(graph, T, measure, dir = "TB") {
     const layoutLevel = (gid) => {
         if (levelGeo.has(gid)) return levelGeo.get(gid).size;
         const L = T.levels.get(gid);
-        const C = L.layers.length ? coordinates(L, itemSize, { nodeSep: spacing.node, rankSep: spacing.rank }) : null;
+        const pad = exitRoom ? (id) => { const r = exitRoom.get(id); return r ? [r.l, r.r] : null; } : null;
+        const C = L.layers.length ? coordinates(L, itemSize, { nodeSep: spacing.node, rankSep: spacing.rank, pad }) : null;
         const size = C ? toScreen({ w: C.width, h: C.height }) : { w: 0, h: 0 };
         levelGeo.set(gid, { L, C, size });
         return size;
@@ -101,4 +103,20 @@ export function geometry(graph, T, measure, dir = "TB") {
     const band = (id) => geo.get(id);
     const crossOf = (id) => { const g = geo.get(id); return "left" in g ? (tb ? g.cx : g.cy) : g.c; };
     return { geo, groupOrder, looks, total, port, band, crossOf, tb, fs };
+}
+
+/**
+ * The geometry with room kept beside groups for their side exits, and the spacing plan for it.
+ * Which side an edge leaves a group by depends on the layout, so: lay out, plan, lay out again
+ * keeping the plan's room, plan again.
+ */
+export function layout(graph, T, measure, dir = "TB") {
+    const chains = [...allChains(T)];
+    let G = geometry(graph, T, measure, dir);
+    let room = spacing(T, chains, G);
+    if (room.exitRoom.size) {
+        G = geometry(graph, T, measure, dir, room.exitRoom);
+        room = spacing(T, chains, G);
+    }
+    return { G, chains, room };
 }

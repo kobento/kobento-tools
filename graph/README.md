@@ -86,6 +86,19 @@ leaves and enters along the flow) joined by straight runs.
 
 - Each dummy is a straight run across its whole rank band, so a long edge passes beside
   whatever else is in that rank, however tall.
+- Long edges keep a long straight middle. In canvas mode the layout itself lines them up:
+  links between dummies weigh most when positions are assigned (Graphviz's omega weights), and
+  a last pass pulls each long edge's dummies to one position -- and, where a crowded rank
+  cannot let one of them get there, moves the whole run to where that one can go, so it stays
+  straight instead of jogging. In reflow mode the engine packs each row, so dummies cannot be
+  lined up; an edge through two or more ranks runs its middle in a **lane** beside the rows
+  instead -- straight, beyond the farthest row end it passes, live from anchors at the rows'
+  ends, with lanes of their own for overlapping spans -- and its dummies leave the rows. A
+  label rides on its lane (the overlay draws the look's canvas drawing there), and the lane
+  stands out far enough for it.
+- Edges sharing a port attach at points of their own, spread across the node (up to 16px
+  apart), ordered by where each goes so it adds no crossing; side exits through one side of
+  a group turn at staggered distances, and the layout keeps that room clear beside the group.
 - An end deep inside a group (not on the group's boundary rank) leaves or enters sideways:
   from the node's side straight past the group's border, then along the flow, instead of
   cutting across the group's other nodes.
