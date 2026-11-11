@@ -1,0 +1,24 @@
+{
+  "style": {"edge": {"width": 1.75}},
+  "nodes": [
+    {"id": "start", "label": "Order placed", "look": "pill"},
+    {"id": "check", "label": "In stock?"},
+    {"id": "ship", "label": "Ship"},
+    {"id": "back", "label": "Back-order"},
+    {"id": "supplier", "label": "Supplier", "look": "outline"},
+    {"id": "notify", "label": "Notify customer"},
+    {"id": "done", "label": "Done", "look": "pill"},
+    {"id": "audit", "label": "Audit log", "look": "outline"}
+  ],
+  "edges": [
+    {"from": "start", "to": "check"},
+    {"from": "check", "to": "ship", "label": "yes", "color": "#FF4ADE80"},
+    {"from": "check", "to": "back", "label": "no", "color": "#FFF87171"},
+    {"from": "back", "to": "supplier", "dir": "both", "style": "dashed", "arrowhead": "diamond", "arrowtail": "diamond"},
+    {"from": "back", "to": "ship", "label": "restocked", "style": "dashed"},
+    {"from": "ship", "to": "notify"},
+    {"from": "notify", "to": "done"},
+    {"from": "ship", "to": "audit", "style": "dotted", "arrowhead": "open", "arrowtail": "dot"},
+    {"from": "start", "to": "audit", "style": "dotted", "arrowhead": "open", "arrowtail": "dot"}
+  ]
+}

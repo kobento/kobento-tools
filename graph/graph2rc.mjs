@@ -36,11 +36,10 @@
 
 import { readFileSync, writeFileSync } from "fs";
 import { compound, ROOT } from "./compound.mjs";
-import { geometry, SPACING } from "./geometry.mjs";
-import { route, allChains, arrowPath } from "./routes.mjs";
-import { THEME, fill, lookFor, lookForGroup, lookSize, groupSize } from "./looks.mjs";
-
-const EDGE_WIDTH = 1.75;
+import { geometry, axes } from "./geometry.mjs";
+import { route, allChains, endVector } from "./routes.mjs";
+import { edgeStyle, markerLength, strokePaint, markerCommands } from "./edges.mjs";
+import { THEME, fill, lookFor, lookForGroup, lookForLabel } from "./looks.mjs";
 
 /**
  * The flow and cross shapes of a curve, t in [0, 1]: across the flow it eases (t²(3 - 2t),
@@ -50,12 +49,17 @@ const EDGE_WIDTH = 1.75;
 const EASE = "a[0] * a[0] * (3 - 2 * a[0])";
 const ALONG = "(1.5 * a[0] * (1 - a[0]) + a[0] * a[0] * a[0])";
 
-const edgePaint = (color) => ({ paint: { ops: [{ color }, { style: "stroke" }, { width: EDGE_WIDTH }, { strokeCap: "round" }] } });
+/** A chain's style, and its markers' lengths in path order (a reversed chain starts at "to"). */
+function chainStyle(graph, chain) {
+    const st = edgeStyle(graph, chain.edge);
+    const [first, last] = chain.reversed ? [st.head, st.tail] : [st.tail, st.head];
+    return { st, markers: [first, last], lens: [markerLength(first), markerLength(last)] };
+}
 
 // ───────────────────────────────── reflow ─────────────────────────────────
 
 function reflowVariant(graph, T, G, dir, prefix) {
-    const tb = dir === "TB";
+    const { tb, fs, spacing: sp } = axes(dir);
     const [F, X] = tb ? ["y", "x"] : ["x", "y"];          // flow axis, cross axis
     // Variable names from an index, not the id: ids are user strings.
     const index = new Map([...T.items.keys()].map((id, i) => [id, i]));
@@ -66,16 +70,17 @@ function reflowVariant(graph, T, G, dir, prefix) {
     const sides = new Set(), bands = new Set();
     const routes = [];
     for (const chain of allChains(T)) {
-        const off = chain.offset;
+        // Parallel edges are spread across the flow on flow ports, along it on side ports; an
+        // edge's own label sits where it is.
         const add = (v, k) => (k ? `${v} ${k < 0 ? "-" : "+"} ${Math.abs(k)}` : v);
         const P = {
-            add,
-            crossOf: (id) => G.geo.get(id).cx,
+            add, fs,
+            crossOf: (id) => G.crossOf(id),
             port: (id, p) => {
-                if (T.items.get(id).kind === "dummy") p = "a";
+                const kind = T.items.get(id).kind;
+                if (kind === "dummy") p = "a";
                 if (p === "l" || p === "r") sides.add(id);
-                const name = `${index.get(id)}${p}`;
-                // Parallel edges are spread across the flow on the flow ports, along it on the sides.
+                const off = kind === "label" ? 0 : chain.offset, name = `${index.get(id)}${p}`;
                 return p === "l" || p === "r" ? { f: add(nv(name, F), off), c: nv(name, X) }
                                               : { f: nv(name, F), c: add(nv(name, X), off) };
             },
@@ -83,21 +88,24 @@ function reflowVariant(graph, T, G, dir, prefix) {
                 const it = T.items.get(id), r = T.levels.get(it.level).nodes.get(id).rank;
                 const k = `k${levelIndex.get(it.level)}_${r}`;
                 bands.add(k);
-                return { f0: nv(`${k}a`, F), f1: nv(`${k}b`, F), c: add(nv(`${index.get(id)}a`, X), off) };
+                return { f0: nv(`${k}a`, F), f1: nv(`${k}b`, F), c: add(nv(`${index.get(id)}a`, X), chain.offset) };
             },
         };
-        routes.push({ chain, ...route(T, chain, P) });
+        const cs = chainStyle(graph, chain);
+        routes.push({ chain, ...cs, ...route(T, chain, P, cs.lens) });
     }
 
     const anchor = (name) => ({ canvas: {
         componentValues: { [`${prefix}${name}x`]: "rootX", [`${prefix}${name}y`]: "rootY" },
         modifiers: [{ size: [0, 0] }], commands: [],
     } });
+    // Children in flow order: reversed on screen for BT and RL.
+    const flowOrder = (kids) => (fs > 0 ? kids : [...kids].reverse());
     // Along the flow: anchors a (in) and b (out); across it, when an edge leaves or enters by
     // the side: anchors l and r, at the middle.
     const wrap = (id, body) => {
         const i = index.get(id);
-        const kids = [anchor(`${i}a`), body, anchor(`${i}b`)];
+        const kids = flowOrder([anchor(`${i}a`), body, anchor(`${i}b`)]);
         const flow = tb ? { column: { horizontalAlignment: "center", children: kids } }
                         : { row: { verticalAlignment: "center", children: kids } };
         if (!sides.has(id)) return flow;
@@ -105,7 +113,6 @@ function reflowVariant(graph, T, G, dir, prefix) {
         return tb ? { row: { verticalAlignment: "center", children: across } }
                   : { column: { horizontalAlignment: "center", children: across } };
     };
-    const sp = SPACING[dir];
     // A group's (or the whole graph's) ranks; only the top level fills the space. A rank a
     // dummy passes through gets anchors at its start and end: the dummy's run across the band.
     const ranksOf = (gid) => {
@@ -116,36 +123,36 @@ function reflowVariant(graph, T, G, dir, prefix) {
                 : { column: { horizontalAlignment: "center", modifiers: [{ spacedBy: sp.node }], children: l.map(item) } };
             const k = `k${li}_${r}`;
             if (!bands.has(k)) return body;
-            const kids = [anchor(`${k}a`), body, anchor(`${k}b`)];
+            const kids = flowOrder([anchor(`${k}a`), body, anchor(`${k}b`)]);
             return tb ? { column: { horizontalAlignment: "center", children: kids } }
                       : { row: { verticalAlignment: "center", children: kids } };
         };
         const body = { horizontalAlignment: "center", verticalAlignment: "center",
                        modifiers: [...(top ? ["fillMaxSize", { padding: [16, 16] }] : []), { spacedBy: sp.rank }],
-                       children: L.layers.map(rank) };
+                       children: flowOrder(L.layers.map(rank)) };
         return tb ? { column: body } : { row: body };
     };
     function item(id) {
         const it = T.items.get(id);
         if (it.kind === "dummy") return anchor(`${index.get(id)}a`);
-        if (it.kind === "node") {
-            const { name, look, vars } = lookFor(graph, T.levels.get(it.level).nodes.get(id));
-            if (!look.layout) throw new Error(`look "${name}" has no layout (needed by reflow mode)`);
-            return wrap(id, fill(look.layout, vars, `node ${id}, look "${name}"`));
-        }
-        const { name, look, vars } = lookForGroup(graph, T.groups.get(id));
+        const node = T.levels.get(it.level).nodes.get(id);
+        const [{ name, look, vars }, what] = it.kind === "node" ? [lookFor(graph, node), "node"]
+            : it.kind === "label" ? [lookForLabel(graph, node), "edge label"]
+            : [lookForGroup(graph, T.groups.get(id)), "group"];
         if (!look.layout) throw new Error(`look "${name}" has no layout (needed by reflow mode)`);
-        return wrap(id, fill(look.layout, { ...vars, content: ranksOf(id) }, `group ${id}, look "${name}"`));
+        const v = it.kind === "group" ? { ...vars, content: ranksOf(id) } : vars;
+        return wrap(id, fill(look.layout, v, `${what} ${id}, look "${name}"`));
     }
     const graphLayout = ranksOf(ROOT);
 
     // The edges, in the overlay's coordinates: translated once by its own root position.
     const xy = (p) => (tb ? [p.c, p.f] : [p.f, p.c]);
     const commands = [];
-    for (const { chain, pts, segs, arrow } of routes) {
-        commands.push(edgePaint(chain.edge.color ?? THEME.edge));
+    for (const { chain, st, markers, pts, segs, ends } of routes) {
+        commands.push(strokePaint(st));
         segs.forEach((kind, k) => {
             const p = pts[k], q = pts[k + 1];
+            if (kind === "skip") return;
             if (kind === "line") {
                 const [x1, y1] = xy(p), [x2, y2] = xy(q);
                 commands.push({ drawLine: { x1, y1, x2, y2 } });
@@ -159,12 +166,12 @@ function reflowVariant(graph, T, G, dir, prefix) {
                                     start: 0, end: 1, count: 24 } },
                 { drawPath: { path: id } });
         });
-        const [tx, ty] = xy(arrow);
-        commands.push({ save: { commands: [
-            { translate: { dx: tx, dy: ty } },
-            { paint: { ops: [{ style: "fill" }] } },
-            { drawPath: { path: arrowPath(arrow.dir, tb) } },
-        ] } });
+        ends.forEach((e, i) => {
+            const cmds = markerCommands(markers[i], st, endVector(e, tb, fs));
+            if (!cmds.length) return;
+            const [tx, ty] = xy(e);
+            commands.push({ save: { commands: [{ translate: { dx: tx, dy: ty } }, ...cmds] } });
+        });
     }
 
     return { box: {
@@ -181,24 +188,25 @@ function reflowVariant(graph, T, G, dir, prefix) {
 
 export function reflowDoc(graph, { width = 400, height = 500, direction, measure = measureLabel } = {}) {
     const T = compound(graph);
-    const G = geometry(graph, T, measure);
     const dir = String(direction ?? graph.direction ?? "auto").toUpperCase();
     const doc = {
         header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
         root: [],
     };
     let children;
-    if (dir === "TB" || dir === "LR") {
-        children = [reflowVariant(graph, T, G, dir, "v")];
+    if (dir !== "AUTO") {
+        children = [reflowVariant(graph, T, geometry(graph, T, measure, dir), dir, "v")];
     } else {
         // 0: top to bottom, 1: left to right: whichever overflows the space less, from both
-        // layouts' sizes estimated from the looks (the engine's own measure is not known when
-        // the state is picked). The space is measured by a canvas filling the graph's box, not
-        // windowWidth(): androidx's player keeps that at the document's declared size, while
-        // Kobento's players give the viewport. Until that canvas is laid out its values hold
-        // the 1.0 placeholder and the windowWidth() guess stands, so the usual case starts in
-        // the right state with no cross-fade.
-        const [tbW, tbH] = estimateSize(graph, T, "TB", measure), [lrW, lrH] = estimateSize(graph, T, "LR", measure);
+        // layouts' sizes estimated from the looks (canvas mode's geometry; the engine's own
+        // measure is not known when the state is picked). The space is measured by a canvas
+        // filling the graph's box, not windowWidth(): androidx's player keeps that at the
+        // document's declared size, while Kobento's players give the viewport. Until that
+        // canvas is laid out its values hold the 1.0 placeholder and the windowWidth() guess
+        // stands, so the usual case starts in the right state with no cross-fade.
+        const gTB = geometry(graph, T, measure, "TB"), gLR = geometry(graph, T, measure, "LR");
+        const est = ({ total }) => [Math.ceil((total.w + 32) * 1.05), Math.ceil((total.h + 32) * 1.05)];
+        const [tbW, tbH] = est(gTB), [lrW, lrH] = est(gLR);
         const pick = (w, h) => `step(max(${tbW} / ${w}, ${tbH} / ${h}), max(${lrW} / ${w}, ${lrH} / ${h}))`;
         doc.resources = { variables: { orientWindow: pick("max(windowWidth(), 1)", "max(windowHeight(), 1)") } };
         children = [
@@ -208,39 +216,11 @@ export function reflowDoc(graph, { width = 400, height = 500, direction, measure
                 orient: { expression: "ifElse(@orientWindow, @orientMeasured, @availW - 1.5)" },
             } } },
             { stateLayout: { indexId: "@orient", modifiers: ["fillMaxSize"],
-                             children: [reflowVariant(graph, T, G, "TB", "t"), reflowVariant(graph, T, G, "LR", "l")] } },
+                             children: [reflowVariant(graph, T, gTB, "TB", "t"), reflowVariant(graph, T, gLR, "LR", "l")] } },
         ];
     }
     doc.root.push({ box: { modifiers: ["fillMaxSize", { background: THEME.bg }], children } });
     return doc;
-}
-
-/** Rough [width, height] of the reflow layout in `dir`, mirroring reflowVariant's spacing. */
-function estimateSize(graph, T, dir, measure) {
-    const sp = SPACING[dir], tb = dir === "TB";
-    const sum = (a) => a.reduce((s, x) => s + x, 0);
-    const level = (gid) => {
-        const L = T.levels.get(gid);
-        if (!L.layers.length) return { w: 0, h: 0 };
-        const dim = (id) => {
-            const it = T.items.get(id);
-            if (it.kind === "dummy") return { w: 0, h: 0 };
-            if (it.kind === "node") return lookSize(lookFor(graph, L.nodes.get(id)).look, L.nodes.get(id).label, measure);
-            const grp = T.groups.get(id);
-            return groupSize(lookForGroup(graph, grp).look, grp.label, level(id), measure);
-        };
-        const ranks = L.layers.map((l) => {
-            const ds = l.map(dim);
-            const across = sum(ds.map((d) => (tb ? d.w : d.h))) + sp.node * (l.length - 1);
-            const along = Math.max(0, ...ds.map((d) => (tb ? d.h : d.w)));
-            return { across, along };
-        });
-        const across = Math.max(...ranks.map((r) => r.across));
-        const along = sum(ranks.map((r) => r.along)) + sp.rank * (L.layers.length - 1);
-        return tb ? { w: across, h: along } : { w: along, h: across };
-    };
-    const { w, h } = level(ROOT);
-    return [Math.ceil((w + 32) * 1.05), Math.ceil((h + 32) * 1.05)];
 }
 
 // ───────────────────────────────── canvas ─────────────────────────────────
@@ -265,37 +245,45 @@ export function measureLabel(s, size = 15) {
 
 const r1 = (x) => Math.round(x * 10) / 10;
 
-export function canvasDoc(graph, { width = 400, height = 500, measure = measureLabel } = {}) {
+export function canvasDoc(graph, { width = 400, height = 500, direction, measure = measureLabel } = {}) {
     const T = compound(graph);
-    const { geo, groupOrder, looks, total } = geometry(graph, T, measure);
+    let dir = String(direction ?? graph.direction ?? "TB").toUpperCase();
+    if (dir === "AUTO") dir = "TB";
+    const G = geometry(graph, T, measure, dir);
+    const { geo, groupOrder, looks, total, tb, fs } = G;
+    const xy = (p) => (tb ? [p.c, p.f] : [p.f, p.c]);
 
     const edgeCmds = [], arrowCmds = [];
     for (const chain of allChains(T)) {
         const off = chain.offset;
         const P = {
-            add: (v, k) => v + k,
-            crossOf: (id) => geo.get(id).cx,
+            add: (v, k) => v + k, fs,
+            crossOf: (id) => G.crossOf(id),
+            // Parallel edges spread across the flow on flow ports, along it on side ports.
             port: (id, p) => {
-                const g = geo.get(id);
-                return { a: { f: g.top, c: g.cx + off }, b: { f: g.bottom, c: g.cx + off },
-                         l: { f: g.cy + off, c: g.left }, r: { f: g.cy + off, c: g.right } }[p];
+                const q = G.port(id, p), o = T.items.get(id).kind === "label" ? 0 : off;
+                return p === "l" || p === "r" ? { f: q.f + o, c: q.c } : { f: q.f, c: q.c + o };
             },
-            band: (id) => { const g = geo.get(id); return { f0: g.top, f1: g.bottom, c: g.cx + off }; },
+            band: (id) => { const g = G.band(id); return { f0: g.f0, f1: g.f1, c: g.c + off }; },
         };
-        const { pts, segs, arrow } = route(T, chain, P);
-        // TB: flow is y, cross is x.
-        let d = `M${r1(pts[0].c)} ${r1(pts[0].f)}`;
+        const { st, markers, lens } = chainStyle(graph, chain);
+        const { pts, segs, ends } = route(T, chain, P, lens);
+        const at = (p) => xy(p).map(r1).join(" ");
+        let d = `M${at(pts[0])}`;
         segs.forEach((kind, k) => {
             const p = pts[k], q = pts[k + 1];
-            if (kind === "line") { d += ` L${r1(q.c)} ${r1(q.f)}`; return; }
-            const mf = r1((p.f + q.f) / 2);
-            d += ` C${r1(p.c)} ${mf} ${r1(q.c)} ${mf} ${r1(q.c)} ${r1(q.f)}`;
+            if (kind === "skip") { d += ` M${at(q)}`; return; }
+            if (kind === "line") { d += ` L${at(q)}`; return; }
+            const mf = (p.f + q.f) / 2;
+            d += ` C${at({ f: mf, c: p.c })} ${at({ f: mf, c: q.c })} ${at(q)}`;
         });
-        const color = chain.edge.color ?? THEME.edge;
-        edgeCmds.push(edgePaint(color), { drawPath: { path: d } });
-        arrowCmds.push({ paint: { ops: [{ color }, { style: "fill" }] } },
-                       { save: { commands: [{ translate: { dx: r1(arrow.c), dy: r1(arrow.f) } },
-                                            { drawPath: { path: arrowPath(arrow.dir, true) } }] } });
+        edgeCmds.push(strokePaint(st), { drawPath: { path: d } });
+        ends.forEach((e, i) => {
+            const cmds = markerCommands(markers[i], st, endVector(e, tb, fs));
+            if (!cmds.length) return;
+            const [tx, ty] = xy(e);
+            arrowCmds.push({ save: { commands: [{ translate: { dx: r1(tx), dy: r1(ty) } }, ...cmds] } });
+        });
     }
 
     const drawn = (id) => {
@@ -309,7 +297,7 @@ export function canvasDoc(graph, { width = 400, height = 500, measure = measureL
     const groupCmds = [], nodeCmds = [], labelCmds = [];
     for (const id of groupOrder) { const { body, label } = drawn(id); groupCmds.push(...body); labelCmds.push(...label); }
     for (const [id, it] of T.items) {
-        if (it.kind !== "node") continue;
+        if (it.kind !== "node" && it.kind !== "label") continue;
         const { body, label } = drawn(id);
         nodeCmds.push(...body); labelCmds.push(...label);
     }
@@ -352,7 +340,10 @@ export function canvasDoc(graph, { width = 400, height = 500, measure = measureL
                             { translate: { dx: "width * 0.5 + @panX", dy: "height * 0.5 + @panY" } },
                             { scale: { sx: scale, sy: scale } },
                             { translate: { dx: -GW / 2, dy: -GH / 2 } },
-                            ...groupCmds, ...edgeCmds, ...arrowCmds, ...nodeCmds,
+                            ...groupCmds, ...edgeCmds, ...arrowCmds,
+                            // The edges' dash must not reach the nodes' strokes.
+                            { paint: { ops: [{ pathEffect: null }] } },
+                            ...nodeCmds,
                             // Labels only while they are legible (about 6px and up at 15).
                             { conditionalOperations: { condition: "ge", v1: `${scale} * 15`, v2: 6, commands: labelCmds } },
                         ] } },

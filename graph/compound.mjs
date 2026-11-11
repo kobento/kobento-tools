@@ -20,7 +20,7 @@ export const ROOT = "";
  * @returns {
  *   levels: Map<groupId, L>     layered() of each group's children ("" is the top level);
  *                                chain.edge is the level edge: {from, to, realFrom, realTo, color}
- *   items:  Map<id, {kind: "node" | "group" | "dummy", src, level}>
+ *   items:  Map<id, {kind: "node" | "group" | "dummy" | "label", src, level}>   (label: an edge label)
  *   groups: Map<groupId, {id, label, src, parent, children: [id]}>
  *   dropped: [edge]              edges between a group and something inside it
  * }
@@ -93,7 +93,9 @@ export function compound(graph) {
         const L = layered({ nodes, edges: levelEdges.get(g.id) }, { dummyPrefix: `__g${n++}d` });
         dropped.push(...L.dropped);
         levels.set(g.id, L);
-        for (const [id, node] of L.nodes) if (node.dummy) items.set(id, { kind: "dummy", src: {}, level: g.id });
+        for (const [id, node] of L.nodes) {
+            if (node.dummy) items.set(id, { kind: node.edgeLabel ? "label" : "dummy", src: node.src, level: g.id });
+        }
     }
     return { levels, items, groups, dropped };
 }

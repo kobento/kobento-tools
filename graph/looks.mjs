@@ -99,6 +99,25 @@ export const BUILTIN_LOOKS = {
     pill: boxLook("pill", { fill: THEME.surface, border: THEME.outline, text: THEME.text }),
     outline: boxLook(10, { fill: THEME.bg, border: THEME.accent, text: THEME.accent, borderWidth: 1.5 }),
     group: groupLook,
+    // An edge's label: small muted text on the background colour, sitting on the line.
+    edgeLabel: {
+        defaults: { bg: THEME.bg, text: THEME.muted },
+        fontSize: 12, padding: [6, 3],
+        layout: { box: {
+            modifiers: [{ clip: 6 }, { background: "{{bg}}" }, { padding: [6, 3] }],
+            children: [{ text: { value: "{{label}}", fontSize: 12, color: "{{text}}" } }],
+        } },
+        canvas: {
+            commands: [
+                { paint: { ops: [{ color: "{{bg}}" }, { style: "fill" }] } },
+                { drawRoundRect: { ...rect, rx: 6, ry: 6 } },
+            ],
+            label: [
+                { paint: { ops: [{ color: "{{text}}" }, { style: "fill" }, { textSize: 12 }] } },
+                { drawTextAnchored: { text: "{{label}}", x: "{{cx}}", y: "{{cy}}", panX: 0, panY: 0 } },
+            ],
+        },
+    },
 };
 
 const WHOLE = /^\{\{\s*([\w.]+)\s*\}\}$/;
@@ -140,6 +159,19 @@ export function lookForGroup(graph, group) {
     if (!look) throw new Error(`group ${group.id}: unknown look "${name}"`);
     const { nodes, groups, ...own } = group.src;
     const vars = { ...(look.defaults ?? {}), ...own, label: group.label, id: group.id, data: group.src.data ?? {} };
+    return { name, look, vars };
+}
+
+/**
+ * The look an edge label uses: the edge's "labelLook", the graph's style.edgeLabelLook, or
+ * "edgeLabel". Its placeholders see the look's defaults, the edge's fields and {{label}}.
+ */
+export function lookForLabel(graph, node) {
+    const edge = node.src;
+    const name = edge.labelLook ?? graph.style?.edgeLabelLook ?? "edgeLabel";
+    const look = graph.looks?.[name] ?? BUILTIN_LOOKS[name];
+    if (!look) throw new Error(`edge ${edge.from}->${edge.to}: unknown label look "${name}"`);
+    const vars = { ...(look.defaults ?? {}), ...edge, label: node.label, data: edge.data ?? {} };
     return { name, look, vars };
 }
 

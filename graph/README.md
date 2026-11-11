@@ -58,8 +58,30 @@ with the outside: it sits whole in one rank of its parent.
 
 ## Edges
 
-One routine (`routes.mjs`) shapes every edge for both modes, in flow/cross terms so TB and LR
-are the same code: curves (a cubic whose control points sit halfway along the flow, so an edge
+```json
+{"from": "check", "to": "back", "label": "no", "color": "#FFF87171", "width": 1.75,
+ "style": "dashed", "arrowhead": "diamond", "arrowtail": "dot", "dir": "both"}
+```
+
+- `style`: `solid`, `dashed` or `dotted` (RemoteCompose's dash path effect).
+- `arrowhead` (at `to`) and `arrowtail` (at `from`): `normal`, `open`, `diamond`, `dot`,
+  `none`; `dir` (`forward`, `back`, `both`, `none`) sets both as in Graphviz. `"directed": false`
+  on the graph makes edges default to no arrows; `"style": {"edge": {...}}` sets defaults.
+- `label`: the edge spans at least two ranks and its label sits on the line in the rank
+  between (Graphviz's approach). It is drawn with the `edgeLabel` look (override it like any
+  look, or per edge with `labelLook`), so in reflow mode it is a real, engine-measured
+  component.
+
+`examples/flow.json` uses all of these.
+
+### Directions
+
+`direction`: `TB`, `BT`, `LR`, `RL` in both modes (`auto` picks TB or LR in reflow mode).
+
+### Routing
+
+One routine (`routes.mjs`) shapes every edge for both modes, in flow/cross terms (and a flow
+sign) so all four directions are the same code: curves (a cubic whose control points sit halfway along the flow, so an edge
 leaves and enters along the flow) joined by straight runs.
 
 - Each dummy is a straight run across its whole rank band, so a long edge passes beside
@@ -67,7 +89,8 @@ leaves and enters along the flow) joined by straight runs.
 - An end deep inside a group (not on the group's boundary rank) leaves or enters sideways:
   from the node's side straight past the group's border, then along the flow, instead of
   cutting across the group's other nodes.
-- The end with the arrowhead stops short of a fixed arrowhead.
+- An edge label is passed through: the line runs into it and out of its far side.
+- Each end stops its marker's length short of its port.
 
 In reflow mode the points are anchor expressions (ranks a dummy crosses, and nodes with a side
 exit, get extra anchors) and each curve a `pathExpression`, so edges follow the layout;

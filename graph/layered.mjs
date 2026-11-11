@@ -8,7 +8,8 @@
  *                     several graphs whose ids share one namespace, e.g. nested groups)
  * @returns {
  *   layers:  [[id]]                           ranks top to bottom, each in left-to-right order
- *   nodes:   Map<id, {id, label, src, dummy, rank}>   src: the node's own JSON
+ *   nodes:   Map<id, {id, label, src, dummy, edgeLabel?, rank}>
+ *                                              src: the node's own JSON (an edge label: the edge's)
  *   chains:  [{edge, path: [id], reversed, offset}]
  *                                              each edge as the node/dummy ids it passes through,
  *                                              from its upper end to its lower end; offset (px,
@@ -44,14 +45,18 @@ export function layered(graph, { dummyPrefix = "__d" } = {}) {
         state.set(id, 2);
     };
     for (const id of nodes.keys()) if (!state.has(id)) dfs(id);
-    const dag = edges.map((e, i) => (reversed.has(i) ? { u: e.to, v: e.from } : { u: e.from, v: e.to }));
+    // A labelled edge spans at least two ranks: its label sits in a rank of its own between
+    // the ends (Graphviz's approach), as a dummy with a size.
+    const hasLabel = (e) => e.label !== undefined && e.label !== null && String(e.label) !== "";
+    const dag = edges.map((e, i) => ({ ...(reversed.has(i) ? { u: e.to, v: e.from } : { u: e.from, v: e.to }),
+                                       len: hasLabel(e) ? 2 : 1 }));
 
     // Longest-path ranking.
     const preds = new Map([...nodes.keys()].map((id) => [id, []]));
-    for (const { u, v } of dag) preds.get(v).push(u);
+    for (const { u, v, len } of dag) preds.get(v).push({ u, len });
     const rank = new Map();
     const visit = (id) => {
-        if (!rank.has(id)) rank.set(id, preds.get(id).reduce((m, p) => Math.max(m, visit(p) + 1), 0));
+        if (!rank.has(id)) rank.set(id, preds.get(id).reduce((m, p) => Math.max(m, visit(p.u) + p.len), 0));
         return rank.get(id);
     };
     for (const id of nodes.keys()) nodes.get(id).rank = visit(id);
@@ -61,9 +66,13 @@ export function layered(graph, { dummyPrefix = "__d" } = {}) {
     let dummyCount = 0;
     dag.forEach(({ u, v }, i) => {
         const path = [u];
-        for (let r = rank.get(u) + 1; r < rank.get(v); r++) {
+        const r0 = rank.get(u), r1 = rank.get(v);
+        const labelRank = hasLabel(edges[i]) ? r0 + Math.floor((r1 - r0) / 2) : -1;
+        for (let r = r0 + 1; r < r1; r++) {
             const id = `${dummyPrefix}${dummyCount++}`;
-            nodes.set(id, { id, label: "", src: {}, dummy: true, rank: r });
+            nodes.set(id, r === labelRank
+                ? { id, label: String(edges[i].label), src: edges[i], dummy: true, edgeLabel: true, rank: r }
+                : { id, label: "", src: {}, dummy: true, rank: r });
             path.push(id);
         }
         path.push(v);
@@ -138,12 +147,13 @@ function orderLayers(layers, chains) {
  * within a rank the order and the minimum gaps are kept by isotonic regression (PAV), so each
  * sweep gives the closest legal placement to what the neighbours want.
  *
- * @param size (id) => {w, h} for real nodes (dummies are given DUMMY_W)
+ * @param size (id) => {w, h} for real nodes and edge labels (other dummies are dummyW wide);
+ *             w is the extent across the ranks, h along them
  */
 export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6 } = {}) {
     const { layers, nodes, chains } = L;
     const dim = new Map();
-    for (const n of nodes.values()) dim.set(n.id, n.dummy ? { w: dummyW, h: 0 } : size(n.id));
+    for (const n of nodes.values()) dim.set(n.id, n.dummy && !n.edgeLabel ? { w: dummyW, h: 0 } : size(n.id));
     const up = new Map(), down = new Map();
     for (const { path } of chains) {
         for (let k = 0; k + 1 < path.length; k++) {
