@@ -13,6 +13,8 @@
 //   --click-frame X Y   onClick, then paint a single frame (an animation left in flight)
 //   --advance MS        move the clock MS milliseconds and paint one frame
 //   --settle            paint every 16 ms while the document asks for a repaint
+// --areas prints the click areas (CoreDocument.getClickAreas) at the end; a click prints what
+// reaches the host: CLICK id= metadata= (a click area) and ACTION name= value= (a host action).
 // --anim enables bounds animations (off by default, as the spec harness does).
 import androidx.compose.remote.core.CoreDocument;
 import androidx.compose.remote.core.RemoteComposeBuffer;
@@ -52,6 +54,9 @@ public class RcLayoutDump {
         }
         CoreDocument doc = new CoreDocument();
         doc.initFromBuffer(RemoteComposeBuffer.fromInputStream(new ByteArrayInputStream(bytes)));
+        // What a click reaches the host with: a click area's id and metadata, a host action.
+        doc.addIdActionListener((id, metadata) -> System.out.println("CLICK id=" + id + " metadata=" + metadata));
+        doc.addActionCallback((name, value) -> System.out.println("ACTION name=" + name + " value=" + value));
         // MockRemoteContext.overrideFloat (what a click's value-change action calls) stores the
         // value but, unlike the player's AndroidRemoteContext (RemoteComposeState.overrideFloat),
         // does not mark the variable's listeners dirty: expressions and modifiers reading the
@@ -69,6 +74,28 @@ public class RcLayoutDump {
             public void loadFloat(int id, float value) {
                 super.loadFloat(id, value);
                 mRemoteComposeState.updateFloat(id, value);
+            }
+            // The mock keeps texts in its own cache; the player's go in its state too, where an
+            // action's string value is read from.
+            @Override
+            public void loadText(int id, String text) {
+                super.loadText(id, text);
+                if (!mRemoteComposeState.containsId(id)) mRemoteComposeState.cacheData(id, text);
+                else mRemoteComposeState.updateData(id, text);
+            }
+            // The mock drops a host action; the player's hands it to the document by name.
+            @Override
+            public void runNamedAction(int textId, Object value) {
+                String name = getText(textId);
+                if (name != null) doc.runNamedAction(name, value);
+            }
+            // The mock only logs a click area; the player's AndroidRemoteContext hands it to the
+            // document, which is what a click then finds.
+            @Override
+            public void addClickArea(int id, int contentDescription, float left, float top, float right, float bottom, int metadataId) {
+                super.addClickArea(id, contentDescription, left, top, right, bottom, metadataId);
+                // (The mock keeps texts in its own cache, the player in its state.)
+                doc.addClickArea(id, stringCache.get(contentDescription), left, top, right, bottom, stringCache.get(metadataId));
             }
         };
         // The mock sizes its listener tables for 400 ids (the player's are maps); a larger
@@ -112,6 +139,17 @@ public class RcLayoutDump {
         }
         Component root = doc.getRootLayoutComponent();
         dump(root);
+        if (String.join(" ", args).contains("--areas")) {
+            for (Object a : doc.getClickAreas()) {
+                StringBuilder sb = new StringBuilder("AREA");
+                for (String f : new String[] {"mId", "mLeft", "mTop", "mRight", "mBottom", "mMetadata"}) {
+                    java.lang.reflect.Field fl = a.getClass().getDeclaredField(f);
+                    fl.setAccessible(true);
+                    sb.append(' ').append(f.substring(1).toLowerCase()).append('=').append(fl.get(a));
+                }
+                System.out.println(sb);
+            }
+        }
         if (args.length > 3 && String.join(" ", args).contains("--ints")) {
             for (int id = 40; id < 120; id++) System.out.println("INT id=" + id + " v=" + ctx.getInteger(id));
         }

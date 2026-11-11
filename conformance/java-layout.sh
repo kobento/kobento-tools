@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run the Java reference layout dumper (java/RcLayoutDump.java) on a document.
 #   conformance/java-layout.sh DOC.rc WIDTH HEIGHT [--density D] [--anim] [--click X Y] [--click-frame X Y] [--advance MS] [--settle]...
+#                              [--floats] [--areas]   (a click prints what reaches the host: CLICK / ACTION lines)
 # Compiles androidx remote-core from the checkout (ANDROIDX, default ~/androidx) once, into a
 # cache keyed by the sources' modification time; needs a JDK.
 set -euo pipefail
