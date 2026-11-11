@@ -1,0 +1,35 @@
+{
+  "groups": [
+    {"id": "front", "label": "FRONT END", "nodes": ["lex", "parse", "ast"]},
+    {"id": "middle", "label": "MIDDLE END", "nodes": ["types", "ir"],
+     "groups": [{"id": "optim", "label": "OPTIMISER", "nodes": ["inline", "dce"]}]},
+    {"id": "back", "label": "BACK END", "nodes": ["emit", "pack"]}
+  ],
+  "nodes": [
+    {"id": "src", "label": "Source", "look": "pill"},
+    {"id": "lex", "label": "Lexer"},
+    {"id": "parse", "label": "Parser"},
+    {"id": "ast", "label": "AST"},
+    {"id": "types", "label": "Type check"},
+    {"id": "ir", "label": "IR"},
+    {"id": "inline", "label": "Inline"},
+    {"id": "dce", "label": "Dead code"},
+    {"id": "emit", "label": "Emit"},
+    {"id": "pack", "label": "Package .rc"},
+    {"id": "diag", "label": "Diagnostics", "color": "#FF3F1D2B", "border": "#FF7F2D3F"}
+  ],
+  "edges": [
+    {"from": "src", "to": "lex"},
+    {"from": "lex", "to": "parse"},
+    {"from": "parse", "to": "ast"},
+    {"from": "ast", "to": "types"},
+    {"from": "types", "to": "ir"},
+    {"from": "ir", "to": "inline"},
+    {"from": "inline", "to": "dce"},
+    {"from": "dce", "to": "inline", "color": "#FFFBBF24"},
+    {"from": "dce", "to": "emit"},
+    {"from": "emit", "to": "pack"},
+    {"from": "front", "to": "diag", "color": "#FFF87171"},
+    {"from": "types", "to": "diag", "color": "#FFF87171"}
+  ]
+}

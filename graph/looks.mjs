@@ -62,10 +62,43 @@ function boxLook(radius, { fill, border, text, borderWidth = 1, weight = 500 }) 
     };
 }
 
+/**
+ * A group's card: its title, then its sub-layout. A group look is a node look with a
+ * "{{content}}" slot in its layout (reflow mode: the group's own ranks go there) and `title`,
+ * the height its canvas drawing keeps above the content (canvas mode puts the content at
+ * padding + title, and sizes the card from the content plus padding and title).
+ */
+const groupLook = {
+    defaults: { color: "#99131C2E", border: THEME.outline, text: THEME.muted },
+    fontSize: 12, padding: [14, 10], title: 24,
+    layout: { box: {
+        modifiers: [{ clip: 14 }, { background: "{{color}}" },
+                    { border: { width: 1, color: "{{border}}", cornerRadius: 14, shape: 2 } },
+                    { padding: [14, 10] }],
+        children: [{ column: {
+            horizontalAlignment: "start", modifiers: [{ spacedBy: 10 }],
+            children: [{ text: { value: "{{label}}", fontSize: 12, fontWeight: 600, color: "{{text}}" } }, "{{content}}"],
+        } }],
+    } },
+    canvas: {
+        commands: [
+            { paint: { ops: [{ color: "{{color}}" }, { style: "fill" }] } },
+            { drawRoundRect: { ...rect, rx: 14, ry: 14 } },
+            { paint: { ops: [{ color: "{{border}}" }, { style: "stroke" }, { width: 1 }] } },
+            { drawRoundRect: { ...rect, rx: 14, ry: 14 } },
+        ],
+        label: [
+            { paint: { ops: [{ color: "{{text}}" }, { style: "fill" }, { textSize: 12 }] } },
+            { drawTextAnchored: { text: "{{label}}", x: "{{left}} + 14", y: "{{top}} + 17", panX: -1, panY: 0 } },
+        ],
+    },
+};
+
 export const BUILTIN_LOOKS = {
     card: boxLook(10, { fill: THEME.surface, border: THEME.outline, text: THEME.text }),
     pill: boxLook("pill", { fill: THEME.surface, border: THEME.outline, text: THEME.text }),
     outline: boxLook(10, { fill: THEME.bg, border: THEME.accent, text: THEME.accent, borderWidth: 1.5 }),
+    group: groupLook,
 };
 
 const WHOLE = /^\{\{\s*([\w.]+)\s*\}\}$/;
@@ -98,6 +131,26 @@ export function lookFor(graph, node) {
     if (!look) throw new Error(`node ${node.id}: unknown look "${name}"`);
     const vars = { ...(look.defaults ?? {}), ...node.src, label: node.label, id: node.id, data: node.src.data ?? {} };
     return { name, look, vars };
+}
+
+/** The look a group uses: its own "look", the graph's style.groupLook, or "group". */
+export function lookForGroup(graph, group) {
+    const name = group.src.look ?? graph.style?.groupLook ?? "group";
+    const look = graph.looks?.[name] ?? BUILTIN_LOOKS[name];
+    if (!look) throw new Error(`group ${group.id}: unknown look "${name}"`);
+    const { nodes, groups, ...own } = group.src;
+    const vars = { ...(look.defaults ?? {}), ...own, label: group.label, id: group.id, data: group.src.data ?? {} };
+    return { name, look, vars };
+}
+
+/** A group's card size around content of `inner` {w, h}: padding, title, and the title's width. */
+export function groupSize(look, label, inner, measure) {
+    const [px, py] = look.padding ?? [14, 10];
+    const title = look.title ?? 24;
+    return {
+        w: Math.ceil(Math.max(inner.w, measure(label, look.fontSize ?? 12)) + 2 * px),
+        h: Math.ceil(inner.h + title + 2 * py),
+    };
 }
 
 /**

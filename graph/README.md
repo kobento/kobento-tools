@@ -39,12 +39,39 @@ defines a status card with a coloured dot and a subtitle.
 `size` / `fontSize` / `padding` give the node's size in canvas mode (and the reflow
 orientation estimate): a fixed `[w, h]`, or `"auto"` per axis for the label plus padding.
 
+## Groups
+
+```json
+"groups": [{"id": "middle", "label": "MIDDLE END", "nodes": ["types", "ir"],
+            "groups": [{"id": "optim", "label": "OPTIMISER", "nodes": ["inline", "dce"]}]}]
+```
+
+or `"group": "middle"` on a node. Groups nest, can be an edge's end, and draw with a group
+look (built in: `group`; per group `"look"`, or `style.groupLook`): a node look whose layout has
+a `"{{content}}"` slot for the group's own ranks and a `title` height for canvas mode.
+
+A group is a **compound node** (`compound.mjs`): it is laid out as its own layered graph and is
+one node of its parent's, so in reflow mode it is a real container and reflows like any node.
+An edge is laid out at the deepest group holding both its ends, between the children that hold
+them, and drawn to the real nodes. Unlike Graphviz's clusters, a group does not share ranks
+with the outside: it sits whole in one rank of its parent.
+
 ## Edges
 
-The same curve in both modes: a cubic whose control points sit halfway along the flow, so an
-edge leaves and enters nodes (and crosses each dummy) along the flow and a long edge is one
-smooth line. It stops short of its target for a fixed arrowhead. In reflow mode each segment
-is a `pathExpression` over the anchors' live positions, so the curves follow the layout.
+One routine (`routes.mjs`) shapes every edge for both modes, in flow/cross terms so TB and LR
+are the same code: curves (a cubic whose control points sit halfway along the flow, so an edge
+leaves and enters along the flow) joined by straight runs.
+
+- Each dummy is a straight run across its whole rank band, so a long edge passes beside
+  whatever else is in that rank, however tall.
+- An end deep inside a group (not on the group's boundary rank) leaves or enters sideways:
+  from the node's side straight past the group's border, then along the flow, instead of
+  cutting across the group's other nodes.
+- The end with the arrowhead stops short of a fixed arrowhead.
+
+In reflow mode the points are anchor expressions (ranks a dummy crosses, and nodes with a side
+exit, get extra anchors) and each curve a `pathExpression`, so edges follow the layout;
+`geometry.mjs`, canvas mode's fixed layout, picks the side to exit by.
 
 ## Structure
 

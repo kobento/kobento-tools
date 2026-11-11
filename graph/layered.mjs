@@ -4,6 +4,8 @@
 
 /**
  * @param graph {nodes: [{id, label?, color?}], edges: [{from, to, color?}]}
+ * @param dummyPrefix  ids of the dummies this call makes (unique across calls laying out
+ *                     several graphs whose ids share one namespace, e.g. nested groups)
  * @returns {
  *   layers:  [[id]]                           ranks top to bottom, each in left-to-right order
  *   nodes:   Map<id, {id, label, src, dummy, rank}>   src: the node's own JSON
@@ -14,7 +16,7 @@
  *   dropped: [edge]                            self-loops, not drawn yet
  * }
  */
-export function layered(graph) {
+export function layered(graph, { dummyPrefix = "__d" } = {}) {
     const nodes = new Map();
     for (const n of graph.nodes ?? []) {
         if (nodes.has(n.id)) throw new Error(`duplicate node ${n.id}`);
@@ -60,7 +62,7 @@ export function layered(graph) {
     dag.forEach(({ u, v }, i) => {
         const path = [u];
         for (let r = rank.get(u) + 1; r < rank.get(v); r++) {
-            const id = `__d${dummyCount++}`;
+            const id = `${dummyPrefix}${dummyCount++}`;
             nodes.set(id, { id, label: "", src: {}, dummy: true, rank: r });
             path.push(id);
         }
