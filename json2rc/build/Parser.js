@@ -653,7 +653,8 @@ const PAINT_KEYS_ORDER = ["shader", "color", "alpha", "strokeJoin", "strokeCap",
 /** Keys that select the two-circle (focal) radialGradient (FOCAL_RADIAL_KEYS upstream). */
 const FOCAL_RADIAL_KEYS = ["startX", "startY", "startR", "startRadius", "endX", "endY", "endR",
     "endRadius", "focalX", "focalY", "focalR", "focalRadius"];
-const PAINT_KEY_ALIASES = { strokewidth: "width", runtimeshader: "shader" };
+const PAINT_KEY_ALIASES = { strokewidth: "width", runtimeshader: "shader", patheffect: "pathEffect" };
+const PB_PATH_EFFECT = 25, PATH_EFFECT_DASH = 1;
 /**
  * `linearGradient` is in PAINT_KEYS_IGNORED because the reference ignores it *as a direct
  * key* — inside an `ops` array it is honoured. The two lists are not in conflict.
@@ -1690,6 +1691,24 @@ class Parser {
         // (crisp pixels), true (the default) smooths it.
         else if (key === "filterBitmap")
             ints.push(PB.FILTER_BITMAP | ((src.filterBitmap === false ? 0 : 1) << 16));
+        else if (key === "pathEffect") {
+            // RemoteComposeJsonParser "patheffect" (ops form): an interval array or
+            // {intervals, phase} is PaintPathEffects.dash(phase, intervals), null clears it.
+            // Written as PATH_EFFECT | length << 16, then the effect's floats: the DASH type
+            // and the interval count as raw ints, the phase and intervals as floats.
+            const v = src[Object.keys(src).find((x) => x.toLowerCase() === "patheffect")];
+            if (v === null || v === undefined) {
+                ints.push(PB_PATH_EFFECT);
+                return;
+            }
+            const intervals = (Array.isArray(v) ? v : v.intervals);
+            if (!Array.isArray(intervals))
+                throw new NotImplementedComponent("pathEffect: intervals array");
+            const phase = Array.isArray(v) ? 0 : Number(v.phase ?? 0);
+            const data = [PATH_EFFECT_DASH, (0, WireBuffer_1.floatToRawIntBits)(phase), intervals.length,
+                ...intervals.map((x) => this.fbits(x))];
+            ints.push(PB_PATH_EFFECT | (data.length << 16), ...data);
+        }
         else if (key === "linearGradient")
             this.gradient(src.linearGradient, ints, false);
         else if (key === "sweepGradient")
