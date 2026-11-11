@@ -14,6 +14,40 @@ node json2rc/build/cli.js out.json out.rc
   "direction": "auto" }
 ```
 
+## Looks
+
+How a node draws itself is plain JSON (`looks.mjs`): a `layout` (one RemoteCompose component,
+for reflow mode) and a `canvas` drawing (for canvas mode), with `{{label}}`, `{{data.key}}`,
+any node field and the look's `defaults` as placeholders; canvas drawings also get the node's
+box (`{{left}}`, `{{cx}}`, `{{w}}`, `{{radius}}`...). Built in: `card` (the default: rounded,
+hairline border), `pill` and `outline`. A graph adds its own under `looks` and picks them per
+node (`"look": "status"`) or for all (`"style": {"look": "status"}`); `examples/ci.json`
+defines a status card with a coloured dot and a subtitle.
+
+```json
+"looks": {"tag": {
+  "defaults": {"color": "#FF1E293B"},
+  "layout": {"box": {"modifiers": [{"clip": 8}, {"background": "{{color}}"}, {"padding": [12, 6]}],
+                     "children": [{"text": {"value": "{{label}}", "fontSize": 13, "color": "#FFE2E8F0"}}]}},
+  "canvas": {"commands": [{"paint": {"ops": [{"color": "{{color}}"}]}},
+                          {"drawRoundRect": {"left": "{{left}}", "top": "{{top}}", "right": "{{right}}", "bottom": "{{bottom}}", "rx": 8, "ry": 8}}],
+             "label": [{"paint": {"ops": [{"color": "#FFE2E8F0"}, {"textSize": 13}]}},
+                       {"drawTextAnchored": {"text": "{{label}}", "x": "{{cx}}", "y": "{{cy}}", "panX": 0, "panY": 0}}]},
+  "fontSize": 13, "padding": [12, 6]}}
+```
+
+`size` / `fontSize` / `padding` give the node's size in canvas mode (and the reflow
+orientation estimate): a fixed `[w, h]`, or `"auto"` per axis for the label plus padding.
+
+## Edges
+
+The same curve in both modes: a cubic whose control points sit halfway along the flow, so an
+edge leaves and enters nodes (and crosses each dummy) along the flow and a long edge is one
+smooth line. It stops short of its target for a fixed arrowhead. In reflow mode each segment
+is a `pathExpression` over the anchors' live positions, so the curves follow the layout.
+
+## Structure
+
 `layered.mjs` is the shared structural layout: cycles broken by reversing back edges (drawn
 with the arrow at their real target), longest-path ranks, one dummy per rank a long edge
 crosses, barycenter crossing reduction, parallel edges spread sideways. Self-loops are
@@ -36,8 +70,6 @@ graph against each node's ports as laid out:
   declared size, Kobento's players give the viewport. Until the canvas is laid out the
   `windowWidth()` guess stands, so Kobento's players start in the right state; androidx's may
   cross-fade once after its first layout.
-
-Edges are straight segments through the dummies (no engine-side routing).
 
 ## `--mode canvas`
 

@@ -8,7 +8,7 @@
     {"id": "opt", "label": "Optimise"},
     {"id": "ir", "label": "IR"},
     {"id": "emit", "label": "Emit .rc"},
-    {"id": "diag", "label": "Diagnostics", "color": "#FF5A2F3A"}
+    {"id": "diag", "label": "Diagnostics", "color": "#FF3F1D2B", "border": "#FF7F2D3F"}
   ],
   "edges": [
     {"from": "src", "to": "lex"},
@@ -17,11 +17,11 @@
     {"from": "ast", "to": "types"},
     {"from": "types", "to": "ir"},
     {"from": "ir", "to": "opt"},
-    {"from": "opt", "to": "ir", "color": "#FFE0A458"},
+    {"from": "opt", "to": "ir", "color": "#FFFBBF24"},
     {"from": "ir", "to": "emit"},
-    {"from": "lex", "to": "diag", "color": "#FFD9707F"},
-    {"from": "parse", "to": "diag", "color": "#FFD9707F"},
-    {"from": "types", "to": "diag", "color": "#FFD9707F"},
+    {"from": "lex", "to": "diag", "color": "#FFF87171"},
+    {"from": "parse", "to": "diag", "color": "#FFF87171"},
+    {"from": "types", "to": "diag", "color": "#FFF87171"},
     {"from": "src", "to": "emit"}
   ]
 }

@@ -6,7 +6,7 @@
  * @param graph {nodes: [{id, label?, color?}], edges: [{from, to, color?}]}
  * @returns {
  *   layers:  [[id]]                           ranks top to bottom, each in left-to-right order
- *   nodes:   Map<id, {id, label, color, dummy, rank}>
+ *   nodes:   Map<id, {id, label, src, dummy, rank}>   src: the node's own JSON
  *   chains:  [{edge, path: [id], reversed, offset}]
  *                                              each edge as the node/dummy ids it passes through,
  *                                              from its upper end to its lower end; offset (px,
@@ -18,7 +18,7 @@ export function layered(graph) {
     const nodes = new Map();
     for (const n of graph.nodes ?? []) {
         if (nodes.has(n.id)) throw new Error(`duplicate node ${n.id}`);
-        nodes.set(n.id, { id: n.id, label: String(n.label ?? n.id), color: n.color, dummy: false, rank: 0 });
+        nodes.set(n.id, { id: n.id, label: String(n.label ?? n.id), src: n, dummy: false, rank: 0 });
     }
     const dropped = [];
     const edges = [];
@@ -61,7 +61,7 @@ export function layered(graph) {
         const path = [u];
         for (let r = rank.get(u) + 1; r < rank.get(v); r++) {
             const id = `__d${dummyCount++}`;
-            nodes.set(id, { id, label: "", dummy: true, rank: r });
+            nodes.set(id, { id, label: "", src: {}, dummy: true, rank: r });
             path.push(id);
         }
         path.push(v);

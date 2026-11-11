@@ -1,0 +1,52 @@
+{
+  "style": {"look": "status"},
+  "looks": {
+    "status": {
+      "defaults": {"color": "#FF1E293B", "border": "#FF334155", "text": "#FFE2E8F0", "muted": "#FF94A3B8", "dot": "#FF64748B", "sub": ""},
+      "fontSize": 15, "padding": [26, 10], "size": ["auto", 54],
+      "layout": {"box": {
+        "modifiers": [{"clip": 12}, {"background": "{{color}}"},
+                      {"border": {"width": 1, "color": "{{border}}", "cornerRadius": 12, "shape": 2}},
+                      {"padding": [14, 9]}],
+        "children": [{"row": {
+          "verticalAlignment": "center", "modifiers": [{"spacedBy": 10}],
+          "children": [
+            {"canvas": {"modifiers": [{"size": [10, 10]}], "commands": [
+              {"paint": {"ops": [{"color": "{{dot}}"}, {"style": "fill"}]}},
+              {"drawCircle": {"cx": 5, "cy": 5, "radius": 5}}]}},
+            {"column": {"children": [
+              {"text": {"value": "{{label}}", "fontSize": 15, "color": "{{text}}"}},
+              {"text": {"value": "{{sub}}", "fontSize": 12, "color": "{{muted}}"}}]}}]}}]}},
+      "canvas": {
+        "commands": [
+          {"paint": {"ops": [{"color": "{{color}}"}, {"style": "fill"}]}},
+          {"drawRoundRect": {"left": "{{left}}", "top": "{{top}}", "right": "{{right}}", "bottom": "{{bottom}}", "rx": 12, "ry": 12}},
+          {"paint": {"ops": [{"color": "{{border}}"}, {"style": "stroke"}, {"width": 1}]}},
+          {"drawRoundRect": {"left": "{{left}}", "top": "{{top}}", "right": "{{right}}", "bottom": "{{bottom}}", "rx": 12, "ry": 12}},
+          {"paint": {"ops": [{"color": "{{dot}}"}, {"style": "fill"}]}},
+          {"drawCircle": {"cx": "{{left}} + 19", "cy": "{{cy}}", "radius": 5}}],
+        "label": [
+          {"paint": {"ops": [{"color": "{{text}}"}, {"style": "fill"}, {"textSize": 15}]}},
+          {"drawTextAnchored": {"text": "{{label}}", "x": "{{left}} + 34", "y": "{{cy}} - 8", "panX": -1, "panY": 0}},
+          {"paint": {"ops": [{"color": "{{muted}}"}, {"style": "fill"}, {"textSize": 12}]}},
+          {"drawTextAnchored": {"text": "{{sub}}", "x": "{{left}} + 34", "y": "{{cy}} + 10", "panX": -1, "panY": 0}}]
+      }
+    }
+  },
+  "nodes": [
+    {"id": "push", "label": "Push", "look": "pill"},
+    {"id": "build", "label": "Build", "dot": "#FF22C55E", "sub": "2m 14s"},
+    {"id": "lint", "label": "Lint", "dot": "#FF22C55E", "sub": "41s"},
+    {"id": "unit", "label": "Unit tests", "dot": "#FF22C55E", "sub": "1,204 passed"},
+    {"id": "integ", "label": "Integration", "dot": "#FFF59E0B", "sub": "running"},
+    {"id": "pkg", "label": "Package", "sub": "waiting"},
+    {"id": "staging", "label": "Staging", "sub": "waiting"},
+    {"id": "prod", "label": "Production", "look": "outline"}
+  ],
+  "edges": [
+    {"from": "push", "to": "build"}, {"from": "push", "to": "lint"},
+    {"from": "build", "to": "unit"}, {"from": "build", "to": "integ"},
+    {"from": "unit", "to": "pkg"}, {"from": "integ", "to": "pkg"}, {"from": "lint", "to": "pkg"},
+    {"from": "pkg", "to": "staging"}, {"from": "staging", "to": "prod"}
+  ]
+}

@@ -4,41 +4,60 @@
 //        [--direction TB|LR|auto] [--width N] [--height N]
 //
 // Input:
-//   { "nodes": [{"id": "a", "label": "Start", "color": "#FF2B3A55"}, ...],
-//     "edges": [{"from": "a", "to": "b", "color": "#FF8FA3BF"}, ...],
-//     "direction": "TB" | "LR" | "auto" }                       (reflow only; default auto)
+//   { "nodes": [{"id": "a", "label": "Start", "color": "#FF1E293B", "look": "pill", "data": {...}}],
+//     "edges": [{"from": "a", "to": "b", "color": "#FF64748B"}, ...],
+//     "direction": "TB" | "LR" | "auto",                         (reflow only; default auto)
+//     "style": {"look": "card"}, "looks": {...} }               (see looks.mjs)
 //
 // Both modes share layered.mjs: cycles broken by reversing back edges, longest-path ranks,
 // one dummy per rank a long edge crosses, barycenter crossing reduction.
 //
 // reflow — the converter fixes the structure, RemoteCompose does the geometry. Ranks are
-//   Rows in a Column (TB) or Columns in a Row (LR); nodes are real Box+Text, so their size is
-//   the engine's own text measurement and the layout reflows on the device. Every node is
-//   flanked by two 0x0 anchor canvases on its ports (a dummy is one anchor), each binding its
-//   root position through json2rc's `componentValues`; a canvas laid over the graph draws the
-//   edges against those, so they follow the nodes. Anchors are canvases because androidx's
-//   player only refreshes COMPONENT_VALUEs for a canvas. `auto` holds both orientations in a
-//   StateLayout and picks LR when the window is landscape and wide enough for it.
+//   Rows in a Column (TB) or Columns in a Row (LR); each node is its look's `layout`, laid
+//   out by the engine, so the graph reflows on the device. Every node is flanked by two 0x0
+//   anchor canvases on its ports (a dummy is one anchor), each binding its root position
+//   through json2rc's `componentValues`; a canvas over the graph draws each edge segment as a
+//   pathExpression over those positions, so the curves follow the nodes. Anchors are canvases
+//   because androidx's player only refreshes COMPONENT_VALUEs for a canvas. `auto` holds both
+//   orientations in a StateLayout and shows the one that overflows the space less.
 //
 // canvas — the converter computes all geometry (text widths estimated, see measureLabel) and
-//   draws one fixed picture: curved edges through the dummies, rounded nodes. Drag pans
-//   (touchExpression, coasting), the + / - buttons zoom (animated); the graph starts fitted to
-//   the view, and labels drop out when they would be too small to read.
+//   draws one fixed picture with the looks' `canvas` commands. Drag pans (touchExpression,
+//   coasting), the + / - buttons zoom (animated); the graph starts fitted to the view, and
+//   labels drop out when they would be too small to read.
+//
+// Edges in both modes are the same curve: a cubic with its control points halfway along the
+// flow, so it leaves and enters every node (and passes every dummy) along the flow direction
+// and long edges are one smooth line. It stops short of its target for the arrowhead.
 
 import { readFileSync, writeFileSync } from "fs";
 import { layered, coordinates } from "./layered.mjs";
+import { THEME, fill, lookFor, lookSize } from "./looks.mjs";
 
-const THEME = { bg: "#FF101828", node: "#FF2B3A55", text: "#FFFFFFFF", edge: "#FF8FA3BF",
-                button: "#CC2B3A55", buttonFg: "#FFE6ECF5" };
-const FONT = 16;
+const ARROW = 9;        // arrowhead length; edges end this far before their target port
+const EDGE_WIDTH = 1.75;
+const SPACING = { TB: { node: 24, rank: 56 }, LR: { node: 16, rank: 72 } };
+
+/** Arrowhead with its tip at the origin, pointing along the flow (or against it). */
+function arrowPath(tb, back) {
+    const s = back ? -1 : 1, a = ARROW, h = 4.5;
+    return tb ? `M0 0 L${-h} ${-a * s} L${h} ${-a * s} Z` : `M0 0 L${-a * s} ${-h} L${-a * s} ${h} Z`;
+}
+
+/**
+ * The flow and cross shapes of an edge segment, t in [0, 1]: across the flow it eases
+ * (t²(3 - 2t), the control points' cross coordinate equals the end's), along it it is the
+ * cubic with both control points at the midpoint: 1.5 t (1 - t) + t³.
+ */
+const EASE = "a[0] * a[0] * (3 - 2 * a[0])";
+const ALONG = "(1.5 * a[0] * (1 - a[0]) + a[0] * a[0] * a[0])";
 
 // ───────────────────────────────── reflow ─────────────────────────────────
 
-function reflowVariant(L, dir, prefix) {
+function reflowVariant(graph, L, dir, prefix) {
     const tb = dir === "TB";
     // Variable names from an index, not the node id: ids are user strings.
     const index = new Map([...L.nodes.keys()].map((id, i) => [id, i]));
-    const nv = (id, port, axis) => `@${prefix}${index.get(id)}${port}${axis}`;
     const anchor = (id, port) => ({ canvas: {
         componentValues: { [`${prefix}${index.get(id)}${port}x`]: "rootX",
                            [`${prefix}${index.get(id)}${port}y`]: "rootY" },
@@ -47,54 +66,51 @@ function reflowVariant(L, dir, prefix) {
     const node = (id) => {
         const n = L.nodes.get(id);
         if (n.dummy) return anchor(id, "a");
-        const kids = [
-            anchor(id, "a"),
-            { box: {
-                horizontalAlignment: "center", verticalAlignment: "center",
-                modifiers: [{ background: n.color ?? THEME.node }, { padding: [14, 8] }],
-                children: [{ text: { value: n.label, fontSize: FONT, color: THEME.text } }],
-            } },
-            anchor(id, "b"),
-        ];
+        const { name, look, vars } = lookFor(graph, n);
+        if (!look.layout) throw new Error(`look "${name}" has no layout (needed by reflow mode)`);
+        const kids = [anchor(id, "a"), fill(look.layout, vars, `node ${id}, look "${name}"`), anchor(id, "b")];
         return tb ? { column: { horizontalAlignment: "center", children: kids } }
                   : { row: { verticalAlignment: "center", children: kids } };
     };
     // Port a is where edges come in (top / left), b where they leave; a dummy's one anchor is both.
-    const port = (id, p) => (L.nodes.get(id).dummy ? "a" : p);
-    // `off` shifts across the edge (x in TB, y in LR) to separate parallel edges.
-    const pt = (id, p, off = 0) => {
-        const o = off ? ` + ${off}` : "";
-        return [`${nv(id, port(id, p), "x")} - @${prefix}gx${tb ? o : ""}`,
-                `${nv(id, port(id, p), "y")} - @${prefix}gy${tb ? "" : o}`];
-    };
-    const raw = (id, p) => [nv(id, port(id, p), "x"), nv(id, port(id, p), "y")];
+    const v = (id, p, axis) => `@${prefix}${index.get(id)}${L.nodes.get(id).dummy ? "a" : p}${axis}`;
+    const [F, X] = tb ? ["y", "x"] : ["x", "y"];          // flow axis, cross axis
+    const g = (axis) => `@${prefix}g${axis}`;
 
     const commands = [];
-    for (const { edge, path, reversed, offset } of L.chains) {
-        commands.push({ paint: { ops: [{ color: edge.color ?? THEME.edge }, { style: "stroke" }, { width: 2 }] } });
-        for (let k = 0; k + 1 < path.length; k++) {
-            const [x1, y1] = pt(path[k], "b", offset), [x2, y2] = pt(path[k + 1], "a", offset);
-            commands.push({ drawLine: { x1, y1, x2, y2 } });
+    L.chains.forEach(({ edge, path, reversed, offset }, i) => {
+        const color = edge.color ?? THEME.edge;
+        commands.push({ paint: { ops: [{ color }, { style: "stroke" }, { width: EDGE_WIDTH }, { strokeCap: "round" }] } });
+        const last = path.length - 2;
+        for (let k = 0; k <= last; k++) {
+            const a = path[k], b = path[k + 1];
+            // Pull back the end that carries the arrowhead.
+            const s0 = reversed && k === 0 ? ARROW : 0, s1 = !reversed && k === last ? ARROW : 0;
+            const off = offset ? ` + ${offset}` : "";
+            const cross = `${v(a, "b", X)} - ${g(X)}${off} + (${v(b, "a", X)} - ${v(a, "b", X)}) * ${EASE}`;
+            const along = `${v(a, "b", F)} - ${g(F)}${s0 ? ` + ${s0}` : ""} + (${v(b, "a", F)} - ${v(a, "b", F)}${s0 + s1 ? ` - ${s0 + s1}` : ""}) * ${ALONG}`;
+            const id = `${prefix}e${i}s${k}`;
+            commands.push(
+                { pathExpression: { id, expressionX: tb ? cross : along, expressionY: tb ? along : cross,
+                                    start: 0, end: 1, count: 24 } },
+                { drawPath: { path: id } });
         }
-        // The arrowhead sits on the edge's real target: the lower end, or the upper one for a
-        // reversed (cycle) edge, pointing along the segment that arrives there.
-        const [tip, tipPort, from, fromPort] = reversed
-            ? [path[0], "b", path[1], "a"] : [path[path.length - 1], "a", path[path.length - 2], "b"];
-        const [tx, ty] = pt(tip, tipPort, offset);
-        const [rtx, rty] = raw(tip, tipPort), [rfx, rfy] = raw(from, fromPort);
+        const [tip, port] = reversed ? [path[0], "b"] : [path[path.length - 1], "a"];
+        const tx = `${v(tip, port, "x")} - ${g("x")}${offset && tb ? ` + ${offset}` : ""}`;
+        const ty = `${v(tip, port, "y")} - ${g("y")}${offset && !tb ? ` + ${offset}` : ""}`;
         commands.push({ save: { commands: [
             { translate: { dx: tx, dy: ty } },
-            { rotate: { angle: `atan2(${rty} - ${rfy}, ${rtx} - ${rfx}) * 57.29578` } },
             { paint: { ops: [{ style: "fill" }] } },
-            { drawPath: { path: "M0 0 L-10 -5 L-10 5 Z" } },
+            { drawPath: { path: arrowPath(tb, reversed) } },
         ] } });
-    }
+    });
 
+    const sp = SPACING[dir];
     const rank = (l) => tb
-        ? { row: { verticalAlignment: "center", modifiers: [{ spacedBy: 28 }], children: l.map(node) } }
-        : { column: { horizontalAlignment: "center", modifiers: [{ spacedBy: 16 }], children: l.map(node) } };
+        ? { row: { verticalAlignment: "center", modifiers: [{ spacedBy: sp.node }], children: l.map(node) } }
+        : { column: { horizontalAlignment: "center", modifiers: [{ spacedBy: sp.node }], children: l.map(node) } };
     const ranks = { horizontalAlignment: "center", verticalAlignment: "center",
-                    modifiers: ["fillMaxSize", { padding: [16, 16] }, { spacedBy: tb ? 48 : 64 }],
+                    modifiers: ["fillMaxSize", { padding: [16, 16] }, { spacedBy: sp.rank }],
                     children: L.layers.map(rank) };
     return { box: {
         modifiers: ["fillMaxSize"],
@@ -106,7 +122,7 @@ function reflowVariant(L, dir, prefix) {
     } };
 }
 
-export function reflowDoc(graph, { width = 400, height = 500, direction } = {}) {
+export function reflowDoc(graph, { width = 400, height = 500, direction, measure = measureLabel } = {}) {
     const L = layered(graph);
     const dir = String(direction ?? graph.direction ?? "auto").toUpperCase();
     const doc = {
@@ -115,17 +131,16 @@ export function reflowDoc(graph, { width = 400, height = 500, direction } = {}) 
     };
     let children;
     if (dir === "TB" || dir === "LR") {
-        children = [reflowVariant(L, dir, "v")];
+        children = [reflowVariant(graph, L, dir, "v")];
     } else {
         // 0: top to bottom, 1: left to right: whichever overflows the space less, from both
-        // layouts' sizes estimated from the labels (the engine's own measure is not known
-        // when the state is picked). The space is measured by a canvas filling the graph's
-        // box, not windowWidth(): androidx's player keeps that at the document's declared
-        // size, while Kobento's players give the viewport.
-        // Until the canvas is laid out its values hold the 1.0 placeholder; the first state
-        // is picked from windowWidth() meanwhile (exact in Kobento's players, the declared
-        // size on Android), so the usual case starts in the right state with no cross-fade.
-        const { tb: [tbW, tbH], lr: [lrW, lrH] } = estimateSizes(L);
+        // layouts' sizes estimated from the looks (the engine's own measure is not known when
+        // the state is picked). The space is measured by a canvas filling the graph's box, not
+        // windowWidth(): androidx's player keeps that at the document's declared size, while
+        // Kobento's players give the viewport. Until that canvas is laid out its values hold
+        // the 1.0 placeholder and the windowWidth() guess stands, so the usual case starts in
+        // the right state with no cross-fade.
+        const { tb: [tbW, tbH], lr: [lrW, lrH] } = estimateSizes(graph, L, measure);
         const pick = (w, h) => `step(max(${tbW} / ${w}, ${tbH} / ${h}), max(${lrW} / ${w}, ${lrH} / ${h}))`;
         doc.resources = { variables: { orientWindow: pick("max(windowWidth(), 1)", "max(windowHeight(), 1)") } };
         children = [
@@ -135,7 +150,7 @@ export function reflowDoc(graph, { width = 400, height = 500, direction } = {}) 
                 orient: { expression: "ifElse(@orientWindow, @orientMeasured, @availW - 1.5)" },
             } } },
             { stateLayout: { indexId: "@orient", modifiers: ["fillMaxSize"],
-                             children: [reflowVariant(L, "TB", "t"), reflowVariant(L, "LR", "l")] } },
+                             children: [reflowVariant(graph, L, "TB", "t"), reflowVariant(graph, L, "LR", "l")] } },
         ];
     }
     doc.root.push({ box: { modifiers: ["fillMaxSize", { background: THEME.bg }], children } });
@@ -143,27 +158,30 @@ export function reflowDoc(graph, { width = 400, height = 500, direction } = {}) 
 }
 
 /** Rough [width, height] of the TB and LR reflow layouts, mirroring reflowVariant's spacing. */
-function estimateSizes(L) {
-    const w = (id) => (L.nodes.get(id).dummy ? 0 : measureLabel(L.nodes.get(id).label) + 28);
-    const h = (id) => (L.nodes.get(id).dummy ? 0 : FONT * 1.2 + 16);
-    const sum = (a) => a.reduce((s, v) => s + v, 0);
-    const R = L.layers.length;
-    const tbW = 32 + Math.max(...L.layers.map((l) => sum(l.map(w)) + 28 * (l.length - 1)));
-    const tbH = 32 + 48 * (R - 1) + sum(L.layers.map((l) => Math.max(0, ...l.map(h))));
-    const lrW = 32 + 64 * (R - 1) + sum(L.layers.map((l) => Math.max(0, ...l.map(w))));
-    const lrH = 32 + Math.max(...L.layers.map((l) => sum(l.map(h)) + 16 * (l.length - 1)));
-    const r = (v) => Math.ceil(v * 1.05);
+function estimateSizes(graph, L, measure) {
+    const dims = new Map();
+    for (const n of L.nodes.values()) {
+        dims.set(n.id, n.dummy ? { w: 0, h: 0 } : lookSize(lookFor(graph, n).look, n.label, measure));
+    }
+    const w = (id) => dims.get(id).w, h = (id) => dims.get(id).h;
+    const sum = (a) => a.reduce((s, x) => s + x, 0);
+    const R = L.layers.length, T = SPACING.TB, LR = SPACING.LR;
+    const tbW = 32 + Math.max(...L.layers.map((l) => sum(l.map(w)) + T.node * (l.length - 1)));
+    const tbH = 32 + T.rank * (R - 1) + sum(L.layers.map((l) => Math.max(0, ...l.map(h))));
+    const lrW = 32 + LR.rank * (R - 1) + sum(L.layers.map((l) => Math.max(0, ...l.map(w))));
+    const lrH = 32 + Math.max(...L.layers.map((l) => sum(l.map(h)) + LR.node * (l.length - 1)));
+    const r = (x) => Math.ceil(x * 1.05);
     return { tb: [r(tbW), r(tbH)], lr: [r(lrW), r(lrH)] };
 }
 
 // ───────────────────────────────── canvas ─────────────────────────────────
 
 /**
- * A label's width at FONT, from per-character advances close to the usual sans faces
- * (Roboto, Helvetica). The player draws with its own font, so nodes keep generous padding
- * and labels are drawn centred: a small error shows as uneven margins, not overflow.
+ * A label's width at `size`, from per-character advances close to the usual sans faces
+ * (Roboto, Helvetica). The player draws with its own font, so looks keep generous padding
+ * and draw labels centred: a small error shows as uneven margins, not overflow.
  */
-export function measureLabel(s, size = FONT) {
+export function measureLabel(s, size = 15) {
     let em = 0;
     for (const c of s) {
         if ("il.,:;'|!".includes(c)) em += 0.26;
@@ -176,28 +194,32 @@ export function measureLabel(s, size = FONT) {
     return em * size;
 }
 
-const r1 = (v) => Math.round(v * 10) / 10;
+const r1 = (x) => Math.round(x * 10) / 10;
 
 export function canvasDoc(graph, { width = 400, height = 500, measure = measureLabel } = {}) {
     const L = layered(graph);
-    const padX = 16, padY = 10;
-    const size = (id) => ({ w: Math.ceil(measure(L.nodes.get(id).label) + 2 * padX), h: Math.ceil(FONT * 1.2 + 2 * padY) });
-    const C = coordinates(L, size);
-    const cy = (id) => C.rankTop[L.nodes.get(id).rank] + C.rankH[L.nodes.get(id).rank] / 2;
-    const top = (id) => (L.nodes.get(id).dummy ? C.rankTop[L.nodes.get(id).rank] : cy(id) - C.dim.get(id).h / 2);
-    const bottom = (id) => (L.nodes.get(id).dummy ? C.rankTop[L.nodes.get(id).rank] + C.rankH[L.nodes.get(id).rank]
+    const looks = new Map();
+    for (const n of L.nodes.values()) if (!n.dummy) looks.set(n.id, lookFor(graph, n));
+    const C = coordinates(L, (id) => lookSize(looks.get(id).look, L.nodes.get(id).label, measure),
+                          { nodeSep: SPACING.TB.node, rankSep: SPACING.TB.rank });
+    const rankOf = (id) => L.nodes.get(id).rank;
+    const cy = (id) => C.rankTop[rankOf(id)] + C.rankH[rankOf(id)] / 2;
+    const top = (id) => (L.nodes.get(id).dummy ? C.rankTop[rankOf(id)] : cy(id) - C.dim.get(id).h / 2);
+    const bottom = (id) => (L.nodes.get(id).dummy ? C.rankTop[rankOf(id)] + C.rankH[rankOf(id)]
                                                   : cy(id) + C.dim.get(id).h / 2);
 
     const edgeCmds = [], arrowCmds = [];
     for (const { edge, path, reversed, offset } of L.chains) {
-        // Through each dummy as a vertical run across its rank band, cubic between ranks with
-        // vertical tangents at both ends.
+        // Out of the bottom of each node, across each dummy's rank band as a straight run, into
+        // the top of the next: the same curve as reflow mode's, with fixed coordinates.
         const pts = [];
         path.forEach((id, k) => {
             const x = C.x.get(id) + offset;
             if (k > 0) pts.push([x, top(id)]);
             if (k + 1 < path.length) pts.push([x, bottom(id)]);
         });
+        const tip = reversed ? [...pts[0]] : [...pts[pts.length - 1]];
+        if (reversed) pts[0][1] += ARROW; else pts[pts.length - 1][1] -= ARROW;
         let d = `M${r1(pts[0][0])} ${r1(pts[0][1])}`;
         for (let i = 1; i < pts.length; i++) {
             const [px, py] = pts[i - 1], [qx, qy] = pts[i];
@@ -206,41 +228,43 @@ export function canvasDoc(graph, { width = 400, height = 500, measure = measureL
             d += ` C${r1(px)} ${my} ${r1(qx)} ${my} ${r1(qx)} ${r1(qy)}`;
         }
         const color = edge.color ?? THEME.edge;
-        edgeCmds.push({ paint: { ops: [{ color }, { style: "stroke" }, { width: 2 }] } }, { drawPath: { path: d } });
-        // Arrowhead at the real target: tangents are vertical, so it points down, or up at the
-        // upper end of a reversed (cycle) edge.
-        const [ax, ay] = reversed ? pts[0] : pts[pts.length - 1];
-        const s = reversed ? -1 : 1;
+        edgeCmds.push({ paint: { ops: [{ color }, { style: "stroke" }, { width: EDGE_WIDTH }, { strokeCap: "round" }] } },
+                      { drawPath: { path: d } });
         arrowCmds.push({ paint: { ops: [{ color }, { style: "fill" }] } },
-            { drawPath: { path: `M${r1(ax)} ${r1(ay)} L${r1(ax - 5)} ${r1(ay - 10 * s)} L${r1(ax + 5)} ${r1(ay - 10 * s)} Z` } });
+                       { save: { commands: [{ translate: { dx: r1(tip[0]), dy: r1(tip[1]) } },
+                                            { drawPath: { path: arrowPath(true, reversed) } }] } });
     }
 
     const nodeCmds = [], labelCmds = [];
-    for (const n of L.nodes.values()) {
-        if (n.dummy) continue;
-        const { w, h } = C.dim.get(n.id), x = C.x.get(n.id), y = cy(n.id);
-        nodeCmds.push({ paint: { ops: [{ color: n.color ?? THEME.node }, { style: "fill" }] } },
-            { drawRoundRect: { left: r1(x - w / 2), top: r1(y - h / 2), right: r1(x + w / 2), bottom: r1(y + h / 2), rx: 6, ry: 6 } });
-        labelCmds.push({ drawTextAnchored: { text: n.label, x: r1(x), y: r1(y), panX: 0, panY: 0 } });
+    for (const [id, { name, look, vars }] of looks) {
+        if (!look.canvas) throw new Error(`look "${name}" has no canvas drawing (needed by canvas mode)`);
+        const { w, h } = C.dim.get(id), x = C.x.get(id), y = cy(id);
+        const geo = { left: r1(x - w / 2), top: r1(y - h / 2), right: r1(x + w / 2), bottom: r1(y + h / 2),
+                      cx: r1(x), cy: r1(y), w, h, radius: r1(h / 2) };
+        const all = { ...vars, ...geo };
+        nodeCmds.push(...fill(look.canvas.commands ?? [], all, `node ${id}, look "${name}"`));
+        labelCmds.push(...fill(look.canvas.label ?? [], all, `node ${id}, look "${name}"`));
     }
 
     const GW = Math.max(1, Math.ceil(C.width)), GH = Math.max(1, Math.ceil(C.height));
     // Fitted scale (never past 1.5x), times the user's zoom steps, animated.
     const scale = `min(min((width - 32) / ${GW}, (height - 32) / ${GH}), 1.5) * @zoom`;
     const zoomButton = (step, label, glyph) => ({ canvas: {
-        modifiers: [{ size: [44, 44] },
+        modifiers: [{ size: [40, 40] },
                     { semantics: { contentDescription: label, clickable: true } },
                     { onClick: { type: "valueFloatExpressionChange", target: "@zoomSteps",
                                  value: `clamp(-8, 8, @zoomSteps + ${step})` } }],
         commands: [
             { paint: { ops: [{ color: THEME.button }, { style: "fill" }] } },
-            { drawRoundRect: { left: 0, top: 0, right: 44, bottom: 44, rx: 10, ry: 10 } },
-            { paint: { ops: [{ color: THEME.buttonFg }, { style: "stroke" }, { width: 2.5 }, { strokeCap: "round" }] } },
+            { drawRoundRect: { left: 0.5, top: 0.5, right: 39.5, bottom: 39.5, rx: 12, ry: 12 } },
+            { paint: { ops: [{ color: THEME.outline }, { style: "stroke" }, { width: 1 }] } },
+            { drawRoundRect: { left: 0.5, top: 0.5, right: 39.5, bottom: 39.5, rx: 12, ry: 12 } },
+            { paint: { ops: [{ color: THEME.buttonFg }, { style: "stroke" }, { width: 2 }, { strokeCap: "round" }] } },
             ...glyph,
         ],
     } });
-    const minus = { drawLine: { x1: 14, y1: 22, x2: 30, y2: 22 } };
-    const plus = { drawLine: { x1: 22, y1: 14, x2: 22, y2: 30 } };
+    const minus = { drawLine: { x1: 14, y1: 20, x2: 26, y2: 20 } };
+    const plus = { drawLine: { x1: 20, y1: 14, x2: 20, y2: 26 } };
 
     return {
         header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
@@ -261,11 +285,8 @@ export function canvasDoc(graph, { width = 400, height = 500, measure = measureL
                             { scale: { sx: scale, sy: scale } },
                             { translate: { dx: -GW / 2, dy: -GH / 2 } },
                             ...edgeCmds, ...arrowCmds, ...nodeCmds,
-                            // Labels only while they are legible (about 6px and up).
-                            { conditionalOperations: { condition: "ge", v1: `${scale} * ${FONT}`, v2: 6, commands: [
-                                { paint: { ops: [{ color: THEME.text }, { style: "fill" }, { textSize: FONT }] } },
-                                ...labelCmds,
-                            ] } },
+                            // Labels only while they are legible (about 6px and up at 15).
+                            { conditionalOperations: { condition: "ge", v1: `${scale} * 15`, v2: 6, commands: labelCmds } },
                         ] } },
                     ],
                 } },
