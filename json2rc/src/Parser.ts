@@ -1260,6 +1260,7 @@ export class Parser {
             if (ctype === "column") this.writer.startColumn(h, v, mods);
             else if (ctype === "row") this.writer.startRow(h, v, mods);
             else this.writer.startBox(h, v, mods);
+            this.bindComponentValues(component);
             for (const k of kids) this.parseComponent(k);
             this.writer.endContainer();
             return;
@@ -1373,11 +1374,39 @@ export class Parser {
         if (this.parseLoomComponent(ctype, component, kids)) return;
         if (ctype === "canvas") {
             this.writer.startCanvas(mods, this.apiLevel);
+            this.bindComponentValues(component);
             for (const cmd of component.commands ?? []) this.parseCommand(cmd);
             this.writer.endCanvas(this.apiLevel);
             return;
         }
         throw new NotImplementedComponent(`component type '${ctype}'`);
+    }
+
+    /**
+     * EXTENSION: `"componentValues": {"<name>": "rootX" | "rootY" | "x" | "y" | "width" | "height"}`
+     * on a column/row/box/canvas binds each name to a COMPONENT_VALUE of that component, refreshed at
+     * every layout; an entry {"expression": "..."} is instead a float expression over the entries
+     * before it. The names are ordinary float variables afterwards, so a canvas later in the
+     * document can draw against where this component ended up (graph edges between nodes).
+     */
+    private bindComponentValues(component: J): void {
+        const cv = component.componentValues;
+        if (cv === undefined) return;
+        if (!cv || typeof cv !== "object" || Array.isArray(cv)) {
+            throw new NotImplementedComponent("componentValues: an object of name -> kind");
+        }
+        const KINDS: Record<string, number> = { width: 0, height: 1, x: 2, y: 3, rootx: 4, rooty: 5 };
+        for (const [name, kind] of Object.entries(cv as J)) {
+            if (kind && typeof kind === "object" && "expression" in (kind as J)) {
+                // {"expression": "..."}: a float expression over the values bound before it,
+                // written here so it follows them (a resources variable could not name them).
+                this.variables.set(name, this.expr.parseExpression(String((kind as J).expression)));
+                continue;
+            }
+            const vt = KINDS[String(kind).toLowerCase()];
+            if (vt === undefined) throw new NotImplementedComponent(`componentValues: kind '${kind}'`);
+            this.variables.set(name, this.writer.addComponentValue(vt));
+        }
     }
 
     /** Templates defined so far: name (lower case) -> pattern id and parameter names. */
