@@ -36,9 +36,7 @@ const centredLabel = (size, weight) => [
 ];
 
 /** A rounded box with a hairline border, the label centred; the shared shape of the built-ins. */
-// No fontWeight on the built-ins: Kobento's C++ engine drops every word after the first of a
-// weighted label (seen in rc2image; TS is fine). A custom look can still set it.
-function boxLook(radius, { fill, border, text, borderWidth = 1, weight = 400 }) {
+function boxLook(radius, { fill, border, text, borderWidth = 1, weight = 500 }) {
     const r = radius === "pill" ? 100 : radius;
     const cr = radius === "pill" ? "{{radius}}" : radius;
     return {
