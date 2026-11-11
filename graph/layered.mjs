@@ -2,6 +2,8 @@
 // both emitters: cycle breaking, ranking, long-edge dummies, crossing reduction, and (for the
 // static canvas only) coordinate assignment.
 
+import { fieldShare } from "./records.mjs";
+
 /**
  * @param graph {nodes: [{id, label?, color?}], edges: [{from, to, color?}]}
  * @param dummyPrefix  ids of the dummies this call makes (unique across calls laying out
@@ -10,11 +12,12 @@
  *   layers:  [[id]]                           ranks top to bottom, each in left-to-right order
  *   nodes:   Map<id, {id, label, src, dummy, edgeLabel?, rank}>
  *                                              src: the node's own JSON (an edge label: the edge's)
- *   chains:  [{edge, path: [id], reversed, offset}]
+ *   chains:  [{edge, path: [id], reversed, offset, endPorts}]
  *                                              each edge as the node/dummy ids it passes through,
  *                                              from its upper end to its lower end; offset (px,
- *                                              across the edge) separates parallel edges
- *   dropped: [edge]                            self-loops, not drawn yet
+ *                                              across the edge) separates parallel edges; endPorts
+ *                                              the record fields its two ends attach to, if any
+ *   dropped: [edge]                            self-loops (compound.mjs takes them out first)
  * }
  */
 export function layered(graph, { dummyPrefix = "__d" } = {}) {
@@ -76,7 +79,13 @@ export function layered(graph, { dummyPrefix = "__d" } = {}) {
             path.push(id);
         }
         path.push(v);
-        chains.push({ edge: edges[i], path, reversed: reversed.has(i) });
+        // The record fields (records.mjs) its ends attach to, where an end is the node itself
+        // here (not a group holding it): ordering and positions take them into account.
+        const e = edges[i], rev = reversed.has(i);
+        const real = rev ? [e.realTo ?? e.to, e.realFrom ?? e.from] : [e.realFrom ?? e.from, e.realTo ?? e.to];
+        const ports = rev ? [e.realToPort, e.realFromPort] : [e.realFromPort, e.realToPort];
+        const endPorts = [path[0], path[path.length - 1]].map((id, k) => (id === real[k] ? ports[k] : undefined));
+        chains.push({ edge: e, path, reversed: rev, endPorts });
     });
 
     // Edges joining the same two nodes (either way: a 2-cycle becomes two edges in the same
@@ -91,26 +100,45 @@ export function layered(graph, { dummyPrefix = "__d" } = {}) {
     const layers = [];
     for (const n of nodes.values()) (layers[n.rank] ??= []).push(n.id);
     for (let r = 0; r < layers.length; r++) layers[r] ??= [];
-    orderLayers(layers, chains);
+    orderLayers(layers, chains, nodes);
     return { layers, nodes, chains, dropped };
 }
 
-/** Crossing reduction: barycenter sweeps down and up, keeping the best order seen. */
-function orderLayers(layers, chains) {
+/**
+ * Each link of every chain from both its ends: Map<id, [{n, own, other}]> down (to the next
+ * rank) and up, where own / other is what `at(chain, end)` gives at this end and the other
+ * (end: 0 or 1 at the chain's ends, null between).
+ */
+function links(chains, at) {
     const up = new Map(), down = new Map();
-    for (const { path } of chains) {
-        for (let k = 0; k + 1 < path.length; k++) {
-            (down.get(path[k]) ?? down.set(path[k], []).get(path[k])).push(path[k + 1]);
-            (up.get(path[k + 1]) ?? up.set(path[k + 1], []).get(path[k + 1])).push(path[k]);
+    for (const chain of chains) {
+        const { path } = chain, n = path.length;
+        const v = (k) => at(chain, k === 0 ? 0 : k === n - 1 ? 1 : null);
+        for (let k = 0; k + 1 < n; k++) {
+            (down.get(path[k]) ?? down.set(path[k], []).get(path[k])).push({ n: path[k + 1], own: v(k), other: v(k + 1) });
+            (up.get(path[k + 1]) ?? up.set(path[k + 1], []).get(path[k + 1])).push({ n: path[k], own: v(k + 1), other: v(k) });
         }
     }
+    return { up, down };
+}
+
+/**
+ * Crossing reduction: barycenter sweeps down and up, keeping the best order seen. An edge into
+ * a record's field counts at that field's place across the record.
+ */
+function orderLayers(layers, chains, nodes) {
+    const share = (chain, end) => {
+        const f = end === null ? undefined : chain.endPorts?.[end];
+        return f === undefined ? 0 : fieldShare(nodes.get(chain.path[end === 0 ? 0 : chain.path.length - 1]), f);
+    };
+    const { up, down } = links(chains, share);
     const pos = new Map();
     const reindex = () => layers.forEach((l) => l.forEach((id, i) => pos.set(id, i)));
     const crossings = () => {
         let c = 0;
         for (let r = 0; r + 1 < layers.length; r++) {
             const segs = [];
-            for (const id of layers[r]) for (const t of down.get(id) ?? []) segs.push([pos.get(id), pos.get(t)]);
+            for (const id of layers[r]) for (const t of down.get(id) ?? []) segs.push([pos.get(id) + t.own, pos.get(t.n) + t.other]);
             for (let i = 0; i < segs.length; i++) {
                 for (let j = i + 1; j < segs.length; j++) {
                     const [a, b] = segs[i], [c2, d] = segs[j];
@@ -128,7 +156,7 @@ function orderLayers(layers, chains) {
         for (const r of ranks) {
             const bc = (id) => {
                 const ns = (goingDown ? up : down).get(id) ?? [];
-                return ns.length ? ns.reduce((s, n) => s + pos.get(n), 0) / ns.length : pos.get(id);
+                return ns.length ? ns.reduce((s, l) => s + pos.get(l.n) + l.other - l.own, 0) / ns.length : pos.get(id);
             };
             const keyed = layers[r].map((id) => [bc(id), pos.get(id), id]);
             keyed.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -150,20 +178,21 @@ function orderLayers(layers, chains) {
  * @param size (id) => {w, h} for real nodes and edge labels (other dummies are dummyW wide);
  *             w is the extent across the ranks, h along them
  * @param pad  optional (id) => [before, after]: room kept clear on either side across the ranks
+ * @param portOffset  optional (id, field) => a record field's centre from the record's, across
+ *                    the ranks
  */
-export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6, pad = null } = {}) {
+export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6, pad = null, portOffset = null } = {}) {
     // pad(id) -> [before, after]: room to keep clear beside an item, across the ranks.
     const padOf = (id) => (pad && pad(id)) || [0, 0];
     const { layers, nodes, chains } = L;
     const dim = new Map();
     for (const n of nodes.values()) dim.set(n.id, n.dummy && !n.edgeLabel ? { w: dummyW, h: 0 } : size(n.id));
-    const up = new Map(), down = new Map();
-    for (const { path } of chains) {
-        for (let k = 0; k + 1 < path.length; k++) {
-            (down.get(path[k]) ?? down.set(path[k], []).get(path[k])).push(path[k + 1]);
-            (up.get(path[k + 1]) ?? up.set(path[k + 1], []).get(path[k + 1])).push(path[k]);
-        }
-    }
+    // An edge into a record's field pulls at the field, not the record's middle.
+    const offset = (chain, end) => {
+        const f = end === null || !portOffset ? undefined : chain.endPorts?.[end];
+        return f === undefined ? 0 : portOffset(chain.path[end === 0 ? 0 : chain.path.length - 1], f);
+    };
+    const { up, down } = links(chains, offset);
     const x = new Map();
     const gap = (a, b) => (dim.get(a).w + dim.get(b).w) / 2 + nodeSep + padOf(a)[1] + padOf(b)[0];
     // The closest legal placement of a rank to the positions wanted, each weighted.
@@ -198,7 +227,7 @@ export function coordinates(L, size, { nodeSep = 28, rankSep = 64, dummyW = 6, p
             for (const id of layers[r]) {
                 const ns = [...((goingDown ? up : down).get(id) ?? []), ...(it > 8 ? ((goingDown ? down : up).get(id) ?? []) : [])];
                 let sw = 0, swx = 0;
-                for (const n of ns) { const w = omega(id, n); sw += w; swx += w * x.get(n); }
+                for (const l of ns) { const w = omega(id, l.n); sw += w; swx += w * (x.get(l.n) + l.other - l.own); }
                 want.push(sw ? swx / sw : x.get(id));
                 weight.push(Math.max(1, sw));
             }

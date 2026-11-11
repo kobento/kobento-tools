@@ -19,7 +19,7 @@
 //
 // Each end stops its marker's length short of its port.
 
-import { chainEnds } from "./compound.mjs";
+import { chainEnds, chainPorts } from "./compound.mjs";
 
 const MARGIN = 12;   // how far past a group's border a side exit runs before turning
 
@@ -46,18 +46,19 @@ function onBoundary(T, id, top, last) {
 }
 
 /**
- * How a chain's two ends attach: {id, port} -- the far port (b) at the start and the near one
- * (a) at the end, or a side (l / r) for an end deep inside the group the edge leaves (`via`).
+ * How a chain's two ends attach: {id, port, field?} -- the far port (b) at the start and the near
+ * one (a) at the end (at a record's field, if the edge names one), or a side (l / r) for an end
+ * deep inside the group the edge leaves (`via`).
  */
 export function attachEnds(T, chain, crossOf) {
-    const { path, real } = chain, n = path.length;
-    const end = (k, other, flowPort, last) => {
+    const { path, real } = chain, n = path.length, fields = chainPorts(chain);
+    const end = (k, other, flowPort, last, field) => {
         if (real[k] !== path[k] && !onBoundary(T, real[k], path[k], last)) {
             return { id: real[k], port: crossOf(path[other]) >= crossOf(path[k]) ? "r" : "l", via: path[k] };
         }
-        return { id: real[k], port: flowPort };
+        return { id: real[k], port: flowPort, ...(field !== undefined ? { field } : {}) };
     };
-    return [end(0, 1, "b", true), end(n - 1, n - 2, "a", false)];
+    return [end(0, 1, "b", true, fields[0]), end(n - 1, n - 2, "a", false, fields[1])];
 }
 
 const SLOT = 16;      // the most room between two edges sharing a port
@@ -86,11 +87,11 @@ export function spacing(T, chains, G) {
         const n = c.path.length;
         attachEnds(T, c, G.crossOf).forEach((e, i) => {
             const toward = c.path[i === 0 ? 1 : n - 2], far = c.path[i === 0 ? n - 1 : 0];
-            const key = `${e.id}|${e.port}`;
+            const key = JSON.stringify([e.id, e.port, e.field ?? null]);   // ids are any strings
             (byPort.get(key) ?? byPort.set(key, []).get(key)).push({
                 c, i, order: [G.crossOf(toward), G.crossOf(far), c.key] });
             if (e.via) {
-                const xk = `${e.via}|${e.port}`;
+                const xk = JSON.stringify([e.via, e.port]);
                 (byExit.get(xk) ?? byExit.set(xk, []).get(xk)).push({ c, i, at: flowPos(e.id) });
             }
         });
@@ -101,10 +102,10 @@ export function spacing(T, chains, G) {
     };
     for (const [key, list] of byPort) {
         if (list.length < 2) continue;
-        const [id, port] = key.split("|");
+        const [id, port, field] = JSON.parse(key);
         const g = G.geo.get(id);
         const flowPort = port === "a" || port === "b";
-        const extent = flowPort ? (G.tb ? g.w : g.h) : (G.tb ? g.h : g.w);
+        const extent = field ? G.fieldExtent(id, field) : flowPort ? (G.tb ? g.w : g.h) : (G.tb ? g.h : g.w);
         const step = Math.max(4, Math.min(SLOT, (extent - 12) / (list.length - 1)));
         list.sort((a, b) => cmp(a.order, b.order));
         list.forEach((e, k) => { plan.get(e.c.key).attach[e.i] = (k - (list.length - 1) / 2) * step; });
@@ -117,7 +118,7 @@ export function spacing(T, chains, G) {
         // Exits (i = 0): further along the flow nearer the group; entries (i = 1): the reverse.
         list.sort((a, b) => (a.i - b.i) || (a.i === 0 ? b.at - a.at : a.at - b.at));
         list.forEach((e, k) => { plan.get(e.c.key).margin[e.i] = MARGIN + EXIT_STEP * k; });
-        const [via, side] = key.split("|");
+        const [via, side] = JSON.parse(key);
         const r = plan.exitRoom.get(via) ?? plan.exitRoom.set(via, { l: 0, r: 0 }).get(via);
         r[side] = MARGIN + EXIT_STEP * (list.length - 1) + EXIT_GAP;
     }
@@ -126,7 +127,8 @@ export function spacing(T, chains, G) {
 
 /**
  * @param chain  from allChains
- * @param P      port provider: P.port(id, "a" | "b" | "l" | "r") -> {f, c};
+ * @param P      port provider: P.port(id, "a" | "b" | "l" | "r", field?) -> {f, c} (field: a
+ *               record's, records.mjs);
  *               P.band(dummyId) -> {f0, f1, c}; P.add(v, k) -> v + k; P.crossOf(id) -> a number
  *               (from any layout with the right order) to pick a side with; P.fs -> +1 when the
  *               flow runs along increasing screen coordinates (TB, LR), -1 otherwise; optional
@@ -145,7 +147,7 @@ export function route(T, chain, P, lens = [0, 0], room = { attach: [0, 0], margi
     const [a0, a1] = attachEnds(T, chain, P.crossOf);
     // A port, moved to this edge's own attachment point: across a flow port, along a side one.
     const at = (e, k) => {
-        const p = P.port(e.id, e.port), o = room.attach[k];
+        const p = P.port(e.id, e.port, e.field), o = room.attach[k];
         return e.port === "a" || e.port === "b" ? { f: p.f, c: P.add(p.c, o) } : { f: P.add(p.f, o), c: p.c };
     };
 

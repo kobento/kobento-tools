@@ -1,0 +1,18 @@
+{
+  "nodes": [
+    {"id": "idle", "label": "Idle", "look": "pill"},
+    {"id": "connecting", "label": "Connecting"},
+    {"id": "online", "label": "Online"},
+    {"id": "error", "label": "Error", "color": "#FF3F1D2B", "border": "#FF7F2D3F", "action": "details"}
+  ],
+  "edges": [
+    {"from": "idle", "to": "connecting", "label": "connect"},
+    {"from": "connecting", "to": "connecting", "label": "retry", "style": "dashed"},
+    {"from": "connecting", "to": "online"},
+    {"from": "connecting", "to": "error", "label": "give up", "color": "#FFF87171", "id": "fail", "action": "why"},
+    {"from": "online", "to": "online", "label": "heartbeat", "color": "#FF4ADE80"},
+    {"from": "online", "to": "idle", "label": "disconnect"},
+    {"from": "error", "to": "idle", "style": "dotted"}
+  ],
+  "style": {"action": "open"}
+}

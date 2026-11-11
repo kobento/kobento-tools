@@ -1,14 +1,18 @@
 // graph2rc — a JSON graph description -> RemoteCompose JSON (for json2rc).
 //
 //   node graph/graph2rc.mjs graph.json out.json [--mode reflow|canvas]
-//        [--direction TB|LR|auto] [--width N] [--height N]
+//        [--direction TB|BT|LR|RL|auto] [--overflow pan|clip] [--width N] [--height N]
 //
-// Input:
-//   { "nodes": [{"id": "a", "label": "Start", "color": "#FF1E293B", "look": "pill", "group": "g"}],
-//     "edges": [{"from": "a", "to": "b", "color": "#FF64748B"}, ...],     (an end may be a group)
+// Input (README.md has it all):
+//   { "nodes": [{"id": "a", "label": "Start", "color": "#FF1E293B", "look": "pill", "group": "g",
+//                "action": "open"},                                         (taps)
+//               {"id": "t", "fields": ["id", "name"]}],                    (a record, records.mjs)
+//     "edges": [{"from": "a", "to": "t:id", "label": "yes", "style": "dashed"},  (an end may be a
+//               {"from": "a", "to": "a"}, ...],              group, or a record's field; a loop)
 //     "groups": [{"id": "g", "label": "Front end", "nodes": [...], "groups": [...]}],
-//     "direction": "TB" | "LR" | "auto",                         (reflow only; default auto)
-//     "style": {"look": "card", "groupLook": "group"}, "looks": {...} }    (see looks.mjs)
+//     "direction": "TB" | "BT" | "LR" | "RL" | "auto",            (auto: reflow only, the default)
+//     "overflow": "pan" | "clip",                                 (reflow only; default pan)
+//     "style": {"look": "card", "groupLook": "group", "action": ...}, "looks": {...} }  (looks.mjs)
 //
 // Both modes share layered.mjs (cycles broken by reversing back edges, longest-path ranks, one
 // dummy per rank a long edge crosses, barycenter crossing reduction) and compound.mjs: each
@@ -23,7 +27,8 @@
 //   through json2rc's `componentValues`; a canvas over the graph draws each edge segment as a
 //   pathExpression over those positions, so the curves follow the nodes. Anchors are canvases
 //   because androidx's player only refreshes COMPONENT_VALUEs for a canvas. `auto` holds both
-//   orientations in a StateLayout and shows the one that overflows the space less.
+//   orientations in a StateLayout and shows the one that overflows the space less; a graph that
+//   fits in neither shows as the canvas picture instead (overflow "pan").
 //
 // canvas — the converter computes all geometry (text widths estimated, see measureLabel) and
 //   draws one fixed picture with the looks' `canvas` commands. Drag pans (touchExpression,
@@ -38,6 +43,8 @@ import { readFileSync, writeFileSync } from "fs";
 import { compound, ROOT } from "./compound.mjs";
 import { layout, axes } from "./geometry.mjs";
 import { route, endVector } from "./routes.mjs";
+import { loopRoute, loopLabels } from "./loops.mjs";
+import { isRecord, cellsOf, recordLayout, recordCanvas } from "./records.mjs";
 import { edgeStyle, markerLength, strokePaint, markerCommands } from "./edges.mjs";
 import { THEME, fill, lookFor, lookForGroup, lookForLabel } from "./looks.mjs";
 
@@ -56,9 +63,23 @@ function chainStyle(graph, chain) {
     return { st, markers: [first, last], lens: [markerLength(first), markerLength(last)] };
 }
 
+/**
+ * What tapping a node, group or edge (its label) does: its "onClick" (RemoteCompose actions, as
+ * json2rc reads them), or its "action" -- a host named action with its id as the value -- or the
+ * graph's style.action (nodes) / style.edgeAction (edges). Null when nothing.
+ */
+function actionsFor(graph, kind, src, id) {
+    if (src.onClick !== undefined) return src.onClick;
+    const name = src.action ?? (kind === "node" ? graph.style?.action : kind === "edge" ? graph.style?.edgeAction : undefined);
+    return name === undefined || name === null ? null : [{ type: "hostNamedAction", name: String(name), value: String(id) }];
+}
+
+/** An edge's id for its actions: its own "id", or "from->to". */
+const edgeId = (e) => String(e.id ?? `${e.realFrom ?? e.from}->${e.realTo ?? e.to}`);
+
 // ───────────────────────────────── reflow ─────────────────────────────────
 
-function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
+function reflowVariant(graph, T, { G, chains, room, loops }, dir, prefix) {
     const { tb, fs, spacing: sp } = axes(dir);
     const [F, X] = tb ? ["y", "x"] : ["x", "y"];          // flow axis, cross axis
     // Variable names from an index, not the id: ids are user strings.
@@ -93,12 +114,36 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
                         lo: Math.min(...ranks), hi: Math.max(...ranks) });
         }
         cand.sort((a, b) => (a.hi - a.lo) - (b.hi - b.lo));
-        // Lanes first, then how far out each stands: past the ones nearer the rows.
+        // Lanes first, then how far out each stands: past the ones nearer the rows. An edge
+        // whose side is taken where it runs goes to the other side if a nearer lane is free
+        // there, rather than standing further out (and off the screen) beside the first --
+        // unless that side has more nodes between the edge's ends and it in their ranks (each
+        // one a crossing).
+        const between = (c, side) => {
+            const L = T.levels.get(c.level), { path } = c.chain;
+            let n = 0;
+            for (const end of [path[0], path[path.length - 1]]) {
+                const at = G.crossOf(end);
+                for (const id of L.layers[L.nodes.get(end).rank]) {
+                    if (id !== end && T.items.get(id).kind !== "dummy" && (G.crossOf(id) - at) * side > 0) n++;
+                }
+            }
+            return n;
+        };
         const taken = new Map(), laneWidth = new Map();
-        for (const c of cand) {
-            const key = `${c.level}|${c.side}`, t = taken.get(key) ?? taken.set(key, []).get(key);
+        const laneOn = (c, side) => {
+            const t = taken.get(`${c.level}|${side}`) ?? [];
             let lane = 0;
             while (t.some((u) => u.lane === lane && u.lo <= c.hi && c.lo <= u.hi)) lane++;
+            return lane;
+        };
+        for (const c of cand) {
+            let lane = laneOn(c, c.side);
+            if (lane > 0 && laneOn(c, -c.side) < lane && between(c, -c.side) <= between(c, c.side)) {
+                c.side = -c.side;
+                lane = laneOn(c, c.side);
+            }
+            const key = `${c.level}|${c.side}`, t = taken.get(key) ?? taken.set(key, []).get(key);
             t.push({ lo: c.lo, hi: c.hi, lane });
             c.lane = lane;
             const wk = `${key}|${lane}`;
@@ -139,6 +184,12 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
         }
     }
 
+    // A record's field has its own anchors: by the record's index and the cell's.
+    const fieldAnchor = (id, field, p) => {
+        const node = T.levels.get(T.items.get(id).level).nodes.get(id);
+        return `${index.get(id)}f${cellsOf(node).findIndex((c) => c.field === field)}${p}`;
+    };
+
     // Routes first: they say which items need side anchors and which ranks need band anchors.
     const sides = new Set(), bands = new Set();
     const routes = [];
@@ -150,10 +201,10 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
             add, fs,
             crossOf: (id) => G.crossOf(id),
             lane: (c) => laneOf.get(c.key) ?? null,
-            port: (id, p) => {
+            port: (id, p, field) => {
                 if (T.items.get(id).kind === "dummy") p = "a";
                 if (p === "l" || p === "r") sides.add(id);
-                const name = `${index.get(id)}${p}`;
+                const name = field !== undefined ? fieldAnchor(id, field, p) : `${index.get(id)}${p}`;
                 return { f: nv(name, F), c: nv(name, X) };
             },
             band: (id) => {
@@ -169,6 +220,23 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
 
     for (const l of laneLabels) bands.add(l.band);
 
+    // Self-loops, off each node's side anchor.
+    const loopShapes = [], loopLabelsAt = [];
+    {
+        const P = {
+            add: (v, k) => (k ? `${v} ${k < 0 ? "-" : "+"} ${Math.abs(k)}` : v), fs,
+            port: (id, p) => {
+                sides.add(id);
+                const name = `${index.get(id)}${p}`;
+                return { f: nv(name, F), c: nv(name, X) };
+            },
+        };
+        for (const [id, list] of loops) {
+            for (const loop of list) loopShapes.push({ id, loop, ...loopRoute(graph, id, loop, P) });
+            loopLabelsAt.push(...loopLabels(id, list, P, tb));
+        }
+    }
+
     const anchor = (name) => ({ canvas: {
         componentValues: { [`${prefix}${name}x`]: "rootX", [`${prefix}${name}y`]: "rootY" },
         modifiers: [{ size: [0, 0] }], commands: [],
@@ -177,11 +245,14 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
     const flowOrder = (kids) => (fs > 0 ? kids : [...kids].reverse());
     // Along the flow: anchors a (in) and b (out); across it, when an edge leaves or enters by
     // the side: anchors l and r, at the middle.
+    // A node or group with an action is tappable (the anchors are 0x0, so this is its box).
     const wrap = (id, body) => {
-        const i = index.get(id);
+        const i = index.get(id), it = T.items.get(id);
         const kids = flowOrder([anchor(`${i}a`), body, anchor(`${i}b`)]);
-        const flow = tb ? { column: { horizontalAlignment: "center", children: kids } }
-                        : { row: { verticalAlignment: "center", children: kids } };
+        const actions = it.kind === "label" ? actionsFor(graph, "edge", it.src, edgeId(it.src)) : actionsFor(graph, it.kind, it.src, id);
+        const tap = actions ? [{ semantics: { contentDescription: labelOf(id), clickable: true } }, { onClick: actions }] : [];
+        const flow = tb ? { column: { horizontalAlignment: "center", modifiers: tap, children: kids } }
+                        : { row: { verticalAlignment: "center", modifiers: tap, children: kids } };
         if (!sides.has(id)) return flow;
         const across = [anchor(`${i}l`), flow, anchor(`${i}r`)];
         // Room for a group's side exits to run in: the row (and its end anchors, which the
@@ -192,6 +263,7 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
         return tb ? { row: { verticalAlignment: "center", modifiers: mods, children: across } }
                   : { column: { horizontalAlignment: "center", modifiers: mods, children: across } };
     };
+    const labelOf = (id) => T.levels.get(T.items.get(id).level).nodes.get(id).label;
     // A group's (or the whole graph's) ranks; only the top level fills the space. A rank a
     // dummy passes through gets anchors at its start and end: the dummy's run across the band.
     const ranksOf = (gid) => {
@@ -222,6 +294,10 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
         const it = T.items.get(id);
         if (it.kind === "dummy") return anchor(`${index.get(id)}a`);
         const node = T.levels.get(it.level).nodes.get(id);
+        if (it.kind === "node" && isRecord(node.src)) {
+            const i = index.get(id);
+            return wrap(id, recordLayout(node, G.records.get(id), tb, (k, p) => anchor(`${i}f${k}${p}`), flowOrder));
+        }
         const [{ name, look, vars }, what] = it.kind === "node" ? [lookFor(graph, node), "node"]
             : it.kind === "label" ? [lookForLabel(graph, node), "edge label"]
             : [lookForGroup(graph, T.groups.get(id)), "group"];
@@ -260,6 +336,24 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
         });
     }
 
+    // Self-loops: along the flow the ends' eased blend, across it the cubic's own polynomial
+    // (both control points the same distance out), off the side anchor.
+    loopShapes.forEach(({ st, markers, side, d, out, lens, ends }, n) => {
+        const id = `${prefix}loop${n}`;
+        const along = `${side.f} + ${fs * d} * (2 * ${EASE} - 1)`;
+        const u = "(1 - a[0])";
+        const cross = `${side.c} + ${lens[0]} * ${u} * ${u} * ${u} + ${Math.round(out * 30) / 10} * a[0] * ${u} + ${lens[1]} * a[0] * a[0] * a[0]`;
+        commands.push(strokePaint(st),
+            { pathExpression: { id, expressionX: tb ? cross : along, expressionY: tb ? along : cross, start: 0, end: 1, count: 24 } },
+            { drawPath: { path: id } });
+        ends.forEach((e, i) => {
+            const cmds = markerCommands(markers[i], st, endVector(e, tb, fs));
+            if (!cmds.length) return;
+            const [tx, ty] = xy(e);
+            commands.push({ save: { commands: [{ translate: { dx: tx, dy: ty } }, ...cmds] } });
+        });
+    });
+
     // Labels on lanes: the look's canvas drawing, centred on the lane at the middle of the
     // label's rank band, over the line. Its size is the layout's estimate; the text is centred.
     for (const { id, lane, band } of laneLabels) {
@@ -276,6 +370,18 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
                       ...fill(look.canvas.commands ?? [], all, where), ...fill(look.canvas.label ?? [], all, where));
     }
 
+    // Loop labels the same way, beyond their node's loops.
+    for (const { loop, f, c } of loopLabelsAt) {
+        const { name, look, vars, w, h } = loop.label;
+        if (!look.canvas) throw new Error(`look "${name}" has no canvas drawing (needed for a self-loop's label)`);
+        const [cx, cy] = tb ? [c, f] : [f, c];
+        const box = { left: `${cx} - ${w / 2}`, right: `${cx} + ${w / 2}`, top: `${cy} - ${h / 2}`, bottom: `${cy} + ${h / 2}`,
+                      cx, cy, w, h, radius: h / 2 };
+        const all = { ...vars, ...box }, where = `self-loop label on ${loop.edge.from}, look "${name}"`;
+        commands.push({ paint: { ops: [{ pathEffect: null }] } },
+                      ...fill(look.canvas.commands ?? [], all, where), ...fill(look.canvas.label ?? [], all, where));
+    }
+
     return { box: {
         modifiers: ["fillMaxSize"],
         children: [
@@ -288,37 +394,72 @@ function reflowVariant(graph, T, { G, chains, room }, dir, prefix) {
     } };
 }
 
-export function reflowDoc(graph, { width = 400, height = 500, direction, measure = measureLabel } = {}) {
+/**
+ * How far past the space a reflowed graph's estimated size may go before it is panned instead:
+ * across the flow a row gives way by wrapping its labels; along it nothing does.
+ */
+const SLACK = { cross: 1.25, flow: 1.08 };
+
+export function reflowDoc(graph, { width = 400, height = 500, direction, overflow, measure = measureLabel } = {}) {
     const T = compound(graph);
     const dir = String(direction ?? graph.direction ?? "auto").toUpperCase();
+    const pan = String(overflow ?? graph.overflow ?? "pan") !== "clip";
     const doc = {
         header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
         root: [],
     };
+    // The states: each orientation reflowing, then (with overflow "pan") the same orientations
+    // as the fixed, pannable picture, for a graph too big to fit. Which one shows is picked from
+    // sizes estimated from the looks (canvas mode's geometry; the engine's own measure is not
+    // known when the state is picked) against the space. The space is measured by a canvas
+    // filling the graph's box, not windowWidth(): androidx's player keeps that at the
+    // document's declared size, while Kobento's players give the viewport. Until that canvas
+    // is laid out its values hold the 1.0 placeholder and the windowWidth() guess stands, so
+    // the usual case starts in the right state with no cross-fade.
+    const dirs = dir === "AUTO" ? ["TB", "LR"] : [dir];
+    const laid = dirs.map((d) => layout(graph, T, measure, d));
+    const est = ({ G: { total } }) => [Math.ceil((total.w + 32) * 1.05), Math.ceil((total.h + 32) * 1.05)];
+    // How much each orientation overflows (over 1: it does not fit) for a space w x h, as
+    // named values (one expression for all would pass what Android reads).
+    const over = (w, h, name, wrap) => Object.fromEntries(laid.map((l, i) => {
+        const [ew, eh] = est(l), tb = axes(dirs[i]).tb;
+        const [sw, sh] = tb ? [SLACK.cross, SLACK.flow] : [SLACK.flow, SLACK.cross];
+        return [`${name}${i}`, wrap(`max(${Math.ceil(ew / sw)} / ${w}, ${Math.ceil(eh / sh)} / ${h})`)];
+    }));
+    const asVariable = (e) => e, asValue = (e) => ({ expression: e });
+    // The state index: the orientation that overflows less (0 or 1), plus the orientations'
+    // count when even that one does not fit (SLACK included).
+    const pick = (name) => {
+        const o = laid.map((_, i) => `@${name}${i}`);
+        const orient = o.length > 1 ? `step(${o[0]}, ${o[1]})` : "0";
+        if (!pan) return orient;
+        const least = o.length > 1 ? `min(${o[0]}, ${o[1]})` : o[0];
+        return `${orient === "0" ? "" : `${orient} + `}${o.length} * step(${least}, 1)`;
+    };
+    const variants = laid.map((l, i) => reflowVariant(graph, T, l, dirs[i], dirs.length > 1 ? "tl"[i] : "v"));
+    if (pan) {
+        doc.resources = { variables: {} };
+        laid.forEach((l, i) => {
+            const { view, variables } = canvasView(graph, T, l, dirs[i], `c${i}`);
+            variants.push(view);
+            Object.assign(doc.resources.variables, variables);
+        });
+    }
     let children;
-    if (dir !== "AUTO") {
-        children = [reflowVariant(graph, T, layout(graph, T, measure, dir), dir, "v")];
+    if (variants.length === 1) {
+        children = variants;
     } else {
-        // 0: top to bottom, 1: left to right: whichever overflows the space less, from both
-        // layouts' sizes estimated from the looks (canvas mode's geometry; the engine's own
-        // measure is not known when the state is picked). The space is measured by a canvas
-        // filling the graph's box, not windowWidth(): androidx's player keeps that at the
-        // document's declared size, while Kobento's players give the viewport. Until that
-        // canvas is laid out its values hold the 1.0 placeholder and the windowWidth() guess
-        // stands, so the usual case starts in the right state with no cross-fade.
-        const gTB = layout(graph, T, measure, "TB"), gLR = layout(graph, T, measure, "LR");
-        const est = ({ G: { total } }) => [Math.ceil((total.w + 32) * 1.05), Math.ceil((total.h + 32) * 1.05)];
-        const [tbW, tbH] = est(gTB), [lrW, lrH] = est(gLR);
-        const pick = (w, h) => `step(max(${tbW} / ${w}, ${tbH} / ${h}), max(${lrW} / ${w}, ${lrH} / ${h}))`;
-        doc.resources = { variables: { orientWindow: pick("max(windowWidth(), 1)", "max(windowHeight(), 1)") } };
+        doc.resources = { variables: { ...(doc.resources?.variables ?? {}),
+                                       ...over("max(windowWidth(), 1)", "max(windowHeight(), 1)", "overWindow", asVariable),
+                                       orientWindow: pick("overWindow") } };
         children = [
             { canvas: { modifiers: ["fillMaxSize"], commands: [], componentValues: {
                 availW: "width", availH: "height",
-                orientMeasured: { expression: pick("max(@availW, 1)", "max(@availH, 1)") },
+                ...over("max(@availW, 1)", "max(@availH, 1)", "overMeasured", asValue),
+                orientMeasured: { expression: pick("overMeasured") },
                 orient: { expression: "ifElse(@orientWindow, @orientMeasured, @availW - 1.5)" },
             } } },
-            { stateLayout: { indexId: "@orient", modifiers: ["fillMaxSize"],
-                             children: [reflowVariant(graph, T, gTB, "TB", "t"), reflowVariant(graph, T, gLR, "LR", "l")] } },
+            { stateLayout: { indexId: "@orient", modifiers: ["fillMaxSize"], children: variants } },
         ];
     }
     doc.root.push({ box: { modifiers: ["fillMaxSize", { background: THEME.bg }], children } });
@@ -351,11 +492,24 @@ export function canvasDoc(graph, { width = 400, height = 500, direction, measure
     const T = compound(graph);
     let dir = String(direction ?? graph.direction ?? "TB").toUpperCase();
     if (dir === "AUTO") dir = "TB";
-    const { G, chains, room } = layout(graph, T, measure, dir);
+    const { view, variables } = canvasView(graph, T, layout(graph, T, measure, dir), dir, "");
+    return {
+        header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
+        resources: { variables },
+        root: [{ box: { modifiers: ["fillMaxSize", { background: THEME.bg }], children: [view] } }],
+    };
+}
+
+/**
+ * The fixed picture with pan and zoom, as one component (canvas mode, and reflow mode's
+ * fallback when the graph does not fit). `prefix` keeps its variables apart from another
+ * view's in the same document.
+ */
+function canvasView(graph, T, { G, chains, room, loops }, dir, prefix) {
     const { geo, groupOrder, looks, total, tb, fs } = G;
     const xy = (p) => (tb ? [p.c, p.f] : [p.f, p.c]);
 
-    const edgeCmds = [], arrowCmds = [];
+    const edgeCmds = [], arrowCmds = [], nodeLoopBodies = [];
     for (const chain of chains) {
         const off = chain.offset;
         const P = {
@@ -363,7 +517,7 @@ export function canvasDoc(graph, { width = 400, height = 500, direction, measure
             crossOf: (id) => G.crossOf(id),
             // Attachment points come from the spacing plan; parallel edges also keep apart
             // through their dummies.
-            port: (id, p) => G.port(id, p),
+            port: (id, p, field) => G.port(id, p, field),
             band: (id) => { const g = G.band(id); return { f0: g.f0, f1: g.f1, c: g.c + off }; },
         };
         const { st, markers, lens } = chainStyle(graph, chain);
@@ -386,7 +540,41 @@ export function canvasDoc(graph, { width = 400, height = 500, direction, measure
         });
     }
 
+    // Self-loops and their labels.
+    const loopLabelCmds = [], loopLabelBoxes = [];
+    {
+        const P = { add: (v, k) => v + k, fs, port: (id, p) => G.port(id, p) };
+        for (const [id, list] of loops) {
+            for (const loop of list) {
+                const { st, markers, pts, ends } = loopRoute(graph, id, loop, P);
+                const at = (p) => xy(p).map(r1).join(" ");
+                edgeCmds.push(strokePaint(st), { drawPath: { path: `M${at(pts[0])} C${at(pts[1])} ${at(pts[2])} ${at(pts[3])}` } });
+                ends.forEach((e, i) => {
+                    const cmds = markerCommands(markers[i], st, endVector(e, tb, fs));
+                    if (!cmds.length) return;
+                    const [tx, ty] = xy(e);
+                    arrowCmds.push({ save: { commands: [{ translate: { dx: r1(tx), dy: r1(ty) } }, ...cmds] } });
+                });
+            }
+            for (const { loop, f, c } of loopLabels(id, list, P, tb)) {
+                const { name, look, vars, w, h } = loop.label;
+                if (!look.canvas) throw new Error(`look "${name}" has no canvas drawing (needed by canvas mode)`);
+                const [cx, cy] = xy({ f, c });
+                const all = { ...vars, left: r1(cx - w / 2), top: r1(cy - h / 2), right: r1(cx + w / 2), bottom: r1(cy + h / 2),
+                              cx: r1(cx), cy: r1(cy), w, h, radius: r1(h / 2) };
+                loopLabelBoxes.push({ edge: loop.edge, box: all });
+                const where = `self-loop label on ${loop.edge.from}, look "${name}"`;
+                nodeLoopBodies.push(...fill(look.canvas.commands ?? [], all, where));
+                loopLabelCmds.push(...fill(look.canvas.label ?? [], all, where));
+            }
+        }
+    }
+
     const drawn = (id) => {
+        if (G.records.has(id)) {
+            const it = T.items.get(id);
+            return recordCanvas(T.levels.get(it.level).nodes.get(id), G.records.get(id), geo.get(id), tb);
+        }
         const { name, look, vars } = looks.get(id), b = geo.get(id);
         if (!look.canvas) throw new Error(`look "${name}" has no canvas drawing (needed by canvas mode)`);
         const all = { ...vars, left: r1(b.left), top: r1(b.top), right: r1(b.right), bottom: r1(b.bottom),
@@ -401,15 +589,17 @@ export function canvasDoc(graph, { width = 400, height = 500, direction, measure
         const { body, label } = drawn(id);
         nodeCmds.push(...body); labelCmds.push(...label);
     }
+    nodeCmds.push(...nodeLoopBodies); labelCmds.push(...loopLabelCmds);
 
     const GW = Math.max(1, Math.ceil(total.w)), GH = Math.max(1, Math.ceil(total.h));
+    const v = (name) => `${prefix}${name}`;
     // Fitted scale (never past 1.5x), times the user's zoom steps, animated.
-    const scale = `min(min((width - 32) / ${GW}, (height - 32) / ${GH}), 1.5) * @zoom`;
+    const scale = `min(min((width - 32) / ${GW}, (height - 32) / ${GH}), 1.5) * @${v("zoom")}`;
     const zoomButton = (step, label, glyph) => ({ canvas: {
         modifiers: [{ size: [40, 40] },
                     { semantics: { contentDescription: label, clickable: true } },
-                    { onClick: { type: "valueFloatExpressionChange", target: "@zoomSteps",
-                                 value: `clamp(-8, 8, @zoomSteps + ${step})` } }],
+                    { onClick: { type: "valueFloatExpressionChange", target: `@${v("zoomSteps")}`,
+                                 value: `clamp(-8, 8, @${v("zoomSteps")} + ${step})` } }],
         commands: [
             { paint: { ops: [{ color: THEME.button }, { style: "fill" }] } },
             { drawRoundRect: { left: 0.5, top: 0.5, right: 39.5, bottom: 39.5, rx: 12, ry: 12 } },
@@ -422,41 +612,80 @@ export function canvasDoc(graph, { width = 400, height = 500, direction, measure
     const minus = { drawLine: { x1: 14, y1: 20, x2: 26, y2: 20 } };
     const plus = { drawLine: { x1: 20, y1: 14, x2: 20, y2: 26 } };
 
-    return {
-        header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
-        resources: { variables: {
-            zoomSteps: 0,
-            zoom: { value: "pow(1.25, @zoomSteps)", anim: 0.25 },
-        } },
-        root: [{ box: {
-            modifiers: ["fillMaxSize", { background: THEME.bg }],
-            children: [
-                { canvas: {
-                    modifiers: ["fillMaxSize", { semantics: { contentDescription: `${describe(graph)}. Drag to pan.` } }],
-                    commands: [
-                        { touchExpression: { name: "panX", defaultValue: 0, min: -100000, max: 100000, stopMode: "gently", expression: "touchX()" } },
-                        { touchExpression: { name: "panY", defaultValue: 0, min: -100000, max: 100000, stopMode: "gently", expression: "touchY()" } },
-                        { save: { commands: [
-                            { translate: { dx: "width * 0.5 + @panX", dy: "height * 0.5 + @panY" } },
-                            { scale: { sx: scale, sy: scale } },
-                            { translate: { dx: -GW / 2, dy: -GH / 2 } },
-                            ...groupCmds, ...edgeCmds, ...arrowCmds,
-                            // The edges' dash must not reach the nodes' strokes.
-                            { paint: { ops: [{ pathEffect: null }] } },
-                            ...nodeCmds,
-                            // Labels only while they are legible (about 6px and up at 15).
-                            { conditionalOperations: { condition: "ge", v1: `${scale} * 15`, v2: 6, commands: labelCmds } },
-                        ] } },
-                    ],
-                } },
-                { column: {
-                    horizontalAlignment: "end", verticalAlignment: "bottom",
-                    modifiers: ["fillMaxSize", { padding: [12, 12] }, { spacedBy: 8 }],
-                    children: [zoomButton(1, "Zoom in", [minus, plus]), zoomButton(-1, "Zoom out", [minus])],
-                } },
-            ],
-        } }],
+    // Tappable nodes, groups and edges (by their label): a transparent component each, with the
+    // same click modifier and semantics as in reflow mode, kept over where the item is drawn as
+    // the graph pans and zooms: computePosition places it (json2rc's computePosition: the
+    // expressions run at layout time), its size is the scaled box. An offset modifier would
+    // only move its drawing, not where a tap lands. The screen transform comes from the
+    // canvas, as named values: its size, the scale, and where the graph's origin lands before
+    // the pan (the pan's values come later, from the canvas's touch expressions).
+    const taps = [];
+    {
+        const items = [];
+        for (const id of groupOrder) items.push([id, actionsFor(graph, "group", T.items.get(id).src, id)]);
+        for (const [id, it] of T.items) {
+            if (it.kind === "node") items.push([id, actionsFor(graph, "node", it.src, id)]);
+            else if (it.kind === "label") items.push([id, actionsFor(graph, "edge", it.src, edgeId(it.src))]);
+        }
+        const sc = `@${v("sc")}`;
+        const target = (b, label, actions) => ({ box: { children: [], modifiers: [
+            { computePosition: { x: `@${v("ox")} + @${v("panX")} + ${sc} * ${r1(b.left)}`,
+                                 y: `@${v("oy")} + @${v("panY")} + ${sc} * ${r1(b.top)}` } },
+            { width: `${sc} * ${r1(b.right - b.left)}` }, { height: `${sc} * ${r1(b.bottom - b.top)}` },
+            { semantics: { contentDescription: label, clickable: true } }, { onClick: actions },
+        ] } });
+        for (const [id, actions] of items) {
+            if (actions) taps.push(target(geo.get(id), T.levels.get(T.items.get(id).level).nodes.get(id).label, actions));
+        }
+        for (const { edge, box } of loopLabelBoxes) {
+            const actions = actionsFor(graph, "edge", edge, edgeId(edge));
+            if (actions) taps.push(target(box, String(edge.label), actions));
+        }
+    }
+    const screen = taps.length ? {
+        [v("cw")]: "width", [v("ch")]: "height",
+        [v("sc")]: { expression: `min(min((@${v("cw")} - 32) / ${GW}, (@${v("ch")} - 32) / ${GH}), 1.5) * @${v("zoom")}` },
+        [v("ox")]: { expression: `@${v("cw")} * 0.5 - @${v("sc")} * ${GW / 2}` },
+        [v("oy")]: { expression: `@${v("ch")} * 0.5 - @${v("sc")} * ${GH / 2}` },
+    } : null;
+
+    const view = { box: {
+        modifiers: ["fillMaxSize"],
+        children: [
+            { canvas: {
+                modifiers: ["fillMaxSize", { semantics: { contentDescription: `${describe(graph)}. Drag to pan.` } }],
+                ...(screen ? { componentValues: screen } : {}),
+                commands: [
+                    { touchExpression: { name: v("panX"), defaultValue: 0, min: -100000, max: 100000, stopMode: "gently", expression: "touchX()" } },
+                    { touchExpression: { name: v("panY"), defaultValue: 0, min: -100000, max: 100000, stopMode: "gently", expression: "touchY()" } },
+                    { save: { commands: [
+                        { translate: { dx: `width * 0.5 + @${v("panX")}`, dy: `height * 0.5 + @${v("panY")}` } },
+                        { scale: { sx: scale, sy: scale } },
+                        { translate: { dx: -GW / 2, dy: -GH / 2 } },
+                        ...groupCmds, ...edgeCmds, ...arrowCmds,
+                        // The edges' dash must not reach the nodes' strokes.
+                        { paint: { ops: [{ pathEffect: null }] } },
+                        ...nodeCmds,
+                        // Labels only while they are legible (about 6px and up at 15).
+                        { conditionalOperations: { condition: "ge", v1: `${scale} * 15`, v2: 6, commands: labelCmds } },
+                    ] } },
+                ],
+            } },
+            // Later children take a tap first: inner nodes over their groups (taps' order),
+            // the zoom buttons over everything.
+            ...(taps.length ? [{ box: { modifiers: ["fillMaxSize"], children: taps } }] : []),
+            { column: {
+                horizontalAlignment: "end", verticalAlignment: "bottom",
+                modifiers: ["fillMaxSize", { padding: [12, 12] }, { spacedBy: 8 }],
+                children: [zoomButton(1, "Zoom in", [minus, plus]), zoomButton(-1, "Zoom out", [minus])],
+            } },
+        ],
+    } };
+    const variables = {
+        [v("zoomSteps")]: 0,
+        [v("zoom")]: { value: `pow(1.25, @${v("zoomSteps")})`, anim: 0.25 },
     };
+    return { view, variables };
 }
 
 function describe(graph) {
@@ -469,7 +698,8 @@ const countGroups = (gs) => gs.reduce((c, g) => c + 1 + countGroups(g.groups ?? 
 if (import.meta.url === `file://${process.argv[1]}`) {
     const [inPath, outPath, ...rest] = process.argv.slice(2);
     if (!inPath || !outPath) {
-        console.error("usage: graph2rc.mjs graph.json out.json [--mode reflow|canvas] [--direction TB|LR|auto] [--width N] [--height N]");
+        console.error("usage: graph2rc.mjs graph.json out.json [--mode reflow|canvas] [--direction TB|BT|LR|RL|auto]\n" +
+                      "                    [--overflow pan|clip] [--width N] [--height N]");
         process.exit(2);
     }
     const opt = {};

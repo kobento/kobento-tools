@@ -1,0 +1,18 @@
+{
+  "direction": "LR",
+  "nodes": [
+    {"id": "users", "label": "users", "fields": ["id", "email", "name", "team_id"]},
+    {"id": "teams", "label": "teams", "fields": ["id", "name", "plan_id"]},
+    {"id": "plans", "label": "plans", "fields": ["id", "tier", "seats"]},
+    {"id": "orders", "label": "orders", "fields": ["id", "user_id", "plan_id", "total"]},
+    {"id": "invoices", "label": "invoices", "fields": ["id", "order_id", "issued_at"]}
+  ],
+  "edges": [
+    {"from": "invoices:order_id", "to": "orders:id"},
+    {"from": "orders:user_id", "to": "users:id"},
+    {"from": "orders:plan_id", "to": "plans:id"},
+    {"from": "users:team_id", "to": "teams:id"},
+    {"from": "teams:plan_id", "to": "plans:id"}
+  ],
+  "style": {"edge": {"arrowhead": "none", "arrowtail": "dot", "dir": "both"}}
+}

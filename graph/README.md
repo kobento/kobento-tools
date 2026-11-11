@@ -8,6 +8,9 @@ node graph/graph2rc.mjs graph/examples/pipeline.json out.json --mode canvas
 node json2rc/build/cli.js out.json out.rc
 ```
 
+Options: `--direction TB|BT|LR|RL|auto`, `--overflow pan|clip` (reflow mode, below),
+`--width` / `--height` (the document's declared size).
+
 ```json
 { "nodes": [{"id": "a", "label": "Start", "color": "#FF2B3A55"}, ...],
   "edges": [{"from": "a", "to": "b", "color": "#FF8FA3BF"}, ...],
@@ -72,49 +75,67 @@ with the outside: it sits whole in one rank of its parent.
   look, or per edge with `labelLook`), so in reflow mode it is a real, engine-measured
   component.
 
-`examples/flow.json` uses all of these.
+- `lhead` / `ltail` (Graphviz's): laid out to the node, drawn to the border of a group holding
+  it -- `{"from": "dce", "to": "emit", "ltail": "middle"}` leaves the whole MIDDLE END group.
+  `test/fixtures/lhead.json`.
 
-### Directions
+`examples/flow.json` uses most of these.
 
-`direction`: `TB`, `BT`, `LR`, `RL` in both modes (`auto` picks TB or LR in reflow mode).
+### Self-loops
 
-### Routing
+An edge from a node to itself leaves the node's side across the flow (its right in TB, its
+bottom in LR), swings out and comes back a little further along: a cubic whose control points
+sit at the same distance out, so it leaves and returns square to the side. Several loops on one
+node nest; a label goes beyond the outermost loop. The layout keeps that room clear beside the
+node (`loops.mjs`). `examples/states.json`.
 
-One routine (`routes.mjs`) shapes every edge for both modes, in flow/cross terms (and a flow
-sign) so all four directions are the same code: curves (a cubic whose control points sit halfway along the flow, so an edge
-leaves and enters along the flow) joined by straight runs.
+### Records and ports
 
-- Each dummy is a straight run across its whole rank band, so a long edge passes beside
-  whatever else is in that rank, however tall.
-- Long edges keep a long straight middle. In canvas mode the layout itself lines them up:
-  links between dummies weigh most when positions are assigned (Graphviz's omega weights), and
-  a last pass pulls each long edge's dummies to one position -- and, where a crowded rank
-  cannot let one of them get there, moves the whole run to where that one can go, so it stays
-  straight instead of jogging. In reflow mode the engine packs each row, so dummies cannot be
-  lined up; an edge through two or more ranks runs its middle in a **lane** beside the rows
-  instead -- straight, beyond the farthest row end it passes, live from anchors at the rows'
-  ends, with lanes of their own for overlapping spans -- and its dummies leave the rows. A
-  label rides on its lane (the overlay draws the look's canvas drawing there), and the lane
-  stands out far enough for it.
-- Edges sharing a port attach at points of their own, spread across the node (up to 16px
-  apart), ordered by where each goes so it adds no crossing; side exits through one side of
-  a group turn at staggered distances, and the layout keeps that room clear beside the group.
-- An end deep inside a group (not on the group's boundary rank) leaves or enters sideways:
-  from the node's side straight past the group's border, then along the flow, instead of
-  cutting across the group's other nodes.
-- An edge label is passed through: the line runs into it and out of its far side.
-- Each end stops its marker's length short of its port.
+A node with `fields` is a record (Graphviz's record shape, or a table): a header cell with its
+label (`"header": false` drops it), then one cell per field, each a port an edge can name:
 
-In reflow mode the points are anchor expressions (ranks a dummy crosses, and nodes with a side
-exit, get extra anchors) and each curve a `pathExpression`, so edges follow the layout;
-`geometry.mjs`, canvas mode's fixed layout, picks the side to exit by.
+```json
+{"id": "orders", "label": "orders", "fields": ["id", "user_id", {"id": "total", "label": "total ($)"}]}
+{"from": "orders:user_id", "to": "users:id"}          or "fromPort" / "toPort"
+```
+
+The cells run across the flow, so an edge comes into its field along the flow like into any
+node: side by side in TB / BT, stacked in LR / RL (the table shape). Crossing reduction and
+positions count an edge at its field, so in canvas mode a field lines up with the one it points
+at; edges sharing a field spread across it. In reflow mode every field cell has its own
+anchors. Stacked cells share one width, fixed from the label estimate with some slack (no
+player agrees on intrinsic widths). Colours: `color`, `border`, `text`, `headerColor`,
+`headerText`. `examples/schema.json`.
+
+### Taps
+
+`"action": "open"` on a node, group or edge -- or `style.action` for every node,
+`style.edgeAction` for every edge -- sends a host named action, the name given and the node's
+id (an edge's `id`, or `from->to`) as its value; `"onClick": [...]` takes RemoteCompose actions
+as json2rc reads them instead. An edge is tapped by its label.
+
+Either way the tap is a component's click modifier, with semantics for accessibility:
+
+- Reflow mode: the node's (or label's) own component. A label drawn on a lane or beside a
+  self-loop is not a component and cannot be tapped.
+- Canvas mode (and reflow mode's pan fallback): a transparent component per tappable item,
+  over the canvas, kept where the item is drawn as the graph pans and zooms: `computePosition`
+  places it (json2rc's extension: the Kotlin DSL's `Modifier.computePosition { x = ...; y = ... }`,
+  expressions the player evaluates at layout time), its size is the scaled box. An `offset`
+  modifier would only move the drawing; a tap still lands where it was laid out. The pan is the
+  canvas's touch expression, which gets every drag, so a drag that starts on a node still pans.
+  The web player needed a fix for it (kobento-ts: `LayoutComputeOperation.evaluateInLayout`, so
+  a position that changes alone is laid out again); androidx and the C++ player had it. (Canvas
+  click areas were the first try: androidx's `ClickArea.updateVariables` stores an expression's
+  right edge in `mRight` instead of `mOutRight`, so an area that moves never matches, and
+  androidx keeps an area once added.)
 
 ## Structure
 
 `layered.mjs` is the shared structural layout: cycles broken by reversing back edges (drawn
 with the arrow at their real target), longest-path ranks, one dummy per rank a long edge
-crosses, barycenter crossing reduction, parallel edges spread sideways. Self-loops are
-dropped for now.
+crosses, barycenter crossing reduction, parallel edges spread sideways. Self-loops are drawn
+apart (above).
 
 ## `--mode reflow`
 
@@ -134,6 +155,19 @@ graph against each node's ports as laid out:
   `windowWidth()` guess stands, so Kobento's players start in the right state; androidx's may
   cross-fade once after its first layout.
 
+### Overflow
+
+A reflowed graph gives way across the flow (its labels wrap) but not along it. When even the
+orientation that fits better would overflow -- from the same size estimates, with some slack
+across the flow -- the document shows the graph as canvas mode's picture instead, fitted to
+the space, with pan and zoom: one more StateLayout state per orientation, picked by the same
+measured-space expression. `--overflow clip` keeps the reflowed graph whatever its size.
+(Scrolling the reflowed layout was the first idea: the TypeScript player drew nothing inside
+nested scrolls and the C++ one opened at the start, away from the graph's centre.)
+
+When a long edge's side is taken where it runs and a nearer lane is free on the other side,
+it runs there instead, rather than further out (and off the screen).
+
 ## `--mode canvas`
 
 All geometry computed here (text widths estimated by `measureLabel`, labels drawn centred so
@@ -143,6 +177,25 @@ running straight through dummies, rounded nodes. Drag pans (touchExpression, coa
 and labels drop out below ~6px. RemoteCompose has no pinch, hence the buttons.
 
 ## Checking
+
+```sh
+node --test graph/test/*.test.mjs                 # layout and documents
+RC_JAVA=1 node --test graph/test/*.test.mjs       # and the Java reference (needs a JDK, ~/androidx)
+```
+
+- `test/layout.test.mjs`: the fixed layout of every example and fixture in all four directions
+  -- siblings do not overlap, groups hold their insides, long edges are straight through their
+  middle, edges keep out of nodes and labels, edges side by side keep 6px apart, edges on one
+  node attach 4px apart, an edge naming a field attaches inside it, self-loops and their labels
+  keep clear.
+- `test/documents.test.mjs`: every graph converts (json2rc refuses an expression Android
+  would) in both modes, every direction and auto; played in Kobento's TypeScript player, every
+  reflow anchor is laid out, the overflow fallback picks the expected state, and taps reach the
+  host in both modes, canvas mode's following a zoom and a pan (a drag that starts on a node);
+  with `RC_JAVA=1`, the Java reference lays out each reflow document with no exception and no
+  anchor left at its placeholder, and taps send their actions in both modes.
+
+By eye:
 
 Renders in both Kobento engines (`kobento-ts/render.mjs`, `cpp/build/rc2image/rc2image`, which
 needs `--duration` to see a StateLayout switch after the first frame) and the Java reference:

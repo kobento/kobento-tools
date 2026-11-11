@@ -12,6 +12,8 @@ import { coordinates } from "./layered.mjs";
 import { ROOT } from "./compound.mjs";
 import { lookFor, lookForGroup, lookForLabel, lookSize, groupSize } from "./looks.mjs";
 import { allChains, spacing } from "./routes.mjs";
+import { loopsOf, loopRoom } from "./loops.mjs";
+import { isRecord, recordSize } from "./records.mjs";
 
 export const SPACING = { TB: { node: 24, rank: 56 }, LR: { node: 16, rank: 72 } };
 
@@ -30,21 +32,23 @@ export function axes(dir) {
  *   groupOrder: [id]      parents first
  *   looks: Map<id, look>
  *   total: {w, h}         screen size
- *   port(id, p), band(id), crossOf(id)    in flow/cross screen terms (see routes.mjs)
+ *   records: Map<id, recordSize()>   record nodes (records.mjs)
+ *   port(id, p, field?), band(id), crossOf(id)    in flow/cross screen terms (see routes.mjs)
  * }
  */
 export function geometry(graph, T, measure, dir = "TB", exitRoom = null) {
     const { tb, fs, spacing } = axes(dir);
     const toFC = ({ w, h }) => (tb ? { w, h } : { w: h, h: w });     // screen -> (cross, flow)
     const toScreen = ({ w, h }) => (tb ? { w, h } : { w: h, h: w }); // (cross, flow) -> screen
-    const levelGeo = new Map(), looks = new Map(), screenDim = new Map();
+    const levelGeo = new Map(), looks = new Map(), screenDim = new Map(), records = new Map();
 
     // Bottom-up sizes: a group's card is its own layout plus padding and title.
     const layoutLevel = (gid) => {
         if (levelGeo.has(gid)) return levelGeo.get(gid).size;
         const L = T.levels.get(gid);
         const pad = exitRoom ? (id) => { const r = exitRoom.get(id); return r ? [r.l, r.r] : null; } : null;
-        const C = L.layers.length ? coordinates(L, itemSize, { nodeSep: spacing.node, rankSep: spacing.rank, pad }) : null;
+        const portOffset = (id, f) => records.get(id)?.ports.get(f)?.off ?? 0;
+        const C = L.layers.length ? coordinates(L, itemSize, { nodeSep: spacing.node, rankSep: spacing.rank, pad, portOffset }) : null;
         const size = C ? toScreen({ w: C.width, h: C.height }) : { w: 0, h: 0 };
         levelGeo.set(gid, { L, C, size });
         return size;
@@ -52,7 +56,12 @@ export function geometry(graph, T, measure, dir = "TB", exitRoom = null) {
     function itemSize(id) {
         const it = T.items.get(id), n = T.levels.get(it.level).nodes.get(id);
         let d;
-        if (it.kind === "node") { looks.set(id, lookFor(graph, n)); d = lookSize(looks.get(id).look, n.label, measure); }
+        if (it.kind === "node" && isRecord(n.src)) {
+            const r = recordSize(n, measure, tb);
+            records.set(id, r);
+            looks.set(id, { name: "record", record: true });
+            d = { w: r.w, h: r.h };
+        } else if (it.kind === "node") { looks.set(id, lookFor(graph, n)); d = lookSize(looks.get(id).look, n.label, measure); }
         else if (it.kind === "label") { looks.set(id, lookForLabel(graph, n)); d = lookSize(looks.get(id).look, n.label, measure); }
         else {
             const grp = T.groups.get(id);
@@ -91,32 +100,52 @@ export function geometry(graph, T, measure, dir = "TB", exitRoom = null) {
 
     // Ports in flow/cross terms: a where edges come in (the box's start along the flow), b where
     // they leave, l / r its sides across the flow (the lower and higher cross coordinate).
-    const port = (id, p) => {
+    // A record's field (records.mjs) moves a or b to the field's middle.
+    const port = (id, p, field) => {
         const g = geo.get(id);
         if (!("left" in g)) return { f: g.f0, c: g.c };
         const [fLo, fHi, fMid, cLo, cHi, cMid] = tb
             ? [g.top, g.bottom, g.cy, g.left, g.right, g.cx]
             : [g.left, g.right, g.cx, g.top, g.bottom, g.cy];
         const [fIn, fOut] = fs > 0 ? [fLo, fHi] : [fHi, fLo];
-        return { a: { f: fIn, c: cMid }, b: { f: fOut, c: cMid }, l: { f: fMid, c: cLo }, r: { f: fMid, c: cHi } }[p];
+        const c = cMid + (field !== undefined ? records.get(id)?.ports.get(field)?.off ?? 0 : 0);
+        return { a: { f: fIn, c }, b: { f: fOut, c }, l: { f: fMid, c: cLo }, r: { f: fMid, c: cHi } }[p];
     };
+    /** A record field's extent across the flow (for spreading the edges that share it). */
+    const fieldExtent = (id, field) => records.get(id)?.ports.get(field)?.ext;
     const band = (id) => geo.get(id);
     const crossOf = (id) => { const g = geo.get(id); return "left" in g ? (tb ? g.cx : g.cy) : g.c; };
-    return { geo, groupOrder, looks, total, port, band, crossOf, tb, fs };
+    return { geo, groupOrder, looks, records, total, port, fieldExtent, band, crossOf, tb, fs };
 }
 
 /**
- * The geometry with room kept beside groups for their side exits, and the spacing plan for it.
- * Which side an edge leaves a group by depends on the layout, so: lay out, plan, lay out again
- * keeping the plan's room, plan again.
+ * The geometry with room kept beside groups for their side exits and beside nodes for their
+ * self-loops, and the spacing plan for it. Which side an edge leaves a group by depends on the
+ * layout, so: lay out, plan, lay out again keeping the plan's room, plan again.
+ *
+ * @returns {G, chains, room, loops}   room.exitRoom includes the loops' room
  */
 export function layout(graph, T, measure, dir = "TB") {
     const chains = [...allChains(T)];
-    let G = geometry(graph, T, measure, dir);
+    const loops = loopsOf(graph, T, measure);
+    const { tb } = axes(dir);
+    const loopSide = new Map([...loops].map(([id, list]) => [id, { l: 0, r: loopRoom(list, tb) }]));
+    const withLoops = (exits) => {
+        const m = new Map();
+        for (const src of [exits, loopSide]) {
+            for (const [id, r] of src) {
+                const t = m.get(id) ?? { l: 0, r: 0 };
+                m.set(id, { l: t.l + r.l, r: t.r + r.r });
+            }
+        }
+        return m;
+    };
+    let G = geometry(graph, T, measure, dir, loopSide.size ? loopSide : null);
     let room = spacing(T, chains, G);
     if (room.exitRoom.size) {
-        G = geometry(graph, T, measure, dir, room.exitRoom);
+        G = geometry(graph, T, measure, dir, withLoops(room.exitRoom));
         room = spacing(T, chains, G);
     }
-    return { G, chains, room };
+    room.exitRoom = withLoops(room.exitRoom);
+    return { G, chains, room, loops };
 }

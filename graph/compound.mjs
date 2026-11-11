@@ -4,6 +4,7 @@
 //               "groups": [{"id": "...", ...}],                  nested, or
 //               "parent": "outer", "look": "group", "color": ...}],
 //   "nodes": [{"id": "ast", "group": "front"}, ...]                or the node names its group
+//   "edges": [{"from": "lex", "to": "ir", "lhead": "middle"}]      drawn to the group's border
 //
 // Each group is laid out as its own layered graph and drawn as one node of its parent's: a
 // card holding its sub-layout. In reflow mode that card is a real container, so a group
@@ -13,16 +14,19 @@
 // do): the whole group sits in one rank of its parent.
 
 import { layered } from "./layered.mjs";
+import { hasField } from "./records.mjs";
 
 export const ROOT = "";
 
 /**
  * @returns {
  *   levels: Map<groupId, L>     layered() of each group's children ("" is the top level);
- *                                chain.edge is the level edge: {from, to, realFrom, realTo, color}
+ *                                chain.edge is the level edge: {from, to, realFrom, realTo,
+ *                                realFromPort, realToPort (a record's field, records.mjs), color}
  *   items:  Map<id, {kind: "node" | "group" | "dummy" | "label", src, level}>   (label: an edge label)
  *   groups: Map<groupId, {id, label, src, parent, children: [id]}>
  *   dropped: [edge]              edges between a group and something inside it
+ *   loops:   [edge]              self-loops (loops.mjs draws them)
  * }
  */
 export function compound(graph) {
@@ -72,15 +76,43 @@ export function compound(graph) {
         return up;   // id, its group, ..., ROOT
     };
     const levelEdges = new Map([...groups.keys()].map((g) => [g, []]));
-    const dropped = [];
-    for (const e of graph.edges ?? []) {
+    const dropped = [], loops = [];
+    // An end can name a record's field: "node:field" (when that is not itself an id), or fromPort
+    // / toPort.
+    const endOf = (e, key) => {
+        let id = e[key], port = e[`${key}Port`];
+        if (!items.has(id) && typeof id === "string" && id.includes(":")) {
+            const at = id.lastIndexOf(":");
+            if (items.has(id.slice(0, at))) [id, port] = [id.slice(0, at), id.slice(at + 1)];
+        }
+        if (port !== undefined && port !== null) {
+            if (!items.has(id) || !hasField(items.get(id).src, port)) throw new Error(`edge ${e.from}->${e.to}: ${id} has no field "${port}"`);
+            port = String(port);
+        } else port = undefined;
+        return [id, port];
+    };
+    for (const raw of graph.edges ?? []) {
+        const [from, fromPort] = endOf(raw, "from"), [to, toPort] = endOf(raw, "to");
+        const e = { ...raw, from, to };
         if (!items.has(e.from) || !items.has(e.to)) throw new Error(`edge ${e.from}->${e.to}: unknown node or group`);
+        if (e.from === e.to) { loops.push(e); continue; }                            // loops.mjs
         const a = chainUp(e.from), b = chainUp(e.to);
         if (a.includes(e.to) || b.includes(e.from)) { dropped.push(e); continue; }   // group <-> its own member
         const inB = new Set(b);
         const lca = a.find((x) => inB.has(x) && groups.has(x) && x !== e.from && x !== e.to);
         const cu = a[a.indexOf(lca) - 1], cv = b[b.indexOf(lca) - 1];
-        levelEdges.get(lca).push({ ...e, from: cu, to: cv, realFrom: e.from, realTo: e.to });
+        // lhead / ltail (Graphviz's): laid out to the node, drawn to the border of a group
+        // holding it (and not the other end).
+        const clip = (end, g, up, other, key) => {
+            if (g === undefined || g === null) return end;
+            if (!groups.has(g) || !up.includes(g)) throw new Error(`edge ${e.from}->${e.to}: ${key} "${g}" is not a group holding ${end}`);
+            if (other.includes(g)) throw new Error(`edge ${e.from}->${e.to}: ${key} "${g}" holds both ends`);
+            return g;
+        };
+        const realFrom = clip(e.from, e.ltail, a, b, "ltail"), realTo = clip(e.to, e.lhead, b, a, "lhead");
+        levelEdges.get(lca).push({ ...e, from: cu, to: cv, realFrom, realTo,
+                                   realFromPort: realFrom === e.from ? fromPort : undefined,
+                                   realToPort: realTo === e.to ? toPort : undefined });
     }
 
     const levels = new Map();
@@ -97,10 +129,15 @@ export function compound(graph) {
             if (node.dummy) items.set(id, { kind: node.edgeLabel ? "label" : "dummy", src: node.src, level: g.id });
         }
     }
-    return { levels, items, groups, dropped };
+    return { levels, items, groups, dropped, loops };
 }
 
 /** A chain's real ends, in path order (a reversed chain runs from the edge's target). */
 export function chainEnds({ edge, reversed }) {
     return reversed ? [edge.realTo, edge.realFrom] : [edge.realFrom, edge.realTo];
+}
+
+/** The fields (records.mjs) a chain's real ends attach to, in path order; undefined: none. */
+export function chainPorts({ edge, reversed }) {
+    return reversed ? [edge.realToPort, edge.realFromPort] : [edge.realFromPort, edge.realToPort];
 }
