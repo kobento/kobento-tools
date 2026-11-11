@@ -3,7 +3,7 @@
 //
 //   LAYOUT id=<n> x=<f> y=<f> w=<f> h=<f>
 //
-//   RcLayoutDump DOC.rc WIDTH HEIGHT [--density D] [--frames N] [--anim] [STEP]...
+//   RcLayoutDump DOC.rc WIDTH HEIGHT [--density D] [--frames N] [--anim] [--remeasure] [--floats] [STEP]...
 //
 // Loads, measures and settles the document the way layout-specs' CoverageHarness (and the
 // Android LayoutSpecGeneratorTest) do, with MockRemoteContext; text is measured by that mock,
@@ -30,6 +30,9 @@ import java.util.Locale;
 
 public class RcLayoutDump {
     static long now = 1735689600000L;
+    // --remeasure: measure before every paint, as a player does when the document asks for a
+    // layout (a StateLayout switching state invalidates its measure; the mock has no callback).
+    static boolean remeasure = false;
 
     public static void main(String[] args) throws Exception {
         byte[] bytes = Files.readAllBytes(Paths.get(args[0]));
@@ -42,6 +45,7 @@ public class RcLayoutDump {
             if (args[i].equals("--density")) density = Float.parseFloat(args[++i]);
             else if (args[i].equals("--frames")) frames = Integer.parseInt(args[++i]);
             else if (args[i].equals("--anim")) anim = true;
+            else if (args[i].equals("--remeasure")) remeasure = true;
             else if (args[i].equals("--click") || args[i].equals("--click-frame")) steps.add(new Object[] {args[i], Float.parseFloat(args[++i]), Float.parseFloat(args[++i])});
             else if (args[i].equals("--advance")) steps.add(new Object[] {args[i], Float.parseFloat(args[++i]), 0f});
             else if (args[i].equals("--settle")) steps.add(new Object[] {args[i], 0f, 0f});
@@ -58,9 +62,33 @@ public class RcLayoutDump {
                 super.overrideFloat(id, value);
                 loadFloat(id, value);
             }
+            // The player's loadFloat goes through RemoteComposeState.updateFloat, which also
+            // fills the integer map (a StateLayout reads its index there); the mock keeps
+            // floats in its own cache only, so a float-driven state index never switched here.
+            @Override
+            public void loadFloat(int id, float value) {
+                super.loadFloat(id, value);
+                mRemoteComposeState.updateFloat(id, value);
+            }
         };
+        // The mock sizes its listener tables for 400 ids (the player's are maps); a larger
+        // document would throw in registerVariables.
+        ctx.mVariableSupport = new java.util.ArrayList[8192];
+        ctx.listeners = new int[8192];
         ctx.mWidth = w;
         ctx.mHeight = h;
+        boolean traceFloats = String.join(" ", args).contains("--floats");
+        if (traceFloats) {
+            // MockRemoteContext logs every loadFloat into stringBuilder unless mHideString.
+            java.lang.reflect.Field hide = MockRemoteContext.class.getDeclaredField("mHideString");
+            hide.setAccessible(true);
+            hide.setBoolean(ctx, false);
+        }
+        // The window size is known before the data pass, as in a player that has its view's
+        // size: expressions over windowWidth()/windowHeight() evaluate there and the mock does
+        // not re-run them when it changes afterwards.
+        ctx.loadFloat(RemoteContext.ID_WINDOW_WIDTH, w);
+        ctx.loadFloat(RemoteContext.ID_WINDOW_HEIGHT, h);
         doc.initializeContext(ctx);
         ctx.setAnimationEnabled(anim);
         ctx.setDensity(density);
@@ -87,6 +115,12 @@ public class RcLayoutDump {
         if (args.length > 3 && String.join(" ", args).contains("--ints")) {
             for (int id = 40; id < 120; id++) System.out.println("INT id=" + id + " v=" + ctx.getInteger(id));
         }
+        if (args.length > 3 && String.join(" ", args).contains("--floats")) {
+            for (String line : ctx.stringBuilder.toString().split("\n")) {
+                if (line.startsWith("loadFloat[")) System.out.println("TRACE " + line);
+            }
+            for (int id = 40; id < 400; id++) System.out.println("FLOAT id=" + id + " v=" + ctx.getFloat(id));
+        }
     }
 
     static void settle(CoreDocument doc, MockRemoteContext ctx, int w, int h, int max) {
@@ -101,6 +135,7 @@ public class RcLayoutDump {
         ctx.mWidth = w;
         ctx.mHeight = h;
         ctx.currentTime = now;
+        if (remeasure) doc.measure(ctx, 0f, w, 0f, h);
         doc.paint(ctx, Theme.UNSPECIFIED);
     }
 
