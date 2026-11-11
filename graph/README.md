@@ -42,6 +42,30 @@ defines a status card with a coloured dot and a subtitle.
 `size` / `fontSize` / `padding` give the node's size in canvas mode (and the reflow
 orientation estimate): a fixed `[w, h]`, or `"auto"` per axis for the label plus padding.
 
+### Theme
+
+`"theme": {"surface": "#FF1E293B", "edge": "@colors.muted", ...}` overrides the colours the
+built-in looks, edges, records and buttons draw with (`THEME` in `looks.mjs`: `bg`, `edge`,
+`text`, `muted`, `surface`, `outline`, `accent`, `button`, `buttonFg`, `group`, `header`). A
+value is any colour the document understands, a named one too, so a document can follow light,
+dark and mono themes. Looks read them anywhere (defaults, layout, canvas drawing) as
+`{{theme.surface}}`. The built-in
+looks draw a border as the background of an outer box around the inner one, since a border
+modifier's colour is a literal for the Java parser.
+
+## Embedding
+
+`reflowView(graph, opts)` and `canvasGraphView(graph, opts)` return the graph as one component
+(it fills what it is given) and the variables it reads (`resources.variables` entries), for a
+document that has more in it; `reflowDoc` / `canvasDoc` wrap them in a document. Options:
+`direction`, `overflow`, `ns` (a prefix for every name it declares, so several graphs can share a
+document) and `guess` (`{width, height}` expressions: the space reflow mode plans its first frame
+for, before it is measured; the window by default). kobento-mcp's `GraphDiagram` component is
+built on them (its `layered` generator), with the library's theme colours.
+
+Both drop the anchor values nothing reads (a node with no edge out needs neither of its out
+anchor's): every player computes a value at every layout whether it is used or not.
+
 ## Groups
 
 ```json

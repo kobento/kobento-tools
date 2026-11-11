@@ -46,7 +46,7 @@ import { route, endVector } from "./routes.mjs";
 import { loopRoute, loopLabels } from "./loops.mjs";
 import { isRecord, cellsOf, recordLayout, recordCanvas } from "./records.mjs";
 import { edgeStyle, markerLength, strokePaint, markerCommands } from "./edges.mjs";
-import { THEME, fill, lookFor, lookForGroup, lookForLabel } from "./looks.mjs";
+import { themeOf, fill, lookFor, lookForGroup, lookForLabel } from "./looks.mjs";
 
 /**
  * The flow and cross shapes of a curve, t in [0, 1]: across the flow it eases (t²(3 - 2t),
@@ -296,7 +296,7 @@ function reflowVariant(graph, T, { G, chains, room, loops }, dir, prefix) {
         const node = T.levels.get(it.level).nodes.get(id);
         if (it.kind === "node" && isRecord(node.src)) {
             const i = index.get(id);
-            return wrap(id, recordLayout(node, G.records.get(id), tb, (k, p) => anchor(`${i}f${k}${p}`), flowOrder));
+            return wrap(id, recordLayout(node, G.records.get(id), tb, (k, p) => anchor(`${i}f${k}${p}`), flowOrder, themeOf(graph)));
         }
         const [{ name, look, vars }, what] = it.kind === "node" ? [lookFor(graph, node), "node"]
             : it.kind === "label" ? [lookForLabel(graph, node), "edge label"]
@@ -400,14 +400,62 @@ function reflowVariant(graph, T, { G, chains, room, loops }, dir, prefix) {
  */
 const SLACK = { cross: 1.25, flow: 1.08 };
 
-export function reflowDoc(graph, { width = 400, height = 500, direction, overflow, measure = measureLabel } = {}) {
+/**
+ * Drops the componentValues entries nothing reads (an anchor binds its x and y, and most anchors
+ * need one of them; a node with no edge out needs neither of its out anchor's): a value nothing
+ * uses is still computed by every player at every layout. Repeated, as a dropped expression may
+ * have been the only reader of another.
+ */
+function pruneValues(view, variables) {
+    for (;;) {
+        const refs = new Set();
+        const scan = (x) => {
+            if (typeof x === "string") { for (const m of x.matchAll(/@([A-Za-z_][\w]*)/g)) refs.add(m[1]); }
+            else if (Array.isArray(x)) x.forEach(scan);
+            else if (x && typeof x === "object") Object.values(x).forEach(scan);
+        };
+        scan(view); scan(variables);
+        let dropped = 0;
+        const walk = (x) => {
+            if (Array.isArray(x)) { x.forEach(walk); return; }
+            if (!x || typeof x !== "object") return;
+            if (x.componentValues && typeof x.componentValues === "object") {
+                for (const k of Object.keys(x.componentValues)) if (!refs.has(k)) { delete x.componentValues[k]; dropped++; }
+                if (!Object.keys(x.componentValues).length) delete x.componentValues;
+            }
+            Object.values(x).forEach(walk);
+        };
+        walk(view);
+        if (!dropped) return { view, variables };
+    }
+}
+
+export function reflowDoc(graph, { width = 400, height = 500, ...opts } = {}) {
+    const { view, variables } = reflowView(graph, opts);
+    return {
+        header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
+        ...(Object.keys(variables).length ? { resources: { variables } } : {}),
+        root: [{ box: { modifiers: ["fillMaxSize", { background: themeOf(graph).bg }], children: [view] } }],
+    };
+}
+
+/**
+ * The reflowing graph as one component (it fills what it is given) and the variables it reads
+ * (resources.variables entries: a value, an expression string or {value, anim}). `ns` starts
+ * every name it declares, so several graphs can share a document. `guess` {width, height}
+ * (expressions) is the space it is expected to get, for the first frame, before the space is
+ * measured: the window by default; a graph under a title gets less.
+ */
+export function reflowView(graph, opts = {}) {
+    const { view, variables } = reflowViewOf(graph, opts);
+    return pruneValues(view, variables);
+}
+
+function reflowViewOf(graph, { direction, overflow, measure = measureLabel, ns = "", guess = {} } = {}) {
     const T = compound(graph);
     const dir = String(direction ?? graph.direction ?? "auto").toUpperCase();
     const pan = String(overflow ?? graph.overflow ?? "pan") !== "clip";
-    const doc = {
-        header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
-        root: [],
-    };
+    const n = (name) => `${ns}${name}`;
     // The states: each orientation reflowing, then (with overflow "pan") the same orientations
     // as the fixed, pannable picture, for a graph too big to fit. Which one shows is picked from
     // sizes estimated from the looks (canvas mode's geometry; the engine's own measure is not
@@ -424,46 +472,41 @@ export function reflowDoc(graph, { width = 400, height = 500, direction, overflo
     const over = (w, h, name, wrap) => Object.fromEntries(laid.map((l, i) => {
         const [ew, eh] = est(l), tb = axes(dirs[i]).tb;
         const [sw, sh] = tb ? [SLACK.cross, SLACK.flow] : [SLACK.flow, SLACK.cross];
-        return [`${name}${i}`, wrap(`max(${Math.ceil(ew / sw)} / ${w}, ${Math.ceil(eh / sh)} / ${h})`)];
+        return [n(`${name}${i}`), wrap(`max(${Math.ceil(ew / sw)} / ${w}, ${Math.ceil(eh / sh)} / ${h})`)];
     }));
     const asVariable = (e) => e, asValue = (e) => ({ expression: e });
     // The state index: the orientation that overflows less (0 or 1), plus the orientations'
     // count when even that one does not fit (SLACK included).
     const pick = (name) => {
-        const o = laid.map((_, i) => `@${name}${i}`);
+        const o = laid.map((_, i) => `@${n(`${name}${i}`)}`);
         const orient = o.length > 1 ? `step(${o[0]}, ${o[1]})` : "0";
         if (!pan) return orient;
         const least = o.length > 1 ? `min(${o[0]}, ${o[1]})` : o[0];
         return `${orient === "0" ? "" : `${orient} + `}${o.length} * step(${least}, 1)`;
     };
-    const variants = laid.map((l, i) => reflowVariant(graph, T, l, dirs[i], dirs.length > 1 ? "tl"[i] : "v"));
+    const variants = laid.map((l, i) => reflowVariant(graph, T, l, dirs[i], n(dirs.length > 1 ? "tl"[i] : "v")));
+    let variables = {};
     if (pan) {
-        doc.resources = { variables: {} };
         laid.forEach((l, i) => {
-            const { view, variables } = canvasView(graph, T, l, dirs[i], `c${i}`);
+            const { view, variables: vs } = canvasView(graph, T, l, dirs[i], n(`c${i}`));
             variants.push(view);
-            Object.assign(doc.resources.variables, variables);
+            Object.assign(variables, vs);
         });
     }
-    let children;
-    if (variants.length === 1) {
-        children = variants;
-    } else {
-        doc.resources = { variables: { ...(doc.resources?.variables ?? {}),
-                                       ...over("max(windowWidth(), 1)", "max(windowHeight(), 1)", "overWindow", asVariable),
-                                       orientWindow: pick("overWindow") } };
-        children = [
-            { canvas: { modifiers: ["fillMaxSize"], commands: [], componentValues: {
-                availW: "width", availH: "height",
-                ...over("max(@availW, 1)", "max(@availH, 1)", "overMeasured", asValue),
-                orientMeasured: { expression: pick("overMeasured") },
-                orient: { expression: "ifElse(@orientWindow, @orientMeasured, @availW - 1.5)" },
-            } } },
-            { stateLayout: { indexId: "@orient", modifiers: ["fillMaxSize"], children: variants } },
-        ];
-    }
-    doc.root.push({ box: { modifiers: ["fillMaxSize", { background: THEME.bg }], children } });
-    return doc;
+    if (variants.length === 1) return { view: variants[0], variables };
+    variables = { ...variables,
+                  ...over(`max(${guess.width ?? "windowWidth()"}, 1)`, `max(${guess.height ?? "windowHeight()"}, 1)`, "overWindow", asVariable),
+                  [n("orientWindow")]: pick("overWindow") };
+    const view = { box: { modifiers: ["fillMaxSize"], children: [
+        { canvas: { modifiers: ["fillMaxSize"], commands: [], componentValues: {
+            [n("availW")]: "width", [n("availH")]: "height",
+            ...over(`max(@${n("availW")}, 1)`, `max(@${n("availH")}, 1)`, "overMeasured", asValue),
+            [n("orientMeasured")]: { expression: pick("overMeasured") },
+            [n("orient")]: { expression: `ifElse(@${n("orientWindow")}, @${n("orientMeasured")}, @${n("availW")} - 1.5)` },
+        } } },
+        { stateLayout: { indexId: `@${n("orient")}`, modifiers: ["fillMaxSize"], children: variants } },
+    ] } };
+    return { view, variables };
 }
 
 // ───────────────────────────────── canvas ─────────────────────────────────
@@ -488,16 +531,22 @@ export function measureLabel(s, size = 15) {
 
 const r1 = (x) => Math.round(x * 10) / 10;
 
-export function canvasDoc(graph, { width = 400, height = 500, direction, measure = measureLabel } = {}) {
-    const T = compound(graph);
-    let dir = String(direction ?? graph.direction ?? "TB").toUpperCase();
-    if (dir === "AUTO") dir = "TB";
-    const { view, variables } = canvasView(graph, T, layout(graph, T, measure, dir), dir, "");
+export function canvasDoc(graph, { width = 400, height = 500, ...opts } = {}) {
+    const { view, variables } = canvasGraphView(graph, opts);
     return {
         header: { apiLevel: 7, width, height, profiles: 513, contentDescription: describe(graph) },
         resources: { variables },
-        root: [{ box: { modifiers: ["fillMaxSize", { background: THEME.bg }], children: [view] } }],
+        root: [{ box: { modifiers: ["fillMaxSize", { background: themeOf(graph).bg }], children: [view] } }],
     };
+}
+
+/** Canvas mode as one component and its variables, as reflowView. */
+export function canvasGraphView(graph, { direction, measure = measureLabel, ns = "" } = {}) {
+    const T = compound(graph);
+    let dir = String(direction ?? graph.direction ?? "TB").toUpperCase();
+    if (dir === "AUTO") dir = "TB";
+    const { view, variables } = canvasView(graph, T, layout(graph, T, measure, dir), dir, ns);
+    return pruneValues(view, variables);
 }
 
 /**
@@ -573,7 +622,7 @@ function canvasView(graph, T, { G, chains, room, loops }, dir, prefix) {
     const drawn = (id) => {
         if (G.records.has(id)) {
             const it = T.items.get(id);
-            return recordCanvas(T.levels.get(it.level).nodes.get(id), G.records.get(id), geo.get(id), tb);
+            return recordCanvas(T.levels.get(it.level).nodes.get(id), G.records.get(id), geo.get(id), tb, themeOf(graph));
         }
         const { name, look, vars } = looks.get(id), b = geo.get(id);
         if (!look.canvas) throw new Error(`look "${name}" has no canvas drawing (needed by canvas mode)`);
@@ -592,7 +641,7 @@ function canvasView(graph, T, { G, chains, room, loops }, dir, prefix) {
     nodeCmds.push(...nodeLoopBodies); labelCmds.push(...loopLabelCmds);
 
     const GW = Math.max(1, Math.ceil(total.w)), GH = Math.max(1, Math.ceil(total.h));
-    const v = (name) => `${prefix}${name}`;
+    const v = (name) => `${prefix}${name}`, theme = themeOf(graph);
     // Fitted scale (never past 1.5x), times the user's zoom steps, animated.
     const scale = `min(min((width - 32) / ${GW}, (height - 32) / ${GH}), 1.5) * @${v("zoom")}`;
     const zoomButton = (step, label, glyph) => ({ canvas: {
@@ -601,11 +650,11 @@ function canvasView(graph, T, { G, chains, room, loops }, dir, prefix) {
                     { onClick: { type: "valueFloatExpressionChange", target: `@${v("zoomSteps")}`,
                                  value: `clamp(-8, 8, @${v("zoomSteps")} + ${step})` } }],
         commands: [
-            { paint: { ops: [{ color: THEME.button }, { style: "fill" }] } },
+            { paint: { ops: [{ color: theme.button }, { style: "fill" }] } },
             { drawRoundRect: { left: 0.5, top: 0.5, right: 39.5, bottom: 39.5, rx: 12, ry: 12 } },
-            { paint: { ops: [{ color: THEME.outline }, { style: "stroke" }, { width: 1 }] } },
+            { paint: { ops: [{ color: theme.outline }, { style: "stroke" }, { width: 1 }] } },
             { drawRoundRect: { left: 0.5, top: 0.5, right: 39.5, bottom: 39.5, rx: 12, ry: 12 } },
-            { paint: { ops: [{ color: THEME.buttonFg }, { style: "stroke" }, { width: 2 }, { strokeCap: "round" }] } },
+            { paint: { ops: [{ color: theme.buttonFg }, { style: "stroke" }, { width: 2 }, { strokeCap: "round" }] } },
             ...glyph,
         ],
     } });

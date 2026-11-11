@@ -48,12 +48,15 @@ for (const { name, graph: g } of graphs()) {
                 const v = p.float(n);
                 assert.ok(Number.isFinite(v) && v >= -1 && v <= Math.max(W, H) + 1, `${n} = ${v}`);
             }
-            // Every node's two flow anchors are laid out apart (the node between them).
+            // Every node's two flow anchors are laid out apart (the node between them), where
+            // edges use both (graph2rc drops the values nothing reads).
             const T = compound(g), index = new Map([...T.items.keys()].map((id, i) => [id, i]));
             const F = dir === "TB" || dir === "BT" ? "y" : "x";
             for (const [id, it] of T.items) {
                 if (it.kind !== "node") continue;
-                const i = index.get(id), a = p.float(`v${i}a${F}`), b = p.float(`v${i}b${F}`);
+                const i = index.get(id);
+                if (!(`v${i}a${F}` in p.vars && `v${i}b${F}` in p.vars)) continue;
+                const a = p.float(`v${i}a${F}`), b = p.float(`v${i}b${F}`);
                 assert.ok(Math.abs(b - a) >= 10, `${id}: its anchors are ${Math.abs(b - a)}px apart along the flow`);
             }
         });
@@ -74,7 +77,8 @@ test("taps: reflow mode sends the node's host action", { skip: !ts && "no TypeSc
     const g = graph("states");
     const p = await play(reflowDoc(g, { direction: "TB", overflow: "clip" }), 600, 900);
     const T = compound(g), index = new Map([...T.items.keys()].map((id, i) => [id, i]));
-    const centre = (id) => { const i = index.get(id); return [p.float(`v${i}ax`), (p.float(`v${i}ay`) + p.float(`v${i}by`)) / 2]; };
+    // Just inside the top edge, below the in anchor (every node here has an edge in).
+    const centre = (id) => { const i = index.get(id); return [p.float(`v${i}ax`), p.float(`v${i}ay`) + 8]; };
     assert.deepEqual(p.click(...centre("online")), [{ name: "open", value: "online" }], "style.action");
     assert.deepEqual(p.click(...centre("error")), [{ name: "details", value: "error" }], "the node's own action");
     const label = [...T.items].find(([, it]) => it.kind === "label" && it.src.id === "fail")[0];
@@ -153,7 +157,7 @@ test("taps: reflow mode in the Java reference", { skip: !java && "set RC_JAVA=1"
     const g = graph("states"), doc = reflowDoc(g, { direction: "TB", overflow: "clip" });
     const T = compound(g), i = [...T.items.keys()].indexOf("online");
     const first = javaRun(doc, 600, 900);
-    const x = first.float(`v${i}ax`), y = (first.float(`v${i}ay`) + first.float(`v${i}by`)) / 2;
+    const x = first.float(`v${i}ax`), y = first.float(`v${i}ay`) + 8;
     const { out } = javaRun(doc, 600, 900, "--click", x, y);
     assert.match(out, /^ACTION name=open value=online$/m);
 });

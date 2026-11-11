@@ -9,7 +9,7 @@
 // A header cell with the label comes first ("header": false leaves it out). Colours: "color",
 // "border", "text", "headerColor", "headerText".
 
-import { THEME } from "./looks.mjs";
+import { themeOf } from "./looks.mjs";
 
 const FS = 13, PX = 12, PY = 6;
 const SLACK = 1.15;   // stacked cells share one width, fixed up front: room for the engine's text
@@ -56,9 +56,9 @@ export function recordSize(node, measure, tb) {
     return { w: tb ? total : along, h: tb ? along : total, cross, ports, cellWidth: along - 2 };
 }
 
-const colours = (src) => ({
-    fill: src.color ?? THEME.surface, border: src.border ?? THEME.outline, text: src.text ?? THEME.text,
-    head: src.headerColor ?? THEME.outline, headText: src.headerText ?? THEME.text,
+const colours = (src, theme) => ({
+    fill: src.color ?? theme.surface, border: src.border ?? theme.outline, text: src.text ?? theme.text,
+    head: src.headerColor ?? theme.header, headText: src.headerText ?? theme.text,
 });
 
 /**
@@ -66,8 +66,8 @@ const colours = (src) => ({
  * background shows through 1px gaps as the dividers and border. Each field's cell is flanked by its own anchors along the
  * flow, named by `anchorFor(k, "a" | "b")` (k: the cell's index), in flow order (`flowOrder`).
  */
-export function recordLayout(node, rec, tb, anchorFor, flowOrder) {
-    const c = colours(node.src), { cross, cellWidth } = rec;
+export function recordLayout(node, rec, tb, anchorFor, flowOrder, theme) {
+    const c = colours(node.src, theme), { cross, cellWidth } = rec;
     const cell = (cl, k) => {
         const text = { text: { value: cl.label, fontSize: FS, color: cl.field === null ? c.headText : c.text,
                                ...(cl.field === null ? { fontWeight: 600 } : {}) } };
@@ -86,8 +86,8 @@ export function recordLayout(node, rec, tb, anchorFor, flowOrder) {
 }
 
 /** Canvas mode's drawing (rec: recordSize()) at box b: {body, label} commands. */
-export function recordCanvas(node, rec, b, tb) {
-    const c = colours(node.src), { cross } = rec;
+export function recordCanvas(node, rec, b, tb, theme) {
+    const c = colours(node.src, theme), { cross } = rec;
     const r1 = (x) => Math.round(x * 10) / 10;
     const rect = { left: r1(b.left), top: r1(b.top), right: r1(b.right), bottom: r1(b.bottom) };
     const body = [

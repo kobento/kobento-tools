@@ -11,7 +11,7 @@
 // Defaults come from the graph's "style": {"edge": {...}}, and "directed": false makes edges
 // default to no arrowheads. An explicit arrowhead / arrowtail wins over dir.
 
-import { THEME } from "./looks.mjs";
+import { themeOf } from "./looks.mjs";
 
 /** Marker shapes: points in (along, across), tip at the origin, the body behind it. */
 const MARKERS = {
@@ -36,7 +36,7 @@ export function edgeStyle(graph, edge) {
     const style = d.style ?? "solid";
     const dash = style === "dashed" ? [6, 4] : style === "dotted" ? [0.5, 3 + width] : style === "solid" ? null : undefined;
     if (dash === undefined) throw new Error(`edge ${edge.from}->${edge.to}: unknown style "${style}"`);
-    return { color: d.color ?? THEME.edge, width, dash, head, tail };
+    return { color: d.color ?? themeOf(graph).edge, width, dash, head, tail };
 }
 const stripUndefined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 

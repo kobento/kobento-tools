@@ -26,8 +26,15 @@
 export const THEME = {
     bg: "#FF0B1120", edge: "#FF64748B", text: "#FFE2E8F0", muted: "#FF94A3B8",
     surface: "#FF1E293B", outline: "#FF334155", accent: "#FF60A5FA",
-    button: "#E61E293B", buttonFg: "#FFE2E8F0",
+    button: "#E61E293B", buttonFg: "#FFE2E8F0", group: "#99131C2E", header: "#FF334155",
 };
+
+/**
+ * The colours a graph draws with: THEME, with the graph's own "theme" over it (any colour
+ * value the document understands: "#AARRGGBB", or a named colour such as "@colors.surface").
+ * Looks read them as {{theme.<name>}}.
+ */
+export const themeOf = (graph) => ({ ...THEME, ...(graph?.theme ?? {}) });
 
 const rect = { left: "{{left}}", top: "{{top}}", right: "{{right}}", bottom: "{{bottom}}" };
 const centredLabel = (size, weight) => [
@@ -35,20 +42,27 @@ const centredLabel = (size, weight) => [
     { drawTextAnchored: { text: "{{label}}", x: "{{cx}}", y: "{{cy}}", panX: 0, panY: 0 } },
 ];
 
-/** A rounded box with a hairline border, the label centred; the shared shape of the built-ins. */
+/**
+ * A rounded box with a hairline border, the label centred; the shared shape of the built-ins.
+ * In reflow mode the border is the outer box's background showing around the inner one (a
+ * border modifier's colour is a literal for the Java parser: no named theme colour).
+ */
 function boxLook(radius, { fill, border, text, borderWidth = 1, weight = 500 }) {
     const r = radius === "pill" ? 100 : radius;
     const cr = radius === "pill" ? "{{radius}}" : radius;
+    const pad = radius === "pill" ? [20, 10] : [16, 10];
     return {
         defaults: { color: fill, border, text },
-        fontSize: 15, padding: radius === "pill" ? [20, 10] : [16, 10],
+        fontSize: 15, padding: pad,
         layout: { box: {
-            horizontalAlignment: "center", verticalAlignment: "center",
-            modifiers: [{ clip: r }, { background: "{{color}}" },
-                        { border: { width: borderWidth, color: "{{border}}", cornerRadius: r, shape: 2 } },
-                        { padding: radius === "pill" ? [20, 10] : [16, 10] }],
-            children: [{ text: { value: "{{label}}", fontSize: 15, color: "{{text}}",
-                                 ...(weight !== 400 ? { fontWeight: weight } : {}) } }],
+            modifiers: [{ clip: r }, { background: "{{border}}" }, { padding: borderWidth }],
+            children: [{ box: {
+                horizontalAlignment: "center", verticalAlignment: "center",
+                modifiers: [{ clip: radius === "pill" ? 100 : r - borderWidth }, { background: "{{color}}" },
+                            { padding: pad.map((p) => p - borderWidth) }],
+                children: [{ text: { value: "{{label}}", fontSize: 15, color: "{{text}}",
+                                     ...(weight !== 400 ? { fontWeight: weight } : {}) } }],
+            } }],
         } },
         canvas: {
             commands: [
@@ -69,15 +83,16 @@ function boxLook(radius, { fill, border, text, borderWidth = 1, weight = 500 }) 
  * padding + title, and sizes the card from the content plus padding and title).
  */
 const groupLook = {
-    defaults: { color: "#99131C2E", border: THEME.outline, text: THEME.muted },
+    defaults: { color: "{{theme.group}}", border: "{{theme.outline}}", text: "{{theme.muted}}" },
     fontSize: 12, padding: [14, 10], title: 24,
     layout: { box: {
-        modifiers: [{ clip: 14 }, { background: "{{color}}" },
-                    { border: { width: 1, color: "{{border}}", cornerRadius: 14, shape: 2 } },
-                    { padding: [14, 10] }],
-        children: [{ column: {
-            horizontalAlignment: "start", modifiers: [{ spacedBy: 10 }],
-            children: [{ text: { value: "{{label}}", fontSize: 12, fontWeight: 600, color: "{{text}}" } }, "{{content}}"],
+        modifiers: [{ clip: 14 }, { background: "{{border}}" }, { padding: 1 }],
+        children: [{ box: {
+            modifiers: [{ clip: 13 }, { background: "{{color}}" }, { padding: [13, 9] }],
+            children: [{ column: {
+                horizontalAlignment: "start", modifiers: [{ spacedBy: 10 }],
+                children: [{ text: { value: "{{label}}", fontSize: 12, fontWeight: 600, color: "{{text}}" } }, "{{content}}"],
+            } }],
         } }],
     } },
     canvas: {
@@ -95,13 +110,13 @@ const groupLook = {
 };
 
 export const BUILTIN_LOOKS = {
-    card: boxLook(10, { fill: THEME.surface, border: THEME.outline, text: THEME.text }),
-    pill: boxLook("pill", { fill: THEME.surface, border: THEME.outline, text: THEME.text }),
-    outline: boxLook(10, { fill: THEME.bg, border: THEME.accent, text: THEME.accent, borderWidth: 1.5 }),
+    card: boxLook(10, { fill: "{{theme.surface}}", border: "{{theme.outline}}", text: "{{theme.text}}" }),
+    pill: boxLook("pill", { fill: "{{theme.surface}}", border: "{{theme.outline}}", text: "{{theme.text}}" }),
+    outline: boxLook(10, { fill: "{{theme.bg}}", border: "{{theme.accent}}", text: "{{theme.accent}}", borderWidth: 1.5 }),
     group: groupLook,
     // An edge's label: small muted text on the background colour, sitting on the line.
     edgeLabel: {
-        defaults: { bg: THEME.bg, text: THEME.muted },
+        defaults: { bg: "{{theme.bg}}", text: "{{theme.muted}}" },
         fontSize: 12, padding: [6, 3],
         layout: { box: {
             modifiers: [{ clip: 6 }, { background: "{{bg}}" }, { padding: [6, 3] }],
@@ -143,12 +158,15 @@ export function fill(tpl, vars, where) {
     return walk(tpl);
 }
 
+/** A look's defaults, its {{theme.<name>}} placeholders filled from the graph's theme. */
+const defaultsOf = (graph, look, where) => fill(look.defaults ?? {}, { theme: themeOf(graph) }, `${where}: the look's defaults`);
+
 /** The look a node uses, and the values its placeholders see. */
 export function lookFor(graph, node) {
     const name = node.src.look ?? graph.style?.look ?? "card";
     const look = graph.looks?.[name] ?? BUILTIN_LOOKS[name];
     if (!look) throw new Error(`node ${node.id}: unknown look "${name}"`);
-    const vars = { ...(look.defaults ?? {}), ...node.src, label: node.label, id: node.id, data: node.src.data ?? {} };
+    const vars = { ...defaultsOf(graph, look, `node ${node.id}`), ...node.src, label: node.label, id: node.id, data: node.src.data ?? {}, theme: themeOf(graph) };
     return { name, look, vars };
 }
 
@@ -158,7 +176,7 @@ export function lookForGroup(graph, group) {
     const look = graph.looks?.[name] ?? BUILTIN_LOOKS[name];
     if (!look) throw new Error(`group ${group.id}: unknown look "${name}"`);
     const { nodes, groups, ...own } = group.src;
-    const vars = { ...(look.defaults ?? {}), ...own, label: group.label, id: group.id, data: group.src.data ?? {} };
+    const vars = { ...defaultsOf(graph, look, `group ${group.id}`), ...own, label: group.label, id: group.id, data: group.src.data ?? {}, theme: themeOf(graph) };
     return { name, look, vars };
 }
 
@@ -171,7 +189,7 @@ export function lookForLabel(graph, node) {
     const name = edge.labelLook ?? graph.style?.edgeLabelLook ?? "edgeLabel";
     const look = graph.looks?.[name] ?? BUILTIN_LOOKS[name];
     if (!look) throw new Error(`edge ${edge.from}->${edge.to}: unknown label look "${name}"`);
-    const vars = { ...(look.defaults ?? {}), ...edge, label: node.label, data: edge.data ?? {} };
+    const vars = { ...defaultsOf(graph, look, `edge ${edge.from}->${edge.to}`), ...edge, label: node.label, data: edge.data ?? {}, theme: themeOf(graph) };
     return { name, look, vars };
 }
 
