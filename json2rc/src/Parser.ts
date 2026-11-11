@@ -1025,15 +1025,31 @@ export class Parser {
             out.push((w) => w.buffer.start(174));
             return true;
         }
-        if (k === "layoutcompute") {
-            // ComponentLayoutComputeModifier with an empty command list: LAYOUT_COMPUTE, the
-            // bounds array it declares, and the end.
-            const type = optInt((value ?? {}).type, 0);
+        if (k === "layoutcompute" || k === "computeposition" || k === "computemeasure") {
+            // ComponentLayoutComputeModifier: LAYOUT_COMPUTE, the bounds array it declares, the
+            // block, and the end. The reference JSON parser writes an empty block.
+            // EXTENSION: "computePosition": {"x": expr, "y": expr} and "computeMeasure":
+            // {"width": expr, "height": expr} (or "layoutCompute" with them and a "type"), as the
+            // Kotlin DSL's Modifier.computePosition { x = ...; y = ... } writes them: each value's
+            // expression, then SET_ARRAY_VALUE into the bounds (x, y, width, height at 0..3),
+            // inside the block, where the player evaluates them at layout time.
+            const o = (value ?? {}) as Record<string, J>;
+            const type = k === "computeposition" ? 1 : k === "computemeasure" ? 0 : optInt(o.type, 0);
+            const slots = (type === 1 ? [["x", 0], ["y", 1]] : [["width", 2], ["height", 3]]) as [string, number][];
+            for (const key of ["x", "y", "width", "height"]) {
+                if (o[key] !== undefined && !slots.some(([s]) => s === key)) {
+                    throw new NotImplementedComponent(`${k}: "${key}" is not set by a ${type === 1 ? "position" : "measure"} compute`);
+                }
+            }
             out.push((w) => {
                 const boundsId = w.allocArrayId();
                 w.buffer.start(238); w.buffer.writeInt(type); w.buffer.writeInt(boundsId);
-                w.buffer.writeBoolean(false);
+                w.buffer.writeBoolean(o.animate === true);
                 w.addDynamicFloatArray(boundsId, floatToRawIntBits(6));
+                for (const [key, index] of slots) {
+                    if (o[key] === undefined) continue;
+                    w.setArrayValue(boundsId, floatToRawIntBits(index), this.fbits(o[key]));
+                }
                 w.containerEnd();
             });
             return true;
