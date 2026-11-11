@@ -123,6 +123,8 @@ export async function play(doc, w, h, frames = 3) {
             for (let k = 1; k <= steps; k++) { d.touchDrag(remote, x0 + ((x1 - x0) * k) / steps, y0 + ((y1 - y0) * k) / steps); frame(); }
             d.touchUp(remote, x1, y1, 0, 0); frame();
         },
+        /** The current frame as a PNG. */
+        png() { return canvas.toBuffer("image/png"); },
         pixel(x, y) {
             const p = ctx.getImageData(x, y, 1, 1).data;
             return [p[0], p[1], p[2]];
