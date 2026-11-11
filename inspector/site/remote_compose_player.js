@@ -27906,6 +27906,12 @@ void main() {
       this.lineCap = "butt";
       this.lineJoin = "miter";
       this.miterLimit = 10;
+      // The dash path effect (PaintBundle.PATH_EFFECT). Part of the paint, applied with the
+      // stroke: kept on the context it was saved and restored with the canvas (ctx.save() holds
+      // the line dash), so a dash set before a matrixSave came back at its matrixRestore, undoing
+      // any change made in between -- Android's canvas.save() does not touch the Paint.
+      this.dashIntervals = [];
+      this.dashPhase = 0;
       this.blendMode = "source-over";
       this.antiAlias = true;
       this.filterBitmap = true;
@@ -28497,6 +28503,8 @@ void main() {
       this.ctx.lineCap = this.lineCap;
       this.ctx.lineJoin = this.lineJoin;
       this.ctx.miterLimit = this.miterLimit;
+      this.ctx.setLineDash(this.dashIntervals);
+      this.ctx.lineDashOffset = this.dashPhase;
       this.ctx.globalAlpha = this.alpha * this.mLayerAlpha;
       this.ctx.globalCompositeOperation = this.blendMode;
     }
@@ -28753,8 +28761,8 @@ void main() {
           case PaintBundle.PATH_EFFECT: {
             const count = upper;
             if (count === 0) {
-              this.ctx.setLineDash([]);
-              this.ctx.lineDashOffset = 0;
+              this.dashIntervals = [];
+              this.dashPhase = 0;
             } else if (count >= 3) {
               const type = arr[i];
               const phase = floatArg(arr[i + 1]);
@@ -28764,11 +28772,11 @@ void main() {
               for (let k = 0; k < len2 && k < count - 3; k++) intervals.push(floatArg(arr[i++]));
               for (let k = 3 + len2; k < count; k++) i++;
               if (type === 1 && intervals.length >= 2 && intervals.length % 2 === 0) {
-                this.ctx.setLineDash(intervals);
-                this.ctx.lineDashOffset = phase;
+                this.dashIntervals = intervals;
+                this.dashPhase = phase;
               } else {
-                this.ctx.setLineDash([]);
-                this.ctx.lineDashOffset = 0;
+                this.dashIntervals = [];
+                this.dashPhase = 0;
               }
             } else {
               i += count;
@@ -28810,8 +28818,8 @@ void main() {
       this.colorFilterArgb = 0;
       this.colorFilterMode = 3;
       this.activeShaderData = null;
-      this.ctx.setLineDash([]);
-      this.ctx.lineDashOffset = 0;
+      this.dashIntervals = [];
+      this.dashPhase = 0;
       this.setFont();
     }
     mapBlendMode(mode) {
@@ -28920,6 +28928,8 @@ void main() {
         lineCap: this.lineCap,
         lineJoin: this.lineJoin,
         miterLimit: this.miterLimit,
+        dashIntervals: this.dashIntervals,
+        dashPhase: this.dashPhase,
         blendMode: this.blendMode,
         antiAlias: this.antiAlias,
         letterSpacing: this.letterSpacing,
@@ -29869,7 +29879,7 @@ void main() {
       if (alpha !== 1) {
         this.ctx.globalAlpha = alpha;
       }
-      this.ctx.drawImage(layerCanvas, 0, 0);
+      if (layerCanvas.width > 0 && layerCanvas.height > 0) this.ctx.drawImage(layerCanvas, 0, 0);
       this.ctx.restore();
     }
     drawToBitmap(bitmapId, mode, color) {
