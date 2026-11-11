@@ -1114,9 +1114,16 @@
             box-shadow: 0 0 0 2px var(--accent-purple), 0 16px 44px rgba(0,0,0,0.65);
         }
 
+        .canvas-stage-clip {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+
         .canvas-stage-wrapper #previewCanvas {
             display: block;
-            border-radius: 8px;
             background-color: #ffffff;
             background-image: 
                 linear-gradient(45deg, #e2e8f0 25%, transparent 25%), 

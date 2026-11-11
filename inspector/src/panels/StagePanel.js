@@ -142,8 +142,8 @@ export function applyDensity(density, fromUser = true) {
 
     // Re-apply stage dimensions to synchronize canvas pixel width/height with the new density
     const canvas = document.getElementById('previewCanvas');
-    const currW = customStageWidth !== null ? customStageWidth : (canvas && canvas.style.width ? parseFloat(canvas.style.width) || (currentDocument ? currentDocument.getWidth() : 300) : 300);
-    const currH = customStageHeight !== null ? customStageHeight : (canvas && canvas.style.height ? parseFloat(canvas.style.height) || (currentDocument ? currentDocument.getHeight() : 300) : 300);
+    const currW = customStageWidth !== null ? customStageWidth : stageCssSize().w;
+    const currH = customStageHeight !== null ? customStageHeight : stageCssSize().h;
     applyStageDimensions(currW, currH);
 
     if (currentPlayer) {
@@ -180,6 +180,20 @@ export function onCustomDensityInput() {
     }
 }
 
+/**
+ * The document's size on the stage, in CSS px: the stage wrapper's. (Not the canvas's: a player
+ * with setViewport keeps a canvas bigger than the document, clipped by the wrapper.)
+ */
+function stageCssSize() {
+    const wr = document.getElementById('canvasStageWrapper');
+    const c = document.getElementById('previewCanvas');
+    const d = currentDensity || 1.0;
+    return {
+        w: parseFloat(wr && wr.style.width) || (c ? Math.round((c.width || 300) / d) : 300),
+        h: parseFloat(wr && wr.style.height) || (c ? Math.round((c.height || 300) / d) : 300),
+    };
+}
+
 export function updateStageScale() {
     const workspace = document.getElementById('stageWorkspaceContainer');
     const wrapper = document.getElementById('canvasStageWrapper');
@@ -189,10 +203,10 @@ export function updateStageScale() {
 
     const w = customStageWidth !== null
         ? customStageWidth
-        : (canvas && canvas.style.width ? parseFloat(canvas.style.width) || 300 : 300);
+        : stageCssSize().w;
     const h = customStageHeight !== null
         ? customStageHeight
-        : (canvas && canvas.style.height ? parseFloat(canvas.style.height) || 300 : 300);
+        : stageCssSize().h;
 
     const padding = 32; // 16px padding on each side of workspace
     const availW = Math.max(50, (workspace.clientWidth || 300) - padding);
@@ -260,8 +274,8 @@ export function updateStageScale() {
     const stageSetupBadge = document.getElementById('stageSetupBadge');
     if (stageSetupBadge) {
         const d = currentDensity || 1.0;
-        const curW = customStageWidth !== null ? customStageWidth : (canvas ? parseFloat(canvas.style.width) || 300 : 300);
-        const curH = customStageHeight !== null ? customStageHeight : (canvas ? parseFloat(canvas.style.height) || 300 : 300);
+        const curW = customStageWidth !== null ? customStageWidth : stageCssSize().w;
+        const curH = customStageHeight !== null ? customStageHeight : stageCssSize().h;
         const scaleStr = scale !== 1.0 ? ` • ${Math.round(scale * 100)}%` : '';
         stageSetupBadge.textContent = `${Math.round(curW)}×${Math.round(curH)} • ${d}x${scaleStr}`;
     }
@@ -327,10 +341,10 @@ export function initStageLiveResize() {
         const d = currentDensity || 1.0;
         startW = customStageWidth !== null
             ? customStageWidth
-            : (canvas ? (parseFloat(canvas.style.width) || Math.round((canvas.width || 300) / d)) : 300);
+            : stageCssSize().w;
         startH = customStageHeight !== null
             ? customStageHeight
-            : (canvas ? (parseFloat(canvas.style.height) || Math.round((canvas.height || 300) / d)) : 300);
+            : stageCssSize().h;
         startAspect = (startH > 0) ? (startW / startH) : 1.0;
         targetW = startW;
         targetH = startH;
@@ -427,7 +441,7 @@ export function initStageLiveResize() {
             const docW = currentDocument ? (typeof currentDocument.getAuthorWidth === 'function' ? currentDocument.getAuthorWidth() : (currentDocument.mHeader ? currentDocument.mHeader.mWidth : currentDocument.getWidth())) : 300;
             customStageWidth = docW;
             const d = currentDensity || 1.0;
-            const curH = customStageHeight !== null ? customStageHeight : (canvas ? (parseFloat(canvas.style.height) || Math.round((canvas.height || 300) / d)) : 300);
+            const curH = customStageHeight !== null ? customStageHeight : stageCssSize().h;
             applyStageDimensions(docW, curH);
         });
     }
@@ -440,7 +454,7 @@ export function initStageLiveResize() {
             const docH = currentDocument ? (typeof currentDocument.getAuthorHeight === 'function' ? currentDocument.getAuthorHeight() : (currentDocument.mHeader ? currentDocument.mHeader.mHeight : currentDocument.getHeight())) : 300;
             customStageHeight = docH;
             const d = currentDensity || 1.0;
-            const curW = customStageWidth !== null ? customStageWidth : (canvas ? (parseFloat(canvas.style.width) || Math.round((canvas.width || 300) / d)) : 300);
+            const curW = customStageWidth !== null ? customStageWidth : stageCssSize().w;
             applyStageDimensions(curW, docH);
         });
     }
@@ -492,7 +506,22 @@ export function applyStageDimensions(w, h) {
 
     const canvas = document.getElementById('previewCanvas');
     const wrapper = document.getElementById('canvasStageWrapper');
-    if (canvas) {
+    // A player that can keep one canvas across sizes (setViewport) lays the document out at
+    // the new size in the canvas it has, growing it only when needed: assigning a canvas's
+    // width or height reallocates its backing store and clears it, which a drag-resize did
+    // on every step. The clip box around the canvas shows the document's part of it.
+    const viewportPlayer = window.currentPlayer && typeof window.currentPlayer.setViewport === 'function' ? window.currentPlayer : null;
+    if (viewportPlayer) {
+        if (!viewportPlayer.__stageReserved) {
+            // The panel at the device's ratio, once: the sizes a drag reaches inside it never reallocate.
+            const ws = document.getElementById('stageWorkspaceContainer');
+            if (ws && typeof viewportPlayer.reserveSurface === 'function') {
+                viewportPlayer.reserveSurface(Math.ceil(ws.clientWidth * d), Math.ceil(ws.clientHeight * d));
+            }
+            viewportPlayer.__stageReserved = true;
+        }
+        viewportPlayer.setViewport(pixelW, pixelH);
+    } else if (canvas) {
         canvas.width = pixelW;
         canvas.height = pixelH;
         canvas.style.width = `${w}px`;

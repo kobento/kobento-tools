@@ -1214,7 +1214,8 @@ export function drawLayoutBoundsOverlay() {
 
     let overlayCanvas = doc.getElementById('layoutBoundsOverlayCanvas');
     const stageCanvas = doc.getElementById('previewCanvas') || doc.getElementById('canvas');
-    const stageWrapper = doc.getElementById('canvasStageWrapper');
+    // In the clip box with the canvas, so outlines past the document are clipped as it is.
+    const stageWrapper = doc.getElementById('canvasStageClip') || doc.getElementById('canvasStageWrapper');
 
     const win = typeof window !== 'undefined' ? window : globalThis;
     if (win.currentDocument) {
@@ -1251,10 +1252,13 @@ export function drawLayoutBoundsOverlay() {
     overlayCanvas.style.boxShadow = 'none';
     overlayCanvas.style.border = 'none';
     overlayCanvas.style.borderRadius = stageCanvas.style.borderRadius || '8px';
-    overlayCanvas.width = stageCanvas.width;
-    overlayCanvas.height = stageCanvas.height;
-    overlayCanvas.style.width = stageCanvas.style.width || `${stageCanvas.width}px`;
-    overlayCanvas.style.height = stageCanvas.style.height || `${stageCanvas.height}px`;
+    // Only when they change: assigning a canvas's width or height, even the same value,
+    // reallocates and clears it, and this runs on every redraw.
+    if (overlayCanvas.width !== stageCanvas.width) overlayCanvas.width = stageCanvas.width;
+    if (overlayCanvas.height !== stageCanvas.height) overlayCanvas.height = stageCanvas.height;
+    const ow = stageCanvas.style.width || `${stageCanvas.width}px`, oh = stageCanvas.style.height || `${stageCanvas.height}px`;
+    if (overlayCanvas.style.width !== ow) overlayCanvas.style.width = ow;
+    if (overlayCanvas.style.height !== oh) overlayCanvas.style.height = oh;
 
     const ctx = overlayCanvas.getContext('2d');
     if (!ctx) return;

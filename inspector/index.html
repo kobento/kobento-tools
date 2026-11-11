@@ -1135,9 +1135,16 @@
             box-shadow: 0 0 0 2px var(--accent-purple), 0 16px 44px rgba(0,0,0,0.65);
         }
 
+        .canvas-stage-clip {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+
         .canvas-stage-wrapper #previewCanvas {
             display: block;
-            border-radius: 8px;
             background-color: #ffffff;
             background-image: 
                 linear-gradient(45deg, #e2e8f0 25%, transparent 25%), 
@@ -2609,7 +2616,9 @@
                             <div class="stage-workspace-container" id="stageWorkspaceContainer" style="flex:1; min-height:180px; height:100%;">
                                 <div class="canvas-stage-scaler" id="canvasStageScaler">
                                     <div class="canvas-stage-wrapper" id="canvasStageWrapper" title="Drag the right, bottom, or corner handle to resize the document viewport">
-                                        <canvas id="previewCanvas" width="300" height="300"></canvas>
+                                        <!-- The canvas sits in a box of the document's size that clips it: the player keeps one
+                                             backing store, bigger than the document, across sizes (RcdPlayer.setViewport). -->
+                                        <div class="canvas-stage-clip" id="canvasStageClip"><canvas id="previewCanvas" width="300" height="300"></canvas></div>
                                         <div class="stage-resize-handle handle-e" id="stageResizeHandleE" title="Drag right handle to resize document width (Double-click to reset width)"></div>
                                         <div class="stage-resize-handle handle-s" id="stageResizeHandleS" title="Drag bottom handle to resize document height (Double-click to reset height)"></div>
                                         <div class="stage-resize-handle handle-se" id="stageResizeHandleSE" title="Drag corner handle to resize document width & height (Shift for aspect ratio)">↘</div>
@@ -5588,8 +5597,8 @@
       }
     }
     const canvas = document.getElementById("previewCanvas");
-    const currW = customStageWidth !== null ? customStageWidth : canvas && canvas.style.width ? parseFloat(canvas.style.width) || (currentDocument2 ? currentDocument2.getWidth() : 300) : 300;
-    const currH = customStageHeight !== null ? customStageHeight : canvas && canvas.style.height ? parseFloat(canvas.style.height) || (currentDocument2 ? currentDocument2.getHeight() : 300) : 300;
+    const currW = customStageWidth !== null ? customStageWidth : stageCssSize().w;
+    const currH = customStageHeight !== null ? customStageHeight : stageCssSize().h;
     applyStageDimensions(currW, currH);
     if (currentPlayer2) {
       if (typeof currentPlayer2.repaint === "function") currentPlayer2.repaint();
@@ -5621,14 +5630,23 @@
       applyDensity(val);
     }
   }
+  function stageCssSize() {
+    const wr = document.getElementById("canvasStageWrapper");
+    const c = document.getElementById("previewCanvas");
+    const d = currentDensity || 1;
+    return {
+      w: parseFloat(wr && wr.style.width) || (c ? Math.round((c.width || 300) / d) : 300),
+      h: parseFloat(wr && wr.style.height) || (c ? Math.round((c.height || 300) / d) : 300)
+    };
+  }
   function updateStageScale() {
     const workspace = document.getElementById("stageWorkspaceContainer");
     const wrapper = document.getElementById("canvasStageWrapper");
     const scaler = document.getElementById("canvasStageScaler");
     const canvas = document.getElementById("previewCanvas");
     if (!workspace || !wrapper) return;
-    const w = customStageWidth !== null ? customStageWidth : canvas && canvas.style.width ? parseFloat(canvas.style.width) || 300 : 300;
-    const h = customStageHeight !== null ? customStageHeight : canvas && canvas.style.height ? parseFloat(canvas.style.height) || 300 : 300;
+    const w = customStageWidth !== null ? customStageWidth : stageCssSize().w;
+    const h = customStageHeight !== null ? customStageHeight : stageCssSize().h;
     const padding = 32;
     const availW = Math.max(50, (workspace.clientWidth || 300) - padding);
     const availH = Math.max(50, (workspace.clientHeight || 300) - padding);
@@ -5684,8 +5702,8 @@
     const stageSetupBadge = document.getElementById("stageSetupBadge");
     if (stageSetupBadge) {
       const d = currentDensity || 1;
-      const curW = customStageWidth !== null ? customStageWidth : canvas ? parseFloat(canvas.style.width) || 300 : 300;
-      const curH = customStageHeight !== null ? customStageHeight : canvas ? parseFloat(canvas.style.height) || 300 : 300;
+      const curW = customStageWidth !== null ? customStageWidth : stageCssSize().w;
+      const curH = customStageHeight !== null ? customStageHeight : stageCssSize().h;
       const scaleStr = scale !== 1 ? ` \u2022 ${Math.round(scale * 100)}%` : "";
       stageSetupBadge.textContent = `${Math.round(curW)}\xD7${Math.round(curH)} \u2022 ${d}x${scaleStr}`;
     }
@@ -5741,8 +5759,8 @@
       startX = e.clientX;
       startY = e.clientY;
       const d = currentDensity || 1;
-      startW = customStageWidth !== null ? customStageWidth : canvas ? parseFloat(canvas.style.width) || Math.round((canvas.width || 300) / d) : 300;
-      startH = customStageHeight !== null ? customStageHeight : canvas ? parseFloat(canvas.style.height) || Math.round((canvas.height || 300) / d) : 300;
+      startW = customStageWidth !== null ? customStageWidth : stageCssSize().w;
+      startH = customStageHeight !== null ? customStageHeight : stageCssSize().h;
       startAspect = startH > 0 ? startW / startH : 1;
       targetW = startW;
       targetH = startH;
@@ -5826,7 +5844,7 @@
         const docW = currentDocument2 ? typeof currentDocument2.getAuthorWidth === "function" ? currentDocument2.getAuthorWidth() : currentDocument2.mHeader ? currentDocument2.mHeader.mWidth : currentDocument2.getWidth() : 300;
         customStageWidth = docW;
         const d = currentDensity || 1;
-        const curH = customStageHeight !== null ? customStageHeight : canvas ? parseFloat(canvas.style.height) || Math.round((canvas.height || 300) / d) : 300;
+        const curH = customStageHeight !== null ? customStageHeight : stageCssSize().h;
         applyStageDimensions(docW, curH);
       });
     }
@@ -5838,7 +5856,7 @@
         const docH = currentDocument2 ? typeof currentDocument2.getAuthorHeight === "function" ? currentDocument2.getAuthorHeight() : currentDocument2.mHeader ? currentDocument2.mHeader.mHeight : currentDocument2.getHeight() : 300;
         customStageHeight = docH;
         const d = currentDensity || 1;
-        const curW = customStageWidth !== null ? customStageWidth : canvas ? parseFloat(canvas.style.width) || Math.round((canvas.width || 300) / d) : 300;
+        const curW = customStageWidth !== null ? customStageWidth : stageCssSize().w;
         applyStageDimensions(curW, docH);
       });
     }
@@ -5884,7 +5902,17 @@
     const pixelH = Math.round(h * d);
     const canvas = document.getElementById("previewCanvas");
     const wrapper = document.getElementById("canvasStageWrapper");
-    if (canvas) {
+    const viewportPlayer = window.currentPlayer && typeof window.currentPlayer.setViewport === "function" ? window.currentPlayer : null;
+    if (viewportPlayer) {
+      if (!viewportPlayer.__stageReserved) {
+        const ws = document.getElementById("stageWorkspaceContainer");
+        if (ws && typeof viewportPlayer.reserveSurface === "function") {
+          viewportPlayer.reserveSurface(Math.ceil(ws.clientWidth * d), Math.ceil(ws.clientHeight * d));
+        }
+        viewportPlayer.__stageReserved = true;
+      }
+      viewportPlayer.setViewport(pixelW, pixelH);
+    } else if (canvas) {
       canvas.width = pixelW;
       canvas.height = pixelH;
       canvas.style.width = `${w}px`;
@@ -12698,7 +12726,7 @@
     if (!doc) return;
     let overlayCanvas = doc.getElementById("layoutBoundsOverlayCanvas");
     const stageCanvas = doc.getElementById("previewCanvas") || doc.getElementById("canvas");
-    const stageWrapper = doc.getElementById("canvasStageWrapper");
+    const stageWrapper = doc.getElementById("canvasStageClip") || doc.getElementById("canvasStageWrapper");
     const win = typeof window !== "undefined" ? window : globalThis;
     if (win.currentDocument) {
       cachedLayoutComponents = extractLayoutComponents(win.currentDocument);
@@ -12729,10 +12757,11 @@
     overlayCanvas.style.boxShadow = "none";
     overlayCanvas.style.border = "none";
     overlayCanvas.style.borderRadius = stageCanvas.style.borderRadius || "8px";
-    overlayCanvas.width = stageCanvas.width;
-    overlayCanvas.height = stageCanvas.height;
-    overlayCanvas.style.width = stageCanvas.style.width || `${stageCanvas.width}px`;
-    overlayCanvas.style.height = stageCanvas.style.height || `${stageCanvas.height}px`;
+    if (overlayCanvas.width !== stageCanvas.width) overlayCanvas.width = stageCanvas.width;
+    if (overlayCanvas.height !== stageCanvas.height) overlayCanvas.height = stageCanvas.height;
+    const ow = stageCanvas.style.width || `${stageCanvas.width}px`, oh = stageCanvas.style.height || `${stageCanvas.height}px`;
+    if (overlayCanvas.style.width !== ow) overlayCanvas.style.width = ow;
+    if (overlayCanvas.style.height !== oh) overlayCanvas.style.height = oh;
     const ctx = overlayCanvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);

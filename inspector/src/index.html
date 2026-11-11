@@ -113,7 +113,9 @@
                             <div class="stage-workspace-container" id="stageWorkspaceContainer" style="flex:1; min-height:180px; height:100%;">
                                 <div class="canvas-stage-scaler" id="canvasStageScaler">
                                     <div class="canvas-stage-wrapper" id="canvasStageWrapper" title="Drag the right, bottom, or corner handle to resize the document viewport">
-                                        <canvas id="previewCanvas" width="300" height="300"></canvas>
+                                        <!-- The canvas sits in a box of the document's size that clips it: the player keeps one
+                                             backing store, bigger than the document, across sizes (RcdPlayer.setViewport). -->
+                                        <div class="canvas-stage-clip" id="canvasStageClip"><canvas id="previewCanvas" width="300" height="300"></canvas></div>
                                         <div class="stage-resize-handle handle-e" id="stageResizeHandleE" title="Drag right handle to resize document width (Double-click to reset width)"></div>
                                         <div class="stage-resize-handle handle-s" id="stageResizeHandleS" title="Drag bottom handle to resize document height (Double-click to reset height)"></div>
                                         <div class="stage-resize-handle handle-se" id="stageResizeHandleSE" title="Drag corner handle to resize document width & height (Shift for aspect ratio)">↘</div>

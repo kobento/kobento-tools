@@ -27221,7 +27221,7 @@ void main() {
           i = braceIdx;
           if (i < n && tokens[i].type === 3 /* Punctuation */ && tokens[i].value === "{") {
             out.push(" {\n");
-            out.push(`  vec2 ${mainParamName} = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y) * u_doc_size / u_resolution;
+            out.push(`  vec2 ${mainParamName} = u_doc_origin + vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y) * u_doc_size / u_resolution;
 `);
             inMain = true;
             mainBraceDepth = 1;
@@ -27288,6 +27288,7 @@ void main() {
     let glsl = "#version 300 es\nprecision highp float;\n";
     glsl += "uniform vec2 u_resolution;\n";
     glsl += "uniform vec2 u_doc_size;\n";
+    glsl += "uniform vec2 u_doc_origin;\n";
     glsl += "out vec4 fragColor;\n";
     glsl += out.join("");
     return { glsl, uniforms, childShaders };
@@ -27391,7 +27392,7 @@ void main() {
      * @param cacheKey   - optional cache key for the compiled program
      *                     (use shader text ID for stable caching)
      */
-    render(glsl, width, height, floats2, ints, textures, cacheKey, docWidth, docHeight) {
+    render(glsl, width, height, floats2, ints, textures, cacheKey, docWidth, docHeight, docX = 0, docY = 0) {
       const gl = this.initGL();
       if (!gl) return false;
       if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -27412,6 +27413,8 @@ void main() {
       if (resLoc) gl.uniform2f(resLoc, width, height);
       const docLoc = this.getUniformLoc(gl, cached, "u_doc_size");
       if (docLoc) gl.uniform2f(docLoc, docWidth ?? width, docHeight ?? height);
+      const originLoc = this.getUniformLoc(gl, cached, "u_doc_origin");
+      if (originLoc) gl.uniform2f(originLoc, docX, docY);
       if (floats2) {
         for (const [name, values] of floats2) {
           const loc = this.getUniformLoc(gl, cached, name);
@@ -27793,6 +27796,8 @@ void main() {
         }
         throw new Error("No canvas factory available for graphics layers");
       };
+      /** The last shader pattern, reused while the shader, its uniforms and the transform stay the same. */
+      this.shaderPatternCache = null;
       this.mTextMeasureCache = /* @__PURE__ */ new Map();
       // The alpha of the enclosing saveLayer()s (an enter/exit fade): every draw sets
       // globalAlpha from its paint, so the layer's alpha is multiplied in there. It follows the
@@ -27822,6 +27827,14 @@ void main() {
       this.d3Super = 1;
       this.supersample3D = _CanvasPaintContext.supersample3D;
       this.gpuForSoftware3D = _CanvasPaintContext.gpuForSoftware3D;
+      /**
+       * The part of the canvas the document uses, in device pixels, from its top-left: the
+       * whole canvas unless a host keeps a canvas bigger than the document (RcdPlayer.setViewport,
+       * which reuses one backing store across sizes). What is sized to the drawing (the 3D
+       * buffers, a shader's area) follows this, not the canvas.
+       */
+      this.surfaceWidth = 0;
+      this.surfaceHeight = 0;
       if (!canvas) {
         throw new Error("CanvasPaintContext: canvas rendering context is null or undefined");
       }
@@ -28300,12 +28313,12 @@ void main() {
       return g;
     }
     applyFillStyle(override) {
-      this.ctx.fillStyle = override ?? this.getEffectiveColor();
+      this.ctx.fillStyle = override ?? (this.activeShaderData ? this.shaderPattern() : null) ?? this.getEffectiveColor();
       this.ctx.globalAlpha = this.alpha * this.mLayerAlpha;
       this.ctx.globalCompositeOperation = this.blendMode;
     }
     applyStrokeStyle(override) {
-      this.ctx.strokeStyle = override ?? this.getEffectiveColor();
+      this.ctx.strokeStyle = override ?? (this.activeShaderData ? this.shaderPattern() : null) ?? this.getEffectiveColor();
       this.ctx.lineWidth = this.strokeWidth;
       this.ctx.lineCap = this.lineCap;
       this.ctx.lineJoin = this.lineJoin;
@@ -28756,53 +28769,60 @@ void main() {
       }
     }
     /**
-     * If an active shader is set, render it via WebGL2 into the given
-     * rectangle and return true. Otherwise return false (caller does
-     * the normal fill).
+     * The active runtime shader as a pattern, or null when there is none or it cannot run here.
+     *
+     * Skia evaluates a runtime shader at the local coordinates of whatever is drawn (a rect, a
+     * path's fill, a stroke with its width, caps and joins, a glyph), so the shader is rendered
+     * over the part of local space the canvas shows and every fill and stroke paints with it.
+     * Transparent output stays transparent: the shape is not filled with the paint's colour.
+     * (Only drawRect used to render the shader, at the rect with p from 0: a stroked path, a
+     * circle or a line drew in the paint's plain colour instead.)
      */
-    tryRenderShader(left, top, right, bottom) {
+    shaderPattern() {
       const ctx = this.getContext();
-      if (!this.activeShaderData || !ctx) return false;
       const sd = this.activeShaderData;
+      if (!sd || !ctx || typeof this.ctx.getTransform !== "function") return null;
       const textId = sd.getShaderTextId();
       const shaderText = this.textCache.get(textId);
-      if (!shaderText) return false;
-      const cacheKey = String(textId);
+      if (!shaderText) return null;
       let glsl = this.glslCache.get(textId);
       if (!glsl) {
         try {
-          const result = transpileAgslToGlsl(shaderText);
-          glsl = result.glsl;
+          glsl = transpileAgslToGlsl(shaderText).glsl;
           this.glslCache.set(textId, glsl);
         } catch (e) {
           console.error(`[shader] transpile failed (textId=${textId}):`, e, "\nAGSL:", shaderText);
-          return false;
+          return null;
         }
       }
       if (!this.shaderRenderer) {
         this.shaderRenderer = new WebGLShaderRenderer();
         if (!this.shaderRenderer.isAvailable()) {
           this.shaderRenderer = null;
-          return false;
+          return null;
         }
       }
-      let w = Math.round(right - left);
-      let h = Math.round(top > bottom ? top - bottom : bottom - top);
-      if (w <= 0 || h <= 0) return false;
-      const maxW = this.ctx.canvas.width || 4096;
-      const maxH = this.ctx.canvas.height || 4096;
-      if (w > maxW) w = maxW;
-      if (h > maxH) h = maxH;
+      const m = this.ctx.getTransform();
+      const det = m.a * m.d - m.b * m.c;
+      if (!det) return null;
+      const inv = m.inverse();
+      const cw = this.surfaceW() || 1, ch = this.surfaceH() || 1;
+      const xs = [], ys = [];
+      for (const [x, y] of [[0, 0], [cw, 0], [0, ch], [cw, ch]]) {
+        xs.push(inv.a * x + inv.c * y + inv.e);
+        ys.push(inv.b * x + inv.d * y + inv.f);
+      }
+      const bx = Math.min(...xs), by = Math.min(...ys);
+      const bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
+      if (!(bw > 0 && bh > 0)) return null;
+      const scale2 = Math.sqrt(Math.abs(det));
+      const w = Math.max(1, Math.min(4096, Math.ceil(bw * scale2)));
+      const h = Math.max(1, Math.min(4096, Math.ceil(bh * scale2)));
       sd.updateVariables(ctx);
       const floats2 = /* @__PURE__ */ new Map();
-      for (const name of sd.getUniformFloatNames()) {
-        const vals = sd.getUniformFloats(name);
-        floats2.set(name, vals);
-      }
+      for (const name of sd.getUniformFloatNames()) floats2.set(name, sd.getUniformFloats(name));
       const ints = /* @__PURE__ */ new Map();
-      for (const name of sd.getUniformIntegerNames()) {
-        ints.set(name, sd.getUniformInts(name));
-      }
+      for (const name of sd.getUniformIntegerNames()) ints.set(name, sd.getUniformInts(name));
       let textures;
       const bitmapNames = sd.getUniformBitmapNames();
       if (bitmapNames.length > 0) {
@@ -28811,49 +28831,38 @@ void main() {
           const bmpId = sd.getUniformBitmapId(name);
           if (bmpId < 0) continue;
           const offCtx = this.bitmapCanvasCache.get(bmpId);
-          if (offCtx) {
-            textures.set(name, offCtx.canvas);
-          } else {
+          if (offCtx) textures.set(name, offCtx.canvas);
+          else {
             const img = this.bitmapCache.get(bmpId);
             if (img) textures.set(name, img);
           }
         }
       }
-      const docW = Math.round(right - left);
-      const docH = Math.round(Math.abs(bottom - top));
-      const ok = this.shaderRenderer.render(
-        glsl,
+      const key = textures ? "" : [
+        textId,
+        bx,
+        by,
+        bw,
+        bh,
         w,
         h,
-        floats2,
-        ints,
-        textures,
-        cacheKey,
-        docW,
-        docH
-      );
+        ...[...floats2].map(([n, v]) => `${n}=${Array.from(v).join(",")}`),
+        ...[...ints].map(([n, v]) => `${n}=${Array.from(v).join(",")}`)
+      ].join("|");
+      if (key && this.shaderPatternCache?.key === key) return this.shaderPatternCache.pattern;
+      const ok = this.shaderRenderer.render(glsl, w, h, floats2, ints, textures, String(textId), bw, bh, bx, by);
       if (!ok) {
         console.error(`[shader] WebGL render FAILED textId=${textId}`);
-        return false;
+        return null;
       }
-      this.ctx.globalAlpha = this.alpha * this.mLayerAlpha;
-      this.ctx.globalCompositeOperation = this.blendMode;
-      const dstW = right - left;
-      const dstH = Math.abs(bottom - top);
-      this.ctx.drawImage(
-        this.shaderRenderer.getCanvas(),
-        left,
-        Math.min(top, bottom),
-        dstW,
-        dstH
-      );
-      return true;
+      const pattern = this.ctx.createPattern(this.shaderRenderer.getCanvas(), "no-repeat");
+      if (!pattern) return null;
+      pattern.setTransform(new DOMMatrix([bw / w, 0, 0, bh / h, bx, by]));
+      this.shaderPatternCache = key ? { key, pattern } : null;
+      return pattern;
     }
     // --- Drawing ---
     drawRect(left, top, right, bottom) {
-      if (this.activeShaderData && this.tryRenderShader(left, top, right, bottom)) {
-        return;
-      }
       this.fillOrStroke(
         () => {
           this.ctx.fillRect(left, top, right - left, bottom - top);
@@ -29720,15 +29729,21 @@ void main() {
       this.resetPaintState();
       this.clearNeedsRepaint();
     }
+    surfaceW() {
+      return this.surfaceWidth || this.ctx.canvas.width;
+    }
+    surfaceH() {
+      return this.surfaceHeight || this.ctx.canvas.height;
+    }
     superFactor() {
       const v = this.supersample3D;
-      if (v === "auto") return this.ctx.canvas.width * this.ctx.canvas.height <= 105e4 ? 2 : 1;
+      if (v === "auto") return this.surfaceW() * this.surfaceH() <= 105e4 ? 2 : 1;
       return Math.max(1, Math.trunc(Number(v)) || 1);
     }
     ensure3D() {
       const k = this.superFactor();
-      const w = this.ctx.canvas.width * k;
-      const h = this.ctx.canvas.height * k;
+      const w = this.surfaceW() * k;
+      const h = this.surfaceH() * k;
       if (this.d3 === null) {
         this.d3 = new SoftwarePaint3DContext();
       }
@@ -29753,7 +29768,7 @@ void main() {
     clearDepth3D() {
       this.ensure3D().clearDepth3D();
       if (this.d3gl && this.d3gl.isAvailable()) {
-        this.d3gl.beginPass(this.ctx.canvas.width, this.ctx.canvas.height);
+        this.d3gl.beginPass(this.surfaceW(), this.surfaceH());
       }
     }
     setLights3D(types, colors, params) {
@@ -30350,8 +30365,10 @@ void main() {
     // --- Text ---
     loadText(id, text) {
       if (this.mRemoteComposeState.isDataOverridden(id)) return;
+      const previous = this.mRemoteComposeState.getFromId(id);
       this.mRemoteComposeState.cacheDataWithId(id, text);
       this.canvasPaintContext.loadText(id, text);
+      if (previous !== void 0 && previous !== null && previous !== text) this.mRemoteComposeState.markVariableDirty(id);
     }
     getText(id) {
       return this.canvasPaintContext.getText(id);
@@ -31334,7 +31351,7 @@ void main() {
 
   // ../kobento-ts/src/web/main.ts
   var TOUCH_SLOP = 8;
-  var RcdPlayer = class {
+  var _RcdPlayer = class _RcdPlayer {
     constructor(canvas) {
       this.document = null;
       this.paintContext = null;
@@ -31373,6 +31390,19 @@ void main() {
       this.mContentOffsetX = 0;
       this.mContentOffsetY = 0;
       this.isPaused = false;
+      /**
+       * Frames still to paint after a host change (repaint()), even if the document says it is
+       * idle. A change reaches what depends on it over several frames: a component paints its
+       * own operations before its children, so a value a child computes (a slider's TextFromFloat)
+       * reaches a reader in its parent (the TextMerge of the label beside it) a frame later. One
+       * frame left that label stale: the plane moved, the time left did not.
+       */
+      this.settleFrames = 0;
+      /**
+       * The document's size in device pixels when it is smaller than the canvas (setViewport),
+       * else null: the document then fills the canvas, as resize() makes it.
+       */
+      this.viewport = null;
       // Draws the custom components — embedded documents, videos — for every document this
       // player shows. It outlives the documents, so an embed marked `persist` carries across
       // them; a new document retires the rest.
@@ -31480,7 +31510,11 @@ void main() {
           this.variableListener(this.remoteContext.mRemoteComposeState.getFloatEntries());
         }
         if (this.isPaused) return;
-        const repaintDelay = this.document.needsRepaint();
+        let repaintDelay = this.document.needsRepaint();
+        if (this.settleFrames > 0) {
+          this.settleFrames--;
+          if (repaintDelay < 0 || repaintDelay > 1) repaintDelay = 1;
+        }
         if (repaintDelay >= 0) {
           if (repaintDelay <= 1) {
             this.animationFrameId = requestAnimationFrame(this.renderFrame);
@@ -31568,6 +31602,7 @@ void main() {
       if (density > 0 && !Number.isNaN(density)) {
         this.density = density;
         this.remoteContext?.setDensity(density);
+        if (this.viewport) this.growCanvas(this.viewport.width, this.viewport.height);
         this.scheduleRepaint();
       }
     }
@@ -31592,8 +31627,8 @@ void main() {
       this.naturalWidth = doc.getWidth();
       this.naturalHeight = doc.getHeight();
       const density = this.density || doc.getProperty(Header.DOC_DENSITY_AT_GENERATION) || 1;
-      const docWidth = this.canvas.width;
-      const docHeight = this.canvas.height;
+      const docWidth = this.viewport?.width ?? this.canvas.width;
+      const docHeight = this.viewport?.height ?? this.canvas.height;
       doc.setWidth(docWidth);
       doc.setHeight(docHeight);
       if (this.paintContext) this.paintContext.dispose();
@@ -31610,6 +31645,10 @@ void main() {
       this.remoteContext.setCustomHost(this.customHost);
       this.remoteContext.mWidth = docWidth;
       this.remoteContext.mHeight = docHeight;
+      if (this.viewport) {
+        this.paintContext.surfaceWidth = docWidth;
+        this.paintContext.surfaceHeight = docHeight;
+      }
       this.remoteContext.setDensity(density);
       if (this.measurementSink) this.remoteContext.setMeasurementSink(this.measurementSink);
       doc.applyDataOperations(this.remoteContext);
@@ -31652,6 +31691,7 @@ void main() {
       }
     }
     repaint() {
+      this.settleFrames = _RcdPlayer.SETTLE_FRAMES;
       if (this.animationFrameId !== null) {
         cancelAnimationFrame(this.animationFrameId);
         this.animationFrameId = null;
@@ -31661,6 +31701,11 @@ void main() {
       }
     }
     resize(newWidth, newHeight) {
+      this.viewport = null;
+      if (this.paintContext) {
+        this.paintContext.surfaceWidth = 0;
+        this.paintContext.surfaceHeight = 0;
+      }
       this.canvas.width = newWidth;
       this.canvas.height = newHeight;
       const d = this.remoteContext?.getDensity() || this.density || 1;
@@ -31676,6 +31721,57 @@ void main() {
         this.document.invalidateMeasure();
       }
       this.repaint();
+    }
+    /**
+     * Lay the document out at width x height device pixels without resizing the canvas when
+     * it is already big enough: the document draws in the canvas's top-left corner, and the
+     * host shows that part (a wrapper of the document's CSS size with overflow hidden around
+     * a canvas at its full CSS size). Setting a canvas's width or height reallocates its
+     * backing store and clears it, so resize() on every step of a drag-resize reallocated on
+     * every step; here the canvas only grows, in steps of SURFACE_STEP device pixels (or to
+     * what reserveSurface asked for), and a smaller size reuses it.
+     */
+    setViewport(width, height) {
+      const w = Math.max(1, Math.round(width)), h = Math.max(1, Math.round(height));
+      this.viewport = { width: w, height: h };
+      this.growCanvas(w, h);
+      if (this.paintContext) {
+        this.paintContext.surfaceWidth = w;
+        this.paintContext.surfaceHeight = h;
+      }
+      if (this.remoteContext) {
+        this.remoteContext.mWidth = w;
+        this.remoteContext.mHeight = h;
+      }
+      if (this.document) {
+        this.document.setWidth(w);
+        this.document.setHeight(h);
+        this.document.invalidateMeasure();
+      }
+      this.repaint();
+    }
+    /** The size the document is laid out at (device pixels): the viewport, or the canvas. */
+    getViewport() {
+      return this.viewport ? { ...this.viewport } : { width: this.canvas.width, height: this.canvas.height };
+    }
+    /**
+     * Allocate the canvas for the biggest size coming (a host's panel, at the device's
+     * pixel ratio) once, so setViewport never reallocates up to it.
+     */
+    reserveSurface(width, height) {
+      this.growCanvas(Math.round(width), Math.round(height), false);
+    }
+    growCanvas(w, h, step = true) {
+      const up = (v) => step ? Math.ceil(v / _RcdPlayer.SURFACE_STEP) * _RcdPlayer.SURFACE_STEP : v;
+      const cw = this.canvas.width, ch = this.canvas.height;
+      if (cw < w || ch < h) {
+        this.canvas.width = Math.max(cw, up(w));
+        this.canvas.height = Math.max(ch, up(h));
+      }
+      const d = this.remoteContext?.getDensity() || this.density || 1;
+      const sw = this.canvas.width / d + "px", sh = this.canvas.height / d + "px";
+      if (this.canvas.style.width !== sw) this.canvas.style.width = sw;
+      if (this.canvas.style.height !== sh) this.canvas.style.height = sh;
     }
     /**
      * How embedded documents and videos are fetched: by path, relative to the page, unless
@@ -31749,6 +31845,9 @@ void main() {
       URL.revokeObjectURL(url);
     }
   };
+  _RcdPlayer.SETTLE_FRAMES = 4;
+  _RcdPlayer.SURFACE_STEP = 256;
+  var RcdPlayer = _RcdPlayer;
   if (typeof window !== "undefined") {
     window.RcdPlayer = RcdPlayer;
     window.RC = {
