@@ -1,0 +1,27 @@
+{
+  "nodes": [
+    {"id": "src", "label": "Source"},
+    {"id": "lex", "label": "Lexer"},
+    {"id": "parse", "label": "Parser"},
+    {"id": "ast", "label": "AST"},
+    {"id": "types", "label": "Type check"},
+    {"id": "opt", "label": "Optimise"},
+    {"id": "ir", "label": "IR"},
+    {"id": "emit", "label": "Emit .rc"},
+    {"id": "diag", "label": "Diagnostics", "color": "#FF5A2F3A"}
+  ],
+  "edges": [
+    {"from": "src", "to": "lex"},
+    {"from": "lex", "to": "parse"},
+    {"from": "parse", "to": "ast"},
+    {"from": "ast", "to": "types"},
+    {"from": "types", "to": "ir"},
+    {"from": "ir", "to": "opt"},
+    {"from": "opt", "to": "ir", "color": "#FFE0A458"},
+    {"from": "ir", "to": "emit"},
+    {"from": "lex", "to": "diag", "color": "#FFD9707F"},
+    {"from": "parse", "to": "diag", "color": "#FFD9707F"},
+    {"from": "types", "to": "diag", "color": "#FFD9707F"},
+    {"from": "src", "to": "emit"}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "direction": "TB",
+  "nodes": [
+    {"id": "a", "label": "Request"},
+    {"id": "b", "label": "Parse"},
+    {"id": "c", "label": "Authenticate"},
+    {"id": "d", "label": "Layout"},
+    {"id": "e", "label": "Render to canvas"}
+  ],
+  "edges": [
+    {"from": "a", "to": "b"},
+    {"from": "a", "to": "c"},
+    {"from": "b", "to": "d"},
+    {"from": "c", "to": "d"},
+    {"from": "c", "to": "e"},
+    {"from": "b", "to": "e"}
+  ]
+}
