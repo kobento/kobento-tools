@@ -1006,6 +1006,40 @@ export class Parser {
             out.push((w) => w.animationSpec(id, md, me, vd, ve, enterPacked, exitPacked, enterFn, exitFn));
             return true;
         }
+        if (k === "textinput") {
+            // MODIFIER_TEXT_INPUT (60, androidx CL 4451608): the string the component shows is
+            // editable. {"text": "@name", "keyboard": "email", "imeAction": "done", "singleLine":
+            // true, "commitOnDone": false, "autoCorrect": false, "capitalize": "words",
+            // "maxLength": 40, "filter": "digits", "hint": "Your email" | "@hintText"}.
+            // Players with text input open an editor over the component on a tap; others show
+            // the text. A json2rc extension: the reference JSON parser has no such key.
+            const o = (value && typeof value === "object" && !Array.isArray(value) ? value : { text: value }) as Record<string, J>;
+            if (o.text === undefined || o.text === null) throw new NotImplementedComponent('textInput needs "text": the "@name" of the string it edits');
+            const textId = this.resolveTextId(o.text);
+            const pick = (v: J, names: string[], what: string, d: number) => {
+                if (v === undefined || v === null) return d;
+                if (typeof v === "number") return v;
+                const i = names.indexOf(String(v).toLowerCase().replace(/[\s_-]/g, ""));
+                if (i < 0) throw new NotImplementedComponent(`textInput ${what} '${v}': one of ${names.filter(Boolean).join(", ")}`);
+                return i;
+            };
+            const keyboard = pick(o.keyboard ?? o.keyboardType, ["unspecified", "text", "ascii", "number", "phone", "uri", "email", "password", "numberpassword", "decimal"], "keyboard", 0);
+            const ime = pick(o.imeAction, ["none", "default", "go", "search", "send", "previous", "next", "done"], "imeAction", 1);
+            const filter = pick(o.filter, ["none", "digits", "decimal", "alphanumeric", "hexadecimal"], "filter", 0);
+            const cap = o.capitalize === undefined || o.capitalize === null || o.capitalize === false ? 0
+                : ({ characters: 8, words: 16, sentences: 32 } as Record<string, number>)[String(o.capitalize).toLowerCase()];
+            if (cap === undefined) throw new NotImplementedComponent(`textInput capitalize '${o.capitalize}': characters, words or sentences`);
+            const flags = (o.singleLine === false ? 0 : 1) | (o.commitOnDone ? 2 : 0) | (o.autoCorrect ? 4 : 0) | cap;
+            const maxLength = Math.max(0, Math.trunc(num(o.maxLength, 0)));
+            const hint = o.hint;
+            const hintRef = typeof hint === "string" && (hint.startsWith("@") || hint.startsWith("$")) ? this.resolveTextId(hint) : null;
+            out.push((w) => {
+                const hintId = hint === undefined || hint === null || hint === "" ? 0 : hintRef ?? w.addText(String(hint));
+                w.buffer.start(60);
+                for (const v of [textId, keyboard, ime, flags, maxLength, filter, hintId]) w.buffer.writeInt(v);
+            });
+            return true;
+        }
         if (k === "zindex") {
             const z = this.fbits(value);
             out.push((w) => { w.buffer.start(223); w.buffer.writeInt(z); });
@@ -3559,8 +3593,10 @@ export class Parser {
                     // EXTENSION. Held as a plain float carrying the text id, as for
                     // textFromFloat, so "@wifiSsid" works wherever text is expected.
                     const text = String(cfg.value ?? "");
+                    // Each its own id, exported or not: two variables starting equal ("") are
+                    // still two strings, or editing one (a text input) changed the other.
                     const id = named ? this.writer.addNamedString(name, text)
-                                     : this.writer.addText(text);
+                                     : this.writer.addVariableText(text);
                     this.variables.set(name, floatToRawIntBits(id));
                     continue;
                 }

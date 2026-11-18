@@ -1008,6 +1008,18 @@ export class Writer {
      * be two ids, or setting one would set both. EXTENSION: not in the reference JSON
      * parser yet (m5Tab docs/RC_SYSTEM_VARIABLES.md).
      */
+    /**
+     * DATA_TEXT under a fresh id, not interned: a string variable (one a click action, a text
+     * input or the host changes) shares no id with an equal text elsewhere.
+     */
+    addVariableText(value: string): number {
+        const id = this.allocDataId();
+        this.buffer.start(OP.DATA_TEXT);
+        this.buffer.writeInt(id);
+        this.buffer.writeUtf8(value);
+        return id;
+    }
+
     addNamedString(name: string, value: string): number {
         const id = this.allocDataId();
         this.buffer.start(OP.NAMED_VARIABLE);   // before the text, as RemoteComposeWriter does
