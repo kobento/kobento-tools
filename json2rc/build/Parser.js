@@ -1125,11 +1125,14 @@ class Parser {
             const keyboard = pick(o.keyboard ?? o.keyboardType, ["unspecified", "text", "ascii", "number", "phone", "uri", "email", "password", "numberpassword", "decimal"], "keyboard", 0);
             const ime = pick(o.imeAction, ["none", "default", "go", "search", "send", "previous", "next", "done"], "imeAction", 1);
             const filter = pick(o.filter, ["none", "digits", "decimal", "alphanumeric", "hexadecimal"], "filter", 0);
+            // (A component passes its params as written or folded: true/false, 1/0, "true"/"false".)
+            const bool = (v, d) => (v === undefined || v === null || v === "" ? d
+                : !(v === false || v === 0 || String(v).toLowerCase() === "false" || String(v) === "0"));
             const cap = o.capitalize === undefined || o.capitalize === null || o.capitalize === false ? 0
-                : { characters: 8, words: 16, sentences: 32 }[String(o.capitalize).toLowerCase()];
+                : { none: 0, off: 0, characters: 8, words: 16, sentences: 32 }[String(o.capitalize).toLowerCase()];
             if (cap === undefined)
-                throw new NotImplementedComponent(`textInput capitalize '${o.capitalize}': characters, words or sentences`);
-            const flags = (o.singleLine === false ? 0 : 1) | (o.commitOnDone ? 2 : 0) | (o.autoCorrect ? 4 : 0) | cap;
+                throw new NotImplementedComponent(`textInput capitalize '${o.capitalize}': none, characters, words or sentences`);
+            const flags = (bool(o.singleLine, true) ? 1 : 0) | (bool(o.commitOnDone, false) ? 2 : 0) | (bool(o.autoCorrect, false) ? 4 : 0) | cap;
             const maxLength = Math.max(0, Math.trunc(num(o.maxLength, 0)));
             const hint = o.hint;
             const hintRef = typeof hint === "string" && (hint.startsWith("@") || hint.startsWith("$")) ? this.resolveTextId(hint) : null;
