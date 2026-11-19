@@ -2083,8 +2083,12 @@ class Parser {
             if (hit !== undefined)
                 return hit;
         }
-        if (text.includes("@") && /[+\-*/%]/.test(text)) {
+        if (text.includes("@") && (/[+\-*/%]/.test(text) || /^\s*(abs|min|max|clamp)\s*\(.*\)\s*$/.test(text))) {
             // RemoteComposeJsonParser.resolveTextId: an integer expression; its id.
+            // EXTENSION: a bare call of an integer function ("min(1, @len)", "clamp(0, 1, @n)")
+            // is an expression too. The reference looks only for an operator, so it writes
+            // such a string as literal text, and a visibility (a Button's enabled, say)
+            // reading it points at that text and stays hidden (EXAMPLES_FINDINGS U91).
             return this.parseIntegerExpression(text) % 0x100000000;
         }
         if (isVariableRef(text)) {
