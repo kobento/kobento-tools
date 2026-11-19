@@ -4635,9 +4635,6 @@ var RC = (() => {
         this.mTarget.setW(targetW);
         this.mTarget.setH(targetH);
         this.mTarget.setVisibility(targetVisibility);
-        this.mStartTime = currentTime;
-        this.mP = 0;
-        this.mVp = 0;
       }
     }
     getOriginal() {
