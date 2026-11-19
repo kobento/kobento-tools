@@ -1984,6 +1984,13 @@ class Parser {
      * true | "name"}` with no bytes is an empty W x H bitmap (ENCODING_EMPTY: the player
      * allocates it), named so the host can supply its pixels (NAMED_VARIABLE IMAGE_TYPE).
      * `export` also names a bitmap with bytes, as its default picture.
+     *
+     * Extension: `{"url": "https://…", "width": W, "height": H}` is a picture the player
+     * fetches (ENCODING_URL, written as RemoteComposeBuffer.storeBitmapUrl does: type PNG,
+     * the URL's UTF-8 bytes as the payload). The reference JSON parser has no `url` key for
+     * bitmaps; storeBitmapUrl writes 1x1, which is also the default here when no size is
+     * given. W x H is the picture's size in the document's pixels: a player resamples what it
+     * fetches to it, so source rectangles stay right. Nothing is drawn until it arrives.
      */
     declareBitmap(name, value) {
         let spec = typeof value === "string"
@@ -1993,6 +2000,21 @@ class Parser {
         }
         const exported = spec.export === true ? name
             : typeof spec.export === "string" && spec.export ? spec.export : null;
+        if ("url" in spec && !("base64" in spec) && !("file" in spec)) {
+            const url = String(spec.url ?? "");
+            if (!/^(https?:|data:)/i.test(url)) {
+                throw new NotImplementedComponent(`bitmap '${name}': url must start with https:, http: or data:`);
+            }
+            const w = "width" in spec ? Number(spec.width) : 1, h = "height" in spec ? Number(spec.height) : 1;
+            if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 0xffff && h <= 0xffff)) {
+                throw new NotImplementedComponent(`bitmap '${name}': width and height must be whole numbers 1..65535`);
+            }
+            const id = this.writer.allocDataId();
+            this.writer.addBitmap(id, w, h, new TextEncoder().encode(url), Writer_1.BITMAP_TYPE_PNG, Writer_1.BITMAP_ENCODING_URL);
+            if (exported)
+                this.writer.setImageName(id, exported);
+            return id;
+        }
         if (!("base64" in spec) && !("file" in spec) && "width" in spec && "height" in spec) {
             const w = Number(spec.width), h = Number(spec.height);
             if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 0xffff && h <= 0xffff)) {
@@ -2029,9 +2051,7 @@ class Parser {
             }
         }
         else {
-            // `url` is deliberately absent, matching the reference: it fetches sounds from a
-            // URL but not bitmaps, and adding it here would diverge.
-            throw new NotImplementedComponent(`bitmap '${name}' needs 'file' or 'base64'`);
+            throw new NotImplementedComponent(`bitmap '${name}' needs 'file', 'base64' or 'url'`);
         }
         const [width, height] = pngSize(data);
         const imageId = this.writer.allocDataId();

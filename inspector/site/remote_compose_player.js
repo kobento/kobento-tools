@@ -36,6 +36,44 @@ var RC = (() => {
     pinClock: () => pinClock
   });
 
+  // ../kobento-ts/src/core/Operation.ts
+  var _Operation = class _Operation {
+    constructor() {
+      this.mDirty = true;
+    }
+    /**
+     * Materialize this operation during macro (loom) expansion. Default behaviour
+     * mirrors Operation.materialize in Java: emit self, and if this is a container,
+     * recursively expand its children and emit a ContainerEnd marker.
+     */
+    materialize(context, result, loomManager) {
+      result.push(this);
+      const list = this.getList;
+      if (typeof list === "function") {
+        const children = list.call(this);
+        context.expandRecursive(children, result, loomManager);
+        children.length = 0;
+        result.push(context.makeContainerEnd());
+      }
+    }
+    markDirty() {
+      this.mDirty = true;
+    }
+    markNotDirty() {
+      if (_Operation.ENABLE_DIRTY_FLAG_OPTIMIZATION) {
+        this.mDirty = false;
+      }
+    }
+    isDirty() {
+      if (_Operation.ENABLE_DIRTY_FLAG_OPTIMIZATION) {
+        return this.mDirty;
+      }
+      return true;
+    }
+  };
+  _Operation.ENABLE_DIRTY_FLAG_OPTIMIZATION = true;
+  var Operation = _Operation;
+
   // ../kobento-ts/src/core/operations/Utils.ts
   var _dv = new DataView(new ArrayBuffer(4));
   function intBitsToFloat(bits) {
@@ -1220,237 +1258,460 @@ var RC = (() => {
   _RemoteContext.LAST_BASELINE = asNan(37);
   var RemoteContext = _RemoteContext;
 
-  // ../kobento-ts/src/core/Operation.ts
-  var _Operation = class _Operation {
+  // ../kobento-ts/src/core/operations/paint/PaintBundle.ts
+  var _f32dv = new DataView(new ArrayBuffer(4));
+  function intBitsToFloat2(bits) {
+    _f32dv.setInt32(0, bits);
+    return _f32dv.getFloat32(0);
+  }
+  function floatToRawIntBits2(v) {
+    _f32dv.setFloat32(0, v);
+    return _f32dv.getInt32(0);
+  }
+  function isNaNBitsLocal(bits) {
+    return (bits & 2139095040) === 2139095040 && (bits & 8388607) !== 0;
+  }
+  function idFromBitsLocal(bits) {
+    return bits & 4194303;
+  }
+  function fixFloatVar(val, context) {
+    if (isNaNBitsLocal(val)) {
+      return floatToRawIntBits2(context.getFloat(idFromBitsLocal(val)));
+    }
+    return val;
+  }
+  function fixColor(val, context) {
+    return context.getColor(val);
+  }
+  function listenFloatVar(val, context, op) {
+    if (isNaNBitsLocal(val)) {
+      context.listensTo(idFromBitsLocal(val), op);
+    }
+  }
+  var _PaintBundle = class _PaintBundle {
     constructor() {
-      this.mDirty = true;
+      // The flat int array and current position
+      this.mArray = [];
+      this.mOutArray = null;
+      this.mPos = 0;
+    }
+    read(buffer) {
+      const len = buffer.readInt();
+      if (len <= 0 || len > 1024) {
+        throw new Error(`PaintBundle: invalid length ${len}`);
+      }
+      this.mArray = new Array(len);
+      for (let i = 0; i < len; i++) {
+        this.mArray[i] = buffer.readInt();
+      }
+      this.mPos = len;
+      const remap = buffer.getRemapContext?.();
+      if (remap) this.resolveIds(remap);
     }
     /**
-     * Materialize this operation during macro (loom) expansion. Default behaviour
-     * mirrors Operation.materialize in Java: emit self, and if this is a container,
-     * recursively expand its children and emit a ContainerEnd marker.
+     * PaintBundle.resolveIds / resolveGradientIds: inside a pattern, remap the ids (and NaN-boxed
+     * float ids) the bundle carries to this inflation's. Two departures from the reference, where
+     * its walk disagrees with how the bundle is written (and with its own applyPaintChange):
+     * TEXTURE is three words (bitmap id, tile modes, filter), and a sweep gradient has no tile
+     * mode word.
      */
-    materialize(context, result, loomManager) {
-      result.push(this);
-      const list = this.getList;
-      if (typeof list === "function") {
-        const children = list.call(this);
-        context.expandRecursive(children, result, loomManager);
-        children.length = 0;
-        result.push(context.makeContainerEnd());
-      }
-    }
-    markDirty() {
-      this.mDirty = true;
-    }
-    markNotDirty() {
-      if (_Operation.ENABLE_DIRTY_FLAG_OPTIMIZATION) {
-        this.mDirty = false;
-      }
-    }
-    isDirty() {
-      if (_Operation.ENABLE_DIRTY_FLAG_OPTIMIZATION) {
-        return this.mDirty;
-      }
-      return true;
-    }
-  };
-  _Operation.ENABLE_DIRTY_FLAG_OPTIMIZATION = true;
-  var Operation = _Operation;
-
-  // ../kobento-ts/src/core/operations/Header.ts
-  var _Header = class _Header extends Operation {
-    constructor(majorVersion, minorVersion, patchVersion, properties = null, width = 256, height = 256, capabilities = 0) {
-      super();
-      this.mMajorVersion = majorVersion;
-      this.mMinorVersion = minorVersion;
-      this.mPatchVersion = patchVersion;
-      this.mWidth = width;
-      this.mHeight = height;
-      this.mCapabilities = capabilities;
-      this.mProperties = properties;
-      this.mProfiles = 0;
-      if (properties) {
-        const profileVal = properties.get(_Header.DOC_PROFILES);
-        if (profileVal != null) this.mProfiles = profileVal;
-        const widthVal = properties.get(_Header.DOC_WIDTH);
-        if (widthVal != null) this.mWidth = widthVal;
-        const heightVal = properties.get(_Header.DOC_HEIGHT);
-        if (heightVal != null) this.mHeight = heightVal;
-      }
-    }
-    get(property) {
-      return this.mProperties?.get(property) ?? null;
-    }
-    getInt(key, defaultValue) {
-      const v = this.mProperties?.get(key);
-      if (v != null && typeof v === "number") return v;
-      return defaultValue;
-    }
-    getProfiles() {
-      return this.mProfiles;
-    }
-    setVersion(doc) {
-      doc.setVersion(this.mMajorVersion, this.mMinorVersion, this.mPatchVersion);
-      if (!doc.mHeaderSized) {
-        doc.setWidth(this.mWidth);
-        doc.setHeight(this.mHeight);
-        doc.mHeaderSized = true;
-      }
-      doc.setAuthorDimensions(this.mWidth, this.mHeight);
-      doc.setRequiredCapabilities(this.mCapabilities);
-      doc.setProperties(this.mProperties);
-    }
-    write(buffer) {
-      buffer.start(_Header.OP_CODE);
-    }
-    apply(context) {
-      context.header(
-        this.mMajorVersion,
-        this.mMinorVersion,
-        this.mPatchVersion,
-        this.mWidth,
-        this.mHeight,
-        this.mCapabilities,
-        this.mProperties
-      );
-    }
-    deepToString(indent) {
-      return `${indent}Header v${this.mMajorVersion}.${this.mMinorVersion}.${this.mPatchVersion} ${this.mWidth}x${this.mHeight}`;
-    }
-    /** Peek the API level from the buffer without consuming bytes */
-    static peekApiLevel(buffer) {
-      const savedIndex = buffer.getIndex();
-      buffer.readByte();
-      const versionOrMagic = buffer.readInt();
-      buffer.setIndex(savedIndex);
-      if ((versionOrMagic & 4294901760) === _Header.MAGIC_NUMBER) {
-        const majorVersion = versionOrMagic & 65535;
-        const minorVersion = buffer.peekInt();
-        if (majorVersion >= 1) {
-          buffer.setIndex(savedIndex);
-          buffer.readByte();
-          buffer.readInt();
-          const minor = buffer.readInt();
-          buffer.setIndex(savedIndex);
-          if (minor >= 2) return 8;
-          if (minor >= 1) return 7;
-          return 6;
-        }
-        return 6;
-      }
-      if (versionOrMagic === 0) {
-        return 6;
-      }
-      return 6;
-    }
-    /** Read a Header from the buffer (modern format with property map) */
-    static readDirect(buffer) {
-      buffer.readByte();
-      const versionOrMagic = buffer.readInt();
-      if ((versionOrMagic & 4294901760) === _Header.MAGIC_NUMBER) {
-        const majorVersion2 = versionOrMagic & 65535;
-        const minorVersion2 = buffer.readInt();
-        const patchVersion2 = buffer.readInt();
-        const numProperties = buffer.readInt();
-        const properties = new IntMap();
-        if (numProperties > _Header.MAX_TABLE_SIZE) {
-          console.warn(`Header: property table size ${numProperties} exceeds limit ${_Header.MAX_TABLE_SIZE}, truncating`);
-        }
-        for (let i = 0; i < numProperties; i++) {
-          const tag = buffer.readShort();
-          const dataType = tag >> 10;
-          const key = tag & 1023;
-          const itemLen = buffer.readShort();
-          if (i >= _Header.MAX_TABLE_SIZE) {
-            for (let j = 0; j < itemLen; j++) buffer.readByte();
-            continue;
+    resolveIds(remap) {
+      const a = this.mArray, len = this.mPos;
+      const fl = (i2) => {
+        if (i2 < len) a[i2] = remap.resolveNanIdBits(a[i2]);
+      };
+      const id = (i2) => {
+        if (i2 < len) a[i2] = remap.resolveId(a[i2]);
+      };
+      let i = 0;
+      while (i < len) {
+        const cmd = a[i++];
+        const tag = cmd & 65535;
+        const upper = cmd >> 16 & 65535;
+        switch (tag) {
+          case _PaintBundle.STROKE_MITER:
+          case _PaintBundle.STROKE_WIDTH:
+          case _PaintBundle.ALPHA:
+          case _PaintBundle.TEXT_SIZE:
+          case _PaintBundle.SHADER_MATRIX:
+            fl(i++);
+            break;
+          case _PaintBundle.COLOR_FILTER_ID:
+          case _PaintBundle.COLOR_ID:
+          case _PaintBundle.SHADER:
+          case _PaintBundle.TYPEFACE:
+          case _PaintBundle.FALLBACK_TYPEFACE:
+            id(i++);
+            break;
+          case _PaintBundle.TEXTURE:
+            id(i);
+            i += 3;
+            break;
+          case _PaintBundle.COLOR:
+          case _PaintBundle.COLOR_FILTER:
+            i++;
+            break;
+          case _PaintBundle.FONT_AXIS:
+            for (let j = 0; j < upper && i < len; j++) {
+              id(i++);
+              fl(i++);
+            }
+            break;
+          case _PaintBundle.GRADIENT: {
+            if (i >= len) break;
+            const control = a[i++];
+            const numColors = control & 255;
+            const regBits = control >> 16 & 65535;
+            for (let j = 0; j < numColors && i < len; j++, i++) {
+              if ((regBits & 1 << j) !== 0) id(i);
+            }
+            if (i >= len) break;
+            const numStops = a[i++];
+            for (let j = 0; j < numStops && i < len; j++) fl(i++);
+            fl(i++);
+            fl(i++);
+            if (upper === _PaintBundle.LINEAR_GRADIENT) {
+              fl(i++);
+              fl(i++);
+              i++;
+            } else if (upper === _PaintBundle.RADIAL_GRADIENT) {
+              fl(i++);
+              i++;
+            } else if (upper === 3) {
+              fl(i++);
+              fl(i++);
+              fl(i++);
+              fl(i++);
+              i++;
+            }
+            break;
           }
-          switch (dataType) {
-            case _Header.DATA_TYPE_INT:
-              properties.put(key, buffer.readInt());
-              break;
-            case _Header.DATA_TYPE_FLOAT:
-              properties.put(key, buffer.readFloat());
-              break;
-            case _Header.DATA_TYPE_LONG:
-              properties.put(key, buffer.readLong());
-              break;
-            case _Header.DATA_TYPE_STRING:
-              properties.put(key, buffer.readUTF8());
-              break;
-            default:
-              for (let j = 0; j < itemLen; j++) buffer.readByte();
-              break;
-          }
+          case _PaintBundle.PATH_EFFECT:
+            for (let j = 0; j < upper && i < len; j++) fl(i++);
+            break;
+          default:
+            break;
         }
-        return new _Header(majorVersion2, minorVersion2, patchVersion2, properties);
       }
-      const majorVersion = versionOrMagic;
-      const minorVersion = buffer.readInt();
-      const patchVersion = buffer.readInt();
-      const width = buffer.readInt();
-      const height = buffer.readInt();
-      const capabilities = buffer.readLong();
-      return new _Header(majorVersion, minorVersion, patchVersion, null, width, height, capabilities);
     }
-    /** CompanionOperation.read implementation */
-    static read(buffer, operations) {
-      const savedIndex = buffer.getIndex() - 1;
-      buffer.setIndex(savedIndex);
-      const header = _Header.readDirect(buffer);
-      operations.push(header);
+    /** Returns the resolved array (mOutArray if available, otherwise mArray). */
+    getArray() {
+      return this.mOutArray ?? this.mArray;
+    }
+    getLength() {
+      return this.mPos;
+    }
+    // --- Programmatic setters for building paint bundles at runtime ---
+    reset() {
+      this.mArray = [];
+      this.mOutArray = null;
+      this.mPos = 0;
+    }
+    setStyle(style) {
+      this.mArray[this.mPos++] = _PaintBundle.STYLE | style << 16;
+    }
+    setColor(aOrColor, r, g, b) {
+      if (r !== void 0 && g !== void 0 && b !== void 0) {
+        const ai = Math.round(aOrColor * 255) & 255;
+        const ri = Math.round(r * 255) & 255;
+        const gi = Math.round(g * 255) & 255;
+        const bi = Math.round(b * 255) & 255;
+        aOrColor = (ai << 24 | ri << 16 | gi << 8 | bi) >>> 0;
+      }
+      this.mArray[this.mPos++] = _PaintBundle.COLOR;
+      this.mArray[this.mPos++] = aOrColor;
+    }
+    setTextSize(size) {
+      this.mArray[this.mPos++] = _PaintBundle.TEXT_SIZE;
+      _f32dv.setFloat32(0, size);
+      this.mArray[this.mPos++] = _f32dv.getInt32(0);
+    }
+    setTextStyle(typeface, fontWeight, italic) {
+      const style = fontWeight & 1023 | (italic ? 2048 : 0);
+      this.mArray[this.mPos++] = _PaintBundle.TYPEFACE | style << 16;
+      this.mArray[this.mPos++] = typeface;
+    }
+    setTextAxis(axisTags, axisValues) {
+      const count = axisTags.length;
+      this.mArray[this.mPos++] = _PaintBundle.FONT_AXIS | count << 16;
+      for (let i = 0; i < count; i++) {
+        this.mArray[this.mPos++] = axisTags[i];
+        _f32dv.setFloat32(0, axisValues[i]);
+        this.mArray[this.mPos++] = _f32dv.getInt32(0);
+      }
+    }
+    setStrokeWidth(width) {
+      this.mArray[this.mPos++] = _PaintBundle.STROKE_WIDTH;
+      _f32dv.setFloat32(0, width);
+      this.mArray[this.mPos++] = _f32dv.getInt32(0);
+    }
+    registerListening(context, op) {
+      let i = 0;
+      const arr = this.mArray;
+      while (i < this.mPos) {
+        const cmd = arr[i++];
+        const tag = cmd & 65535;
+        switch (tag) {
+          case _PaintBundle.STROKE_MITER:
+          case _PaintBundle.STROKE_WIDTH:
+          case _PaintBundle.ALPHA:
+          case _PaintBundle.TEXT_SIZE:
+            listenFloatVar(arr[i], context, op);
+            i++;
+            break;
+          case _PaintBundle.COLOR_FILTER_ID:
+          case _PaintBundle.COLOR_ID:
+            context.listensTo(arr[i], op);
+            i++;
+            break;
+          case _PaintBundle.COLOR:
+          case _PaintBundle.TYPEFACE:
+          case _PaintBundle.SHADER:
+          case _PaintBundle.COLOR_FILTER:
+          case _PaintBundle.FALLBACK_TYPEFACE:
+            i++;
+            break;
+          case _PaintBundle.STROKE_JOIN:
+          case _PaintBundle.FILTER_BITMAP:
+          case _PaintBundle.STROKE_CAP:
+          case _PaintBundle.STYLE:
+          case _PaintBundle.IMAGE_FILTER_QUALITY:
+          case _PaintBundle.BLEND_MODE:
+          case _PaintBundle.ANTI_ALIAS:
+          case _PaintBundle.CLEAR_COLOR_FILTER:
+            break;
+          case _PaintBundle.FONT_AXIS: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              i++;
+              listenFloatVar(arr[i], context, op);
+              i++;
+            }
+            break;
+          }
+          case _PaintBundle.TEXTURE:
+            i += 3;
+            break;
+          case _PaintBundle.SHADER_MATRIX:
+            i++;
+            break;
+          case _PaintBundle.GRADIENT:
+            i = this.registerGradientListening(cmd, arr, i, context, op);
+            break;
+          case _PaintBundle.PATH_EFFECT: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              listenFloatVar(arr[i], context, op);
+              i++;
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    }
+    registerGradientListening(cmd, arr, startIdx, context, op) {
+      let i = startIdx;
+      const meta = arr[i++];
+      const numColors = meta & 255;
+      const register = meta >> 16 & 65535;
+      for (let j = 0; j < numColors; j++) {
+        if ((register & 1 << j) !== 0) {
+          context.listensTo(arr[i], op);
+        }
+        i++;
+      }
+      const numStops = arr[i++];
+      for (let j = 0; j < numStops; j++) {
+        listenFloatVar(arr[i], context, op);
+        i++;
+      }
+      const gradType = cmd >> 16 & 65535;
+      switch (gradType) {
+        case _PaintBundle.LINEAR_GRADIENT:
+          for (let j = 0; j < 4; j++) {
+            listenFloatVar(arr[i], context, op);
+            i++;
+          }
+          i++;
+          break;
+        case _PaintBundle.RADIAL_GRADIENT:
+          for (let j = 0; j < 3; j++) {
+            listenFloatVar(arr[i], context, op);
+            i++;
+          }
+          i++;
+          break;
+        case _PaintBundle.SWEEP_GRADIENT:
+          for (let j = 0; j < 2; j++) {
+            listenFloatVar(arr[i], context, op);
+            i++;
+          }
+          break;
+      }
+      return i;
+    }
+    /**
+     * Resolve NaN-encoded float variable IDs and color IDs in paint parameters.
+     * Matches Java PaintBundle.updateVariables().
+     */
+    updateVariables(context) {
+      if (this.mOutArray === null) {
+        this.mOutArray = this.mArray.slice();
+      } else {
+        for (let j = 0; j < this.mArray.length; j++) {
+          this.mOutArray[j] = this.mArray[j];
+        }
+      }
+      let i = 0;
+      const arr = this.mArray;
+      const out = this.mOutArray;
+      while (i < this.mPos) {
+        const cmd = arr[i++];
+        const tag = cmd & 65535;
+        switch (tag) {
+          case _PaintBundle.STROKE_MITER:
+          case _PaintBundle.STROKE_WIDTH:
+          case _PaintBundle.ALPHA:
+          case _PaintBundle.TEXT_SIZE:
+            out[i] = fixFloatVar(arr[i], context);
+            i++;
+            break;
+          case _PaintBundle.COLOR_FILTER_ID:
+          case _PaintBundle.COLOR_ID:
+            out[i] = fixColor(arr[i], context);
+            i++;
+            break;
+          case _PaintBundle.COLOR:
+          case _PaintBundle.TYPEFACE:
+          case _PaintBundle.SHADER:
+          case _PaintBundle.COLOR_FILTER:
+          case _PaintBundle.FALLBACK_TYPEFACE:
+            i++;
+            break;
+          case _PaintBundle.STROKE_JOIN:
+          case _PaintBundle.FILTER_BITMAP:
+          case _PaintBundle.STROKE_CAP:
+          case _PaintBundle.STYLE:
+          case _PaintBundle.IMAGE_FILTER_QUALITY:
+          case _PaintBundle.BLEND_MODE:
+          case _PaintBundle.ANTI_ALIAS:
+          case _PaintBundle.CLEAR_COLOR_FILTER:
+            break;
+          case _PaintBundle.FONT_AXIS: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              i++;
+              out[i] = fixFloatVar(arr[i], context);
+              i++;
+            }
+            break;
+          }
+          case _PaintBundle.TEXTURE:
+            i += 3;
+            break;
+          case _PaintBundle.SHADER_MATRIX:
+            i++;
+            break;
+          case _PaintBundle.GRADIENT:
+            i = this.updateGradientVars(cmd, arr, out, i, context);
+            break;
+          case _PaintBundle.PATH_EFFECT: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              out[i] = fixFloatVar(arr[i], context);
+              i++;
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    }
+    updateGradientVars(cmd, arr, out, startIdx, context) {
+      let i = startIdx;
+      const gradType = cmd >> 16 & 65535;
+      const meta = arr[i++];
+      const numColors = meta & 255;
+      const register = meta >> 16 & 65535;
+      for (let j = 0; j < numColors; j++) {
+        if ((register & 1 << j) !== 0) {
+          out[i] = fixColor(arr[i], context);
+        }
+        i++;
+      }
+      const numStops = arr[i++];
+      for (let j = 0; j < numStops; j++) {
+        out[i] = fixFloatVar(arr[i], context);
+        i++;
+      }
+      switch (gradType) {
+        case _PaintBundle.LINEAR_GRADIENT:
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          i++;
+          break;
+        case _PaintBundle.RADIAL_GRADIENT:
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          i++;
+          break;
+        case _PaintBundle.SWEEP_GRADIENT:
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          break;
+      }
+      return i;
     }
   };
-  _Header.OP_CODE = 0;
-  _Header.MAGIC_NUMBER = 76283904;
-  _Header.MAX_TABLE_SIZE = 1e3;
-  // Property keys
-  _Header.DOC_WIDTH = 5;
-  _Header.DOC_HEIGHT = 6;
-  _Header.DOC_DENSITY_AT_GENERATION = 7;
-  /**
-   * How the document wants dp handled: LEGACY (0), PIXELS (1) or DP (2). Absent means
-   * LEGACY, which is what almost every document in the corpus is — under LEGACY only the
-   * dimension modifiers scale, and padding/spacing do not.
-   */
-  _Header.DOC_DENSITY_BEHAVIOR = 27;
-  _Header.DOC_DESIRED_FPS = 8;
-  _Header.DOC_CONTENT_DESCRIPTION = 9;
-  _Header.DOC_SOURCE = 11;
-  _Header.DOC_DATA_UPDATE = 12;
-  _Header.HOST_EXCEPTION_HANDLER = 13;
-  _Header.DOC_PROFILES = 14;
-  _Header.FEATURE_PAINT_MEASURE = 15;
-  _Header.DEBUG = 16;
-  _Header.FEATURE_MEASURE_VERSION = 17;
-  _Header.FEATURE_TOUCH_VERSION = 18;
-  _Header.FEATURE_PRIORITY_FIX = 23;
-  /** Which layout optimizations a document allows (CoreDocument.OPTIMIZATION_*; default all). */
-  _Header.FEATURE_OPTIMIZATION_LEVEL = 28;
-  // Data types
-  _Header.DATA_TYPE_INT = 0;
-  _Header.DATA_TYPE_FLOAT = 1;
-  _Header.DATA_TYPE_LONG = 2;
-  _Header.DATA_TYPE_STRING = 3;
-  var Header = _Header;
-
-  // ../kobento-ts/src/core/operations/layout/ContainerEnd.ts
-  var _ContainerEnd = class _ContainerEnd extends Operation {
-    write(buffer) {
-      buffer.start(_ContainerEnd.OP_CODE);
-    }
-    apply(_context) {
-    }
-    deepToString(indent) {
-      return `${indent}ContainerEnd`;
-    }
-    static read(_buffer, operations) {
-      operations.push(new _ContainerEnd());
-    }
-  };
-  _ContainerEnd.OP_CODE = 214;
-  var ContainerEnd = _ContainerEnd;
+  // Paint property tags (matching Java PaintBundle constants)
+  _PaintBundle.TEXT_SIZE = 1;
+  _PaintBundle.COLOR = 4;
+  _PaintBundle.STROKE_WIDTH = 5;
+  _PaintBundle.STROKE_MITER = 6;
+  _PaintBundle.STROKE_CAP = 7;
+  _PaintBundle.STYLE = 8;
+  _PaintBundle.SHADER = 9;
+  _PaintBundle.IMAGE_FILTER_QUALITY = 10;
+  _PaintBundle.GRADIENT = 11;
+  _PaintBundle.ALPHA = 12;
+  _PaintBundle.COLOR_FILTER = 13;
+  _PaintBundle.ANTI_ALIAS = 14;
+  _PaintBundle.STROKE_JOIN = 15;
+  _PaintBundle.TYPEFACE = 16;
+  _PaintBundle.FILTER_BITMAP = 17;
+  _PaintBundle.BLEND_MODE = 18;
+  _PaintBundle.COLOR_ID = 19;
+  _PaintBundle.COLOR_FILTER_ID = 20;
+  _PaintBundle.CLEAR_COLOR_FILTER = 21;
+  _PaintBundle.SHADER_MATRIX = 22;
+  _PaintBundle.FONT_AXIS = 23;
+  _PaintBundle.TEXTURE = 24;
+  _PaintBundle.PATH_EFFECT = 25;
+  _PaintBundle.FALLBACK_TYPEFACE = 26;
+  // Gradient types (wire format values)
+  _PaintBundle.LINEAR_GRADIENT = 0;
+  _PaintBundle.RADIAL_GRADIENT = 1;
+  _PaintBundle.SWEEP_GRADIENT = 2;
+  // Style constants
+  _PaintBundle.FILL = 0;
+  _PaintBundle.STROKE = 1;
+  _PaintBundle.FILL_AND_STROKE = 2;
+  var PaintBundle = _PaintBundle;
 
   // ../kobento-ts/src/core/PaintOperation.ts
   var PTR_DEREFERENCE = 1 << 30;
@@ -1818,7 +2079,7 @@ var RC = (() => {
 
   // ../kobento-ts/src/core/operations/utilities/easing/FloatAnimation.ts
   var _dv2 = new DataView(new ArrayBuffer(4));
-  function floatToRawIntBits2(v) {
+  function floatToRawIntBits3(v) {
     _dv2.setFloat32(0, v, false);
     return _dv2.getInt32(0, false);
   }
@@ -1841,7 +2102,7 @@ var RC = (() => {
       this.mDuration = this.mSpec.length === 0 ? 1 : this.mSpec[0];
       let len = 0;
       if (this.mSpec.length > 1) {
-        const numType = floatToRawIntBits2(this.mSpec[1]);
+        const numType = floatToRawIntBits3(this.mSpec[1]);
         this.mType = numType & 255;
         const wrap = (numType >> 8 & 1) > 0;
         const init = (numType >> 8 & 2) > 0;
@@ -4067,461 +4328,6 @@ var RC = (() => {
   _AnimationSpec.DISABLED = new _AnimationSpec(0, 0, Easing.CUBIC_STANDARD, 0, Easing.CUBIC_STANDARD, 0 /* FADE_IN */, 1 /* FADE_OUT */);
   var AnimationSpec = _AnimationSpec;
 
-  // ../kobento-ts/src/core/operations/paint/PaintBundle.ts
-  var _f32dv = new DataView(new ArrayBuffer(4));
-  function intBitsToFloat2(bits) {
-    _f32dv.setInt32(0, bits);
-    return _f32dv.getFloat32(0);
-  }
-  function floatToRawIntBits3(v) {
-    _f32dv.setFloat32(0, v);
-    return _f32dv.getInt32(0);
-  }
-  function isNaNBitsLocal(bits) {
-    return (bits & 2139095040) === 2139095040 && (bits & 8388607) !== 0;
-  }
-  function idFromBitsLocal(bits) {
-    return bits & 4194303;
-  }
-  function fixFloatVar(val, context) {
-    if (isNaNBitsLocal(val)) {
-      return floatToRawIntBits3(context.getFloat(idFromBitsLocal(val)));
-    }
-    return val;
-  }
-  function fixColor(val, context) {
-    return context.getColor(val);
-  }
-  function listenFloatVar(val, context, op) {
-    if (isNaNBitsLocal(val)) {
-      context.listensTo(idFromBitsLocal(val), op);
-    }
-  }
-  var _PaintBundle = class _PaintBundle {
-    constructor() {
-      // The flat int array and current position
-      this.mArray = [];
-      this.mOutArray = null;
-      this.mPos = 0;
-    }
-    read(buffer) {
-      const len = buffer.readInt();
-      if (len <= 0 || len > 1024) {
-        throw new Error(`PaintBundle: invalid length ${len}`);
-      }
-      this.mArray = new Array(len);
-      for (let i = 0; i < len; i++) {
-        this.mArray[i] = buffer.readInt();
-      }
-      this.mPos = len;
-      const remap = buffer.getRemapContext?.();
-      if (remap) this.resolveIds(remap);
-    }
-    /**
-     * PaintBundle.resolveIds / resolveGradientIds: inside a pattern, remap the ids (and NaN-boxed
-     * float ids) the bundle carries to this inflation's. Two departures from the reference, where
-     * its walk disagrees with how the bundle is written (and with its own applyPaintChange):
-     * TEXTURE is three words (bitmap id, tile modes, filter), and a sweep gradient has no tile
-     * mode word.
-     */
-    resolveIds(remap) {
-      const a = this.mArray, len = this.mPos;
-      const fl = (i2) => {
-        if (i2 < len) a[i2] = remap.resolveNanIdBits(a[i2]);
-      };
-      const id = (i2) => {
-        if (i2 < len) a[i2] = remap.resolveId(a[i2]);
-      };
-      let i = 0;
-      while (i < len) {
-        const cmd = a[i++];
-        const tag = cmd & 65535;
-        const upper = cmd >> 16 & 65535;
-        switch (tag) {
-          case _PaintBundle.STROKE_MITER:
-          case _PaintBundle.STROKE_WIDTH:
-          case _PaintBundle.ALPHA:
-          case _PaintBundle.TEXT_SIZE:
-          case _PaintBundle.SHADER_MATRIX:
-            fl(i++);
-            break;
-          case _PaintBundle.COLOR_FILTER_ID:
-          case _PaintBundle.COLOR_ID:
-          case _PaintBundle.SHADER:
-          case _PaintBundle.TYPEFACE:
-          case _PaintBundle.FALLBACK_TYPEFACE:
-            id(i++);
-            break;
-          case _PaintBundle.TEXTURE:
-            id(i);
-            i += 3;
-            break;
-          case _PaintBundle.COLOR:
-          case _PaintBundle.COLOR_FILTER:
-            i++;
-            break;
-          case _PaintBundle.FONT_AXIS:
-            for (let j = 0; j < upper && i < len; j++) {
-              id(i++);
-              fl(i++);
-            }
-            break;
-          case _PaintBundle.GRADIENT: {
-            if (i >= len) break;
-            const control = a[i++];
-            const numColors = control & 255;
-            const regBits = control >> 16 & 65535;
-            for (let j = 0; j < numColors && i < len; j++, i++) {
-              if ((regBits & 1 << j) !== 0) id(i);
-            }
-            if (i >= len) break;
-            const numStops = a[i++];
-            for (let j = 0; j < numStops && i < len; j++) fl(i++);
-            fl(i++);
-            fl(i++);
-            if (upper === _PaintBundle.LINEAR_GRADIENT) {
-              fl(i++);
-              fl(i++);
-              i++;
-            } else if (upper === _PaintBundle.RADIAL_GRADIENT) {
-              fl(i++);
-              i++;
-            } else if (upper === 3) {
-              fl(i++);
-              fl(i++);
-              fl(i++);
-              fl(i++);
-              i++;
-            }
-            break;
-          }
-          case _PaintBundle.PATH_EFFECT:
-            for (let j = 0; j < upper && i < len; j++) fl(i++);
-            break;
-          default:
-            break;
-        }
-      }
-    }
-    /** Returns the resolved array (mOutArray if available, otherwise mArray). */
-    getArray() {
-      return this.mOutArray ?? this.mArray;
-    }
-    getLength() {
-      return this.mPos;
-    }
-    // --- Programmatic setters for building paint bundles at runtime ---
-    reset() {
-      this.mArray = [];
-      this.mOutArray = null;
-      this.mPos = 0;
-    }
-    setStyle(style) {
-      this.mArray[this.mPos++] = _PaintBundle.STYLE | style << 16;
-    }
-    setColor(aOrColor, r, g, b) {
-      if (r !== void 0 && g !== void 0 && b !== void 0) {
-        const ai = Math.round(aOrColor * 255) & 255;
-        const ri = Math.round(r * 255) & 255;
-        const gi = Math.round(g * 255) & 255;
-        const bi = Math.round(b * 255) & 255;
-        aOrColor = (ai << 24 | ri << 16 | gi << 8 | bi) >>> 0;
-      }
-      this.mArray[this.mPos++] = _PaintBundle.COLOR;
-      this.mArray[this.mPos++] = aOrColor;
-    }
-    setTextSize(size) {
-      this.mArray[this.mPos++] = _PaintBundle.TEXT_SIZE;
-      _f32dv.setFloat32(0, size);
-      this.mArray[this.mPos++] = _f32dv.getInt32(0);
-    }
-    setTextStyle(typeface, fontWeight, italic) {
-      const style = fontWeight & 1023 | (italic ? 2048 : 0);
-      this.mArray[this.mPos++] = _PaintBundle.TYPEFACE | style << 16;
-      this.mArray[this.mPos++] = typeface;
-    }
-    setTextAxis(axisTags, axisValues) {
-      const count = axisTags.length;
-      this.mArray[this.mPos++] = _PaintBundle.FONT_AXIS | count << 16;
-      for (let i = 0; i < count; i++) {
-        this.mArray[this.mPos++] = axisTags[i];
-        _f32dv.setFloat32(0, axisValues[i]);
-        this.mArray[this.mPos++] = _f32dv.getInt32(0);
-      }
-    }
-    setStrokeWidth(width) {
-      this.mArray[this.mPos++] = _PaintBundle.STROKE_WIDTH;
-      _f32dv.setFloat32(0, width);
-      this.mArray[this.mPos++] = _f32dv.getInt32(0);
-    }
-    registerListening(context, op) {
-      let i = 0;
-      const arr = this.mArray;
-      while (i < this.mPos) {
-        const cmd = arr[i++];
-        const tag = cmd & 65535;
-        switch (tag) {
-          case _PaintBundle.STROKE_MITER:
-          case _PaintBundle.STROKE_WIDTH:
-          case _PaintBundle.ALPHA:
-          case _PaintBundle.TEXT_SIZE:
-            listenFloatVar(arr[i], context, op);
-            i++;
-            break;
-          case _PaintBundle.COLOR_FILTER_ID:
-          case _PaintBundle.COLOR_ID:
-            context.listensTo(arr[i], op);
-            i++;
-            break;
-          case _PaintBundle.COLOR:
-          case _PaintBundle.TYPEFACE:
-          case _PaintBundle.SHADER:
-          case _PaintBundle.COLOR_FILTER:
-          case _PaintBundle.FALLBACK_TYPEFACE:
-            i++;
-            break;
-          case _PaintBundle.STROKE_JOIN:
-          case _PaintBundle.FILTER_BITMAP:
-          case _PaintBundle.STROKE_CAP:
-          case _PaintBundle.STYLE:
-          case _PaintBundle.IMAGE_FILTER_QUALITY:
-          case _PaintBundle.BLEND_MODE:
-          case _PaintBundle.ANTI_ALIAS:
-          case _PaintBundle.CLEAR_COLOR_FILTER:
-            break;
-          case _PaintBundle.FONT_AXIS: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              i++;
-              listenFloatVar(arr[i], context, op);
-              i++;
-            }
-            break;
-          }
-          case _PaintBundle.TEXTURE:
-            i += 3;
-            break;
-          case _PaintBundle.SHADER_MATRIX:
-            i++;
-            break;
-          case _PaintBundle.GRADIENT:
-            i = this.registerGradientListening(cmd, arr, i, context, op);
-            break;
-          case _PaintBundle.PATH_EFFECT: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              listenFloatVar(arr[i], context, op);
-              i++;
-            }
-            break;
-          }
-          default:
-            break;
-        }
-      }
-    }
-    registerGradientListening(cmd, arr, startIdx, context, op) {
-      let i = startIdx;
-      const meta = arr[i++];
-      const numColors = meta & 255;
-      const register = meta >> 16 & 65535;
-      for (let j = 0; j < numColors; j++) {
-        if ((register & 1 << j) !== 0) {
-          context.listensTo(arr[i], op);
-        }
-        i++;
-      }
-      const numStops = arr[i++];
-      for (let j = 0; j < numStops; j++) {
-        listenFloatVar(arr[i], context, op);
-        i++;
-      }
-      const gradType = cmd >> 16 & 65535;
-      switch (gradType) {
-        case _PaintBundle.LINEAR_GRADIENT:
-          for (let j = 0; j < 4; j++) {
-            listenFloatVar(arr[i], context, op);
-            i++;
-          }
-          i++;
-          break;
-        case _PaintBundle.RADIAL_GRADIENT:
-          for (let j = 0; j < 3; j++) {
-            listenFloatVar(arr[i], context, op);
-            i++;
-          }
-          i++;
-          break;
-        case _PaintBundle.SWEEP_GRADIENT:
-          for (let j = 0; j < 2; j++) {
-            listenFloatVar(arr[i], context, op);
-            i++;
-          }
-          break;
-      }
-      return i;
-    }
-    /**
-     * Resolve NaN-encoded float variable IDs and color IDs in paint parameters.
-     * Matches Java PaintBundle.updateVariables().
-     */
-    updateVariables(context) {
-      if (this.mOutArray === null) {
-        this.mOutArray = this.mArray.slice();
-      } else {
-        for (let j = 0; j < this.mArray.length; j++) {
-          this.mOutArray[j] = this.mArray[j];
-        }
-      }
-      let i = 0;
-      const arr = this.mArray;
-      const out = this.mOutArray;
-      while (i < this.mPos) {
-        const cmd = arr[i++];
-        const tag = cmd & 65535;
-        switch (tag) {
-          case _PaintBundle.STROKE_MITER:
-          case _PaintBundle.STROKE_WIDTH:
-          case _PaintBundle.ALPHA:
-          case _PaintBundle.TEXT_SIZE:
-            out[i] = fixFloatVar(arr[i], context);
-            i++;
-            break;
-          case _PaintBundle.COLOR_FILTER_ID:
-          case _PaintBundle.COLOR_ID:
-            out[i] = fixColor(arr[i], context);
-            i++;
-            break;
-          case _PaintBundle.COLOR:
-          case _PaintBundle.TYPEFACE:
-          case _PaintBundle.SHADER:
-          case _PaintBundle.COLOR_FILTER:
-          case _PaintBundle.FALLBACK_TYPEFACE:
-            i++;
-            break;
-          case _PaintBundle.STROKE_JOIN:
-          case _PaintBundle.FILTER_BITMAP:
-          case _PaintBundle.STROKE_CAP:
-          case _PaintBundle.STYLE:
-          case _PaintBundle.IMAGE_FILTER_QUALITY:
-          case _PaintBundle.BLEND_MODE:
-          case _PaintBundle.ANTI_ALIAS:
-          case _PaintBundle.CLEAR_COLOR_FILTER:
-            break;
-          case _PaintBundle.FONT_AXIS: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              i++;
-              out[i] = fixFloatVar(arr[i], context);
-              i++;
-            }
-            break;
-          }
-          case _PaintBundle.TEXTURE:
-            i += 3;
-            break;
-          case _PaintBundle.SHADER_MATRIX:
-            i++;
-            break;
-          case _PaintBundle.GRADIENT:
-            i = this.updateGradientVars(cmd, arr, out, i, context);
-            break;
-          case _PaintBundle.PATH_EFFECT: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              out[i] = fixFloatVar(arr[i], context);
-              i++;
-            }
-            break;
-          }
-          default:
-            break;
-        }
-      }
-    }
-    updateGradientVars(cmd, arr, out, startIdx, context) {
-      let i = startIdx;
-      const gradType = cmd >> 16 & 65535;
-      const meta = arr[i++];
-      const numColors = meta & 255;
-      const register = meta >> 16 & 65535;
-      for (let j = 0; j < numColors; j++) {
-        if ((register & 1 << j) !== 0) {
-          out[i] = fixColor(arr[i], context);
-        }
-        i++;
-      }
-      const numStops = arr[i++];
-      for (let j = 0; j < numStops; j++) {
-        out[i] = fixFloatVar(arr[i], context);
-        i++;
-      }
-      switch (gradType) {
-        case _PaintBundle.LINEAR_GRADIENT:
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          i++;
-          break;
-        case _PaintBundle.RADIAL_GRADIENT:
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          i++;
-          break;
-        case _PaintBundle.SWEEP_GRADIENT:
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          break;
-      }
-      return i;
-    }
-  };
-  // Paint property tags (matching Java PaintBundle constants)
-  _PaintBundle.TEXT_SIZE = 1;
-  _PaintBundle.COLOR = 4;
-  _PaintBundle.STROKE_WIDTH = 5;
-  _PaintBundle.STROKE_MITER = 6;
-  _PaintBundle.STROKE_CAP = 7;
-  _PaintBundle.STYLE = 8;
-  _PaintBundle.SHADER = 9;
-  _PaintBundle.IMAGE_FILTER_QUALITY = 10;
-  _PaintBundle.GRADIENT = 11;
-  _PaintBundle.ALPHA = 12;
-  _PaintBundle.COLOR_FILTER = 13;
-  _PaintBundle.ANTI_ALIAS = 14;
-  _PaintBundle.STROKE_JOIN = 15;
-  _PaintBundle.TYPEFACE = 16;
-  _PaintBundle.FILTER_BITMAP = 17;
-  _PaintBundle.BLEND_MODE = 18;
-  _PaintBundle.COLOR_ID = 19;
-  _PaintBundle.COLOR_FILTER_ID = 20;
-  _PaintBundle.CLEAR_COLOR_FILTER = 21;
-  _PaintBundle.SHADER_MATRIX = 22;
-  _PaintBundle.FONT_AXIS = 23;
-  _PaintBundle.TEXTURE = 24;
-  _PaintBundle.PATH_EFFECT = 25;
-  _PaintBundle.FALLBACK_TYPEFACE = 26;
-  // Gradient types (wire format values)
-  _PaintBundle.LINEAR_GRADIENT = 0;
-  _PaintBundle.RADIAL_GRADIENT = 1;
-  _PaintBundle.SWEEP_GRADIENT = 2;
-  // Style constants
-  _PaintBundle.FILL = 0;
-  _PaintBundle.STROKE = 1;
-  _PaintBundle.FILL_AND_STROKE = 2;
-  var PaintBundle = _PaintBundle;
-
   // ../kobento-ts/src/core/operations/layout/animation/AnimateMeasure.ts
   var AnimateMeasure = class {
     constructor(startTime, component, original, target, duration, durationVisibilityChange, enterAnimation = 0 /* FADE_IN */, exitAnimation = 1 /* FADE_OUT */, motionEasingType = Easing.CUBIC_STANDARD, visibilityEasingType = Easing.CUBIC_ACCELERATE) {
@@ -4892,6 +4698,19 @@ var RC = (() => {
       this.mHeight = 0;
       this.mZIndex = 0;
       this.mVisibility = Visibility.VISIBLE;
+      /**
+       * The visibility the document asks for (setVisibility: a visibility modifier, a
+       * stateLayout showing a state), as Java's mScheduledVisibility; mVisibility is what the
+       * last layout gave it. A pass measures with this one (Java getMeasureVisibility): a child a
+       * stateLayout hid when leaving its state (mVisibility GONE, set by the layout) is visible
+       * again when that state is shown, instead of staying GONE pass after pass.
+       */
+      this.mScheduledVisibility = Visibility.VISIBLE;
+      /**
+       * True while a host editor is shown over this component by a text input modifier: a text
+       * component then draws no text, the editor shows it (Java Component.isEditing).
+       */
+      this.mEditing = false;
       this.mNeedsMeasure = true;
       this.mNeedsRepaint = true;
       this.mFirstLayout = true;
@@ -4917,6 +4736,12 @@ var RC = (() => {
       this.mY = y;
       this.mWidth = width;
       this.mHeight = height;
+    }
+    isEditing() {
+      return this.mEditing;
+    }
+    setEditing(editing) {
+      this.mEditing = editing;
     }
     getComponentId() {
       return this.mComponentId;
@@ -5015,7 +4840,8 @@ var RC = (() => {
       return this.mVisibility;
     }
     setVisibility(v) {
-      if (v === this.mVisibility) return;
+      if (v === this.mVisibility && v === this.mScheduledVisibility) return;
+      this.mScheduledVisibility = v;
       this.mVisibility = v;
       this.invalidateMeasure();
       if (this.mParent) this.mParent.invalidateMeasure();
@@ -5410,245 +5236,66 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/layout/measure/MeasurePass.ts
-  var MeasurePass = class {
-    constructor() {
-      this.mList = /* @__PURE__ */ new Map();
+  // ../kobento-ts/src/core/TextInput.ts
+  var TextInputSession = class {
+    constructor(mContext, mComponent, mOperation) {
+      this.mContext = mContext;
+      this.mComponent = mComponent;
+      this.mOperation = mOperation;
+      this.mBounds = [0, 0, 0, 0];
+      this.mActive = true;
+      this.updateBounds();
     }
-    clear() {
-      this.mList.clear();
+    getComponentId() {
+      return this.mComponent.getComponentId();
     }
-    add(measure) {
-      if (measure.mId === -1) throw new Error("Component has no id!");
-      this.mList.set(measure.mId, measure);
+    getComponent() {
+      return this.mComponent;
     }
-    contains(id) {
-      return this.mList.has(id);
+    getOperation() {
+      return this.mOperation;
     }
-    get(arg) {
-      if (typeof arg === "number") {
-        let m2 = this.mList.get(arg);
-        if (!m2) {
-          m2 = new ComponentMeasure(arg, 0, 0, 0, 0, ComponentMeasure.GONE);
-          this.mList.set(arg, m2);
-        }
-        return m2;
-      }
-      const c = arg;
-      const id = c.getComponentId();
-      let m = this.mList.get(id);
-      if (!m) {
-        m = new ComponentMeasure(
-          id,
-          c.getX(),
-          c.getY(),
-          c.getWidth(),
-          c.getHeight(),
-          c.getVisibility() & 15
-        );
-        this.mList.set(id, m);
-      }
-      return m;
+    getContext() {
+      return this.mContext;
     }
-  };
-
-  // ../kobento-ts/src/core/operations/layout/RootLayoutComponent.ts
-  var _RootLayoutComponent = class _RootLayoutComponent extends Component {
-    constructor(componentId = -1) {
-      super(componentId);
-      this.mCurrentId = -1;
-      this.mHasTouchListeners = false;
+    /** The edited component's bounds relative to the document root: [x, y, width, height], document pixels. */
+    getBounds() {
+      return this.mBounds;
     }
-    getHasTouchListeners() {
-      return this.mHasTouchListeners;
+    /** The edited string's current value. */
+    getText() {
+      return this.mContext.getText(this.mOperation.getTextId()) ?? "";
     }
-    setHasTouchListeners(v) {
-      this.mHasTouchListeners = v;
+    /** Writes a new value of the string: every binding on it updates, and a repaint is asked for. */
+    setText(text) {
+      if (!this.mActive) return;
+      this.mContext.loadText(this.mOperation.getTextId(), text);
+      this.mContext.needsRepaint();
     }
-    assignIds(lastId) {
-      this.mCurrentId = lastId;
-      this.assignId(this);
+    /** The placeholder shown when the text is empty, or null if none was declared. */
+    getHint() {
+      const id = this.mOperation.getHintId();
+      return id !== 0 ? this.mContext.getText(id) : null;
     }
-    assignId(component) {
-      if (component.getComponentId() === -1) {
-        this.mCurrentId--;
-        component.mComponentId = this.mCurrentId;
-      }
-      for (const op of component.getList()) {
-        if (op instanceof Component) {
-          this.assignId(op);
-        }
-      }
+    isActive() {
+      return this.mActive;
     }
-    /**
-     * The root itself needs measuring; the components under it keep their state, as Java's
-     * (Component.invalidateMeasure walks up, never down). Marking the whole tree here made
-     * every component "needs measure" through a resize's pass, which turned the measure
-     * cache off for all of them. A component whose content changed marks itself and its
-     * parents; the per-pass constraints check covers the rest.
-     */
-    invalidateMeasure() {
-      this.mNeedsMeasure = true;
+    /** Ends the session (the host dismissed its editor): the component draws its text again. */
+    end() {
+      if (!this.mActive) return;
+      this.mActive = false;
+      this.mOperation.onSessionEnded(this.mContext, this);
     }
-    /** Every component in the tree needs measuring (the first layout's state). */
-    invalidateMeasureAll() {
-      this.mNeedsMeasure = true;
-      this.invalidateMeasureChildren(this);
-    }
-    invalidateMeasureChildren(component) {
-      component.mNeedsMeasure = true;
-      for (const op of component.getList()) {
-        if (op instanceof Component) {
-          this.invalidateMeasureChildren(op);
-        }
-      }
-    }
-    /** Measure then layout the tree of components */
-    layoutTree(context) {
-      if (!this.mNeedsMeasure) return;
-      this.mNeedsMeasure = false;
-      this.setWidth(context.mWidth);
-      this.setHeight(context.mHeight);
-      context.mViewportWidth = context.mWidth;
-      context.mViewportHeight = context.mHeight;
-      const measurePass = new MeasurePass();
-      for (const op of this.getList()) {
-        if (typeof op.measure === "function") {
-          const paintContext = context.getPaintContext();
-          if (paintContext) {
-            op.measure(paintContext, 0, this.mWidth, 0, this.mHeight, measurePass);
-            if (typeof op.layout === "function") {
-              op.layout(context, measurePass);
-            }
-          }
-        }
-      }
-    }
-    /** Measure the document and layout components, returning first child size */
-    measureDoc(context, minWidth, maxWidth, minHeight, maxHeight) {
-      this.mNeedsMeasure = false;
-      this.setWidth(context.mWidth);
-      this.setHeight(context.mHeight);
-      context.mViewportWidth = context.mWidth;
-      context.mViewportHeight = context.mHeight;
-      const measurePass = new MeasurePass();
-      let firstComponent = null;
-      for (const op of this.getList()) {
-        if (typeof op.measure === "function") {
-          if (firstComponent === null && op instanceof Component) {
-            firstComponent = op;
-          }
-          const paintContext = context.getPaintContext();
-          if (paintContext) {
-            op.measure(paintContext, minWidth, maxWidth, minHeight, maxHeight, measurePass);
-            if (typeof op.layout === "function") {
-              op.layout(context, measurePass);
-            }
-          }
-        }
-      }
-      if (firstComponent) {
-        this.setWidth(firstComponent.getWidth());
-        this.setHeight(firstComponent.getHeight());
-      }
-    }
-    paint(paintContext) {
-      this.mNeedsRepaint = false;
-      const remoteContext = paintContext.getContext();
-      paintContext.save();
-      if (!this.getParent()) {
-        paintContext.clipRect(0, 0, this.mWidth, this.mHeight);
-      }
-      for (const op of this.getList()) {
-        if (op instanceof PaintOperation) {
-          op.paint(paintContext);
-          remoteContext.incrementOpCount(op);
-        }
-      }
-      paintContext.restore();
-    }
-    getComponent(id) {
-      const queue = [this];
-      while (queue.length > 0) {
-        const c = queue.shift();
-        if (c.getComponentId() === id) return c;
-        for (const child of c.getList()) {
-          if (child instanceof Component) {
-            queue.push(child);
-          }
-        }
-      }
-      return null;
-    }
-    displayHierarchy() {
-      return `RootLayout(${this.getWidth()}x${this.getHeight()})`;
-    }
-    onClick(context, doc, x, y) {
-      for (const child of this.getList()) {
-        if (typeof child.onClick === "function") {
-          if (child.onClick(context, doc, x, y)) return true;
-        }
-      }
-      return false;
-    }
-    onTouchDown(context, doc, x, y) {
-      for (const child of this.getList()) {
-        if (typeof child.onTouchDown === "function") {
-          if (child.onTouchDown(context, doc, x, y)) return true;
-        }
-      }
-      return false;
-    }
-    write(buffer) {
-      buffer.start(_RootLayoutComponent.OP_CODE);
-      buffer.writeInt(this.getComponentId());
-    }
-    deepToString(indent) {
-      return `${indent}RootLayoutComponent(${this.getComponentId()})`;
-    }
-    static read(buffer, operations) {
-      const componentId = buffer.declareId();
-      const component = new _RootLayoutComponent(componentId);
-      operations.push(component);
-    }
-  };
-  _RootLayoutComponent.OP_CODE = 200;
-  var RootLayoutComponent = _RootLayoutComponent;
-
-  // ../kobento-ts/src/core/TimeVariables.ts
-  var TimeVariables = class {
-    constructor(clock) {
-      this.mLastAnimationTime = -1;
-      this.mClock = clock;
-      this.mStartTime = performance.now() / 1e3;
-    }
-    getClock() {
-      return this.mClock;
-    }
-    /** Seconds elapsed since this TimeVariables was created. */
-    getElapsedSeconds() {
-      return performance.now() / 1e3 - this.mStartTime;
-    }
-    updateTime(context) {
-      const snapshot = this.mClock.snapshot();
-      context.loadFloat(RemoteContext.ID_OFFSET_TO_UTC, snapshot.getOffsetSeconds());
-      context.loadFloat(RemoteContext.ID_CONTINUOUS_SEC, snapshot.getContinuousSeconds());
-      context.loadInteger(RemoteContext.ID_EPOCH_SECOND, snapshot.getEpochSeconds());
-      context.loadFloat(RemoteContext.ID_TIME_IN_SEC, snapshot.getTimeInSec());
-      context.loadFloat(RemoteContext.ID_TIME_IN_MIN, snapshot.getTimeInMin());
-      context.loadFloat(RemoteContext.ID_TIME_IN_HR, snapshot.getHour());
-      context.loadFloat(RemoteContext.ID_CALENDAR_MONTH, snapshot.getMonth());
-      context.loadFloat(RemoteContext.ID_DAY_OF_MONTH, snapshot.getDayOfMonth());
-      context.loadFloat(RemoteContext.ID_WEEK_DAY, snapshot.getDayOfWeek());
-      context.loadFloat(RemoteContext.ID_DAY_OF_YEAR, snapshot.getDayOfYear());
-      context.loadFloat(RemoteContext.ID_YEAR, snapshot.getYear());
-      const animTime = this.getElapsedSeconds();
-      const deltaTime = this.mLastAnimationTime >= 0 ? animTime - this.mLastAnimationTime : 0;
-      this.mLastAnimationTime = animTime;
-      context.loadFloat(RemoteContext.ID_ANIMATION_TIME, animTime);
-      context.setAnimationTime(animTime);
-      context.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, deltaTime);
-      context.loadFloat(RemoteContext.ID_API_LEVEL, CoreDocument.DOCUMENT_API_LEVEL);
+    /** Recomputes getBounds() from the component's current place; true when they changed. */
+    updateBounds() {
+      const [x, y, w, h] = this.mBounds;
+      const c = this.mComponent;
+      const loc = this.mComponent.getLocationInWindow();
+      this.mBounds[0] = loc[0] - (c.mPaddingLeft ?? 0);
+      this.mBounds[1] = loc[1] - (c.mPaddingTop ?? 0);
+      this.mBounds[2] = this.mComponent.getWidth();
+      this.mBounds[3] = this.mComponent.getHeight();
+      return x !== this.mBounds[0] || y !== this.mBounds[1] || w !== this.mBounds[2] || h !== this.mBounds[3];
     }
   };
 
@@ -5949,18 +5596,18 @@ var RC = (() => {
       const h = this.mLayoutH;
       if (w <= 0 || h <= 0) return;
       pc.savePaint();
-      let argb;
+      let argb2;
       if (this.mFlags === _BackgroundModifier.COLOR_REF) {
-        argb = context.mRemoteComposeState.getColor(this.mColorId);
+        argb2 = context.mRemoteComposeState.getColor(this.mColorId);
       } else {
         const a = Math.trunc(this.mOutA * 255 + 0.5);
         const r = Math.trunc(this.mOutR * 255 + 0.5);
         const g = Math.trunc(this.mOutG * 255 + 0.5);
         const b = Math.trunc(this.mOutB * 255 + 0.5);
-        argb = a << 24 | r << 16 | g << 8 | b | 0;
+        argb2 = a << 24 | r << 16 | g << 8 | b | 0;
       }
       const pb = new PaintBundle();
-      pb.mArray = [PaintBundle.STYLE, PaintBundle.COLOR, argb];
+      pb.mArray = [PaintBundle.STYLE, PaintBundle.COLOR, argb2];
       pb.mPos = 3;
       pc.replacePaint(pb);
       if (this.mShapeType === 1) {
@@ -6024,19 +5671,19 @@ var RC = (() => {
       if (w <= 0 || h <= 0) return;
       pc.savePaint();
       const pb = new PaintBundle();
-      let argb;
+      let argb2;
       if (this.mFlags === _BorderModifier.COLOR_REF) {
-        argb = context.mRemoteComposeState.getColor(this.mColorId);
+        argb2 = context.mRemoteComposeState.getColor(this.mColorId);
       } else {
         const a = Math.trunc(this.mA * 255 + 0.5);
         const r = Math.trunc(this.mR * 255 + 0.5);
         const g = Math.trunc(this.mG * 255 + 0.5);
         const b = Math.trunc(this.mB * 255 + 0.5);
-        argb = a << 24 | r << 16 | g << 8 | b | 0;
+        argb2 = a << 24 | r << 16 | g << 8 | b | 0;
       }
       pb.reset();
       pb.setStyle(PaintBundle.STROKE);
-      pb.setColor(argb);
+      pb.setColor(argb2);
       pb.setStrokeWidth(this.mBorderWidth);
       pc.replacePaint(pb);
       if (this.mRoundedCorner > 0) {
@@ -7117,6 +6764,847 @@ var RC = (() => {
   };
   _AccessibilitySemantics.OP_CODE = 250;
   var AccessibilitySemantics = _AccessibilitySemantics;
+  var _TextInputModifier = class _TextInputModifier extends Operation {
+    constructor(mTextId, mKeyboardType, mImeAction, mFlags, mMaxLength, mFilter, mHintId) {
+      super();
+      this.mTextId = mTextId;
+      this.mKeyboardType = mKeyboardType;
+      this.mImeAction = mImeAction;
+      this.mFlags = mFlags;
+      this.mMaxLength = mMaxLength;
+      this.mFilter = mFilter;
+      this.mHintId = mHintId;
+      this.mSession = null;
+      this.mHintBounds = new Float32Array(4);
+    }
+    getTextId() {
+      return this.mTextId;
+    }
+    getKeyboardType() {
+      return this.mKeyboardType;
+    }
+    getImeAction() {
+      return this.mImeAction;
+    }
+    getFlags() {
+      return this.mFlags;
+    }
+    hasFlag(flag) {
+      return (this.mFlags & flag) !== 0;
+    }
+    getMaxLength() {
+      return this.mMaxLength;
+    }
+    getFilter() {
+      return this.mFilter;
+    }
+    getHintId() {
+      return this.mHintId;
+    }
+    getSession() {
+      return this.mSession;
+    }
+    static support(context) {
+      return context.getPaintContext()?.getTextInputSupport() ?? null;
+    }
+    /** A click on the component: starts a session when the player supports text input. */
+    onClickComponent(context, component) {
+      const support = _TextInputModifier.support(context);
+      if (!support) return false;
+      if (this.mSession && this.mSession.isActive()) return true;
+      this.mSession = new TextInputSession(context, component, this);
+      component.setEditing(true);
+      support.startTextInput(this.mSession);
+      context.needsRepaint();
+      return true;
+    }
+    /** Ends the session from the document's side (it is unloaded): the host drops its editor. */
+    stopTextInput(context) {
+      const session = this.mSession;
+      if (!session || !session.isActive()) return;
+      _TextInputModifier.support(context)?.stopTextInput(session);
+      session.end();
+    }
+    /** Called by the session when it ends: the component draws its text again. */
+    onSessionEnded(context, session) {
+      if (this.mSession !== session) return;
+      this.mSession = null;
+      session.getComponent().setEditing(false);
+      context.needsRepaint();
+    }
+    /** The text input modifier of a component, or null. */
+    static find(component) {
+      for (const m of component?.mComponentModifiers ?? []) if (m instanceof _TextInputModifier) return m;
+      return null;
+    }
+    /**
+     * Draws the hint where an empty editable text would be, at 45% of the text's alpha, aligned
+     * as the text is. The paint is the component's text paint, restored after.
+     */
+    paintHint(context, paint, textColor, contentWidth, textAlign) {
+      if (this.mHintId === 0) return false;
+      const hint = context.getContext().getText(this.mHintId);
+      if (!hint) return false;
+      const length = hint.length;
+      context.getTextBounds(this.mHintId, 0, length, 0, this.mHintBounds);
+      const hintWidth = this.mHintBounds[2] - this.mHintBounds[0];
+      const px = textAlign === 3 ? (contentWidth - hintWidth) / 2 : textAlign === 2 || textAlign === 6 ? contentWidth - hintWidth : 0;
+      const alpha = Math.floor((textColor >>> 24) * _TextInputModifier.HINT_ALPHA_PERCENT / 100);
+      paint.setColor(alpha << 24 | textColor & 16777215 | 0);
+      context.replacePaint(paint);
+      context.drawTextRun(this.mHintId, 0, length, 0, 0, px - this.mHintBounds[0], -this.mHintBounds[1], false);
+      paint.setColor(textColor);
+      context.replacePaint(paint);
+      return true;
+    }
+    /** At paint: keeps the host's editor on the component when it moved. */
+    paintModifier(paintContext) {
+      const session = this.mSession;
+      if (!session || !session.isActive()) return;
+      if (session.updateBounds()) _TextInputModifier.support(paintContext.getContext())?.updateTextInputBounds(session);
+    }
+    registerListening(context) {
+      context.listensTo(this.mTextId, this);
+      if (this.mHintId !== 0) context.listensTo(this.mHintId, this);
+    }
+    updateVariables(_context) {
+    }
+    write(buffer) {
+      buffer.start(_TextInputModifier.OP_CODE);
+      for (const v of [this.mTextId, this.mKeyboardType, this.mImeAction, this.mFlags, this.mMaxLength, this.mFilter, this.mHintId]) buffer.writeInt(v);
+    }
+    apply(_context) {
+    }
+    deepToString(indent) {
+      return `${indent}TextInputModifier(${this.mTextId})`;
+    }
+    static read(buffer, operations) {
+      operations.push(new _TextInputModifier(
+        buffer.readInt(),
+        buffer.readInt(),
+        buffer.readInt(),
+        buffer.readInt(),
+        buffer.readInt(),
+        buffer.readInt(),
+        buffer.readInt()
+      ));
+    }
+  };
+  _TextInputModifier.OP_CODE = 60;
+  // Keyboard types (Compose KeyboardType's values)
+  _TextInputModifier.KEYBOARD_UNSPECIFIED = 0;
+  _TextInputModifier.KEYBOARD_TEXT = 1;
+  _TextInputModifier.KEYBOARD_ASCII = 2;
+  _TextInputModifier.KEYBOARD_NUMBER = 3;
+  _TextInputModifier.KEYBOARD_PHONE = 4;
+  _TextInputModifier.KEYBOARD_URI = 5;
+  _TextInputModifier.KEYBOARD_EMAIL = 6;
+  _TextInputModifier.KEYBOARD_PASSWORD = 7;
+  _TextInputModifier.KEYBOARD_NUMBER_PASSWORD = 8;
+  _TextInputModifier.KEYBOARD_DECIMAL = 9;
+  // IME actions (Compose ImeAction's values)
+  _TextInputModifier.IME_ACTION_NONE = 0;
+  _TextInputModifier.IME_ACTION_DEFAULT = 1;
+  _TextInputModifier.IME_ACTION_GO = 2;
+  _TextInputModifier.IME_ACTION_SEARCH = 3;
+  _TextInputModifier.IME_ACTION_SEND = 4;
+  _TextInputModifier.IME_ACTION_PREVIOUS = 5;
+  _TextInputModifier.IME_ACTION_NEXT = 6;
+  _TextInputModifier.IME_ACTION_DONE = 7;
+  // Flags
+  _TextInputModifier.FLAG_SINGLE_LINE = 1;
+  _TextInputModifier.FLAG_COMMIT_ON_DONE = 1 << 1;
+  _TextInputModifier.FLAG_AUTO_CORRECT = 1 << 2;
+  _TextInputModifier.FLAG_CAPITALIZE_CHARACTERS = 1 << 3;
+  _TextInputModifier.FLAG_CAPITALIZE_WORDS = 1 << 4;
+  _TextInputModifier.FLAG_CAPITALIZE_SENTENCES = 1 << 5;
+  // Input filters, applied by the editor before a keystroke reaches the string
+  _TextInputModifier.FILTER_NONE = 0;
+  _TextInputModifier.FILTER_DIGITS = 1;
+  _TextInputModifier.FILTER_DECIMAL = 2;
+  _TextInputModifier.FILTER_ALPHANUMERIC = 3;
+  _TextInputModifier.FILTER_HEXADECIMAL = 4;
+  _TextInputModifier.HINT_ALPHA_PERCENT = 45;
+  var TextInputModifier = _TextInputModifier;
+
+  // ../kobento-ts/src/web/TextInput.ts
+  var T = TextInputModifier;
+  var WebTextInputSupport = class {
+    constructor(page) {
+      this.page = page;
+      this.editor = null;
+      this.session = null;
+      this.dismissing = false;
+      this.onViewport = () => {
+        if (this.session) this.place(this.session);
+      };
+    }
+    /** True while an editor is shown. */
+    isEditing() {
+      return !!this.session && this.session.isActive();
+    }
+    startTextInput(session) {
+      this.dismiss(true);
+      this.session = session;
+      const op = session.getOperation();
+      const single = op.hasFlag(T.FLAG_SINGLE_LINE);
+      const editor = document.createElement(single ? "input" : "textarea");
+      this.editor = editor;
+      configure(editor, op);
+      const hint = session.getHint();
+      if (hint) editor.placeholder = hint;
+      editor.value = filtered(session.getText(), op);
+      this.style(editor, session);
+      this.place(session);
+      editor.addEventListener("input", () => {
+        const clean = filtered(editor.value, op);
+        if (clean !== editor.value) {
+          const at = Math.max(0, (editor.selectionStart ?? clean.length) - (editor.value.length - clean.length));
+          editor.value = clean;
+          editor.setSelectionRange(at, at);
+        }
+        if (this.session === session && session.isActive() && !op.hasFlag(T.FLAG_COMMIT_ON_DONE)) {
+          session.setText(editor.value);
+          this.page.repaint();
+        }
+      });
+      editor.addEventListener("keydown", (e) => {
+        const k = e;
+        if (k.key === "Enter" && single && !k.isComposing || k.key === "Escape") {
+          k.preventDefault();
+          this.dismiss(true);
+        }
+      });
+      editor.addEventListener("blur", () => {
+        if (this.editor === editor) this.dismiss(true);
+      });
+      document.body.appendChild(editor);
+      window.addEventListener("scroll", this.onViewport, true);
+      window.addEventListener("resize", this.onViewport);
+      editor.focus({ preventScroll: true });
+      const end = editor.value.length;
+      try {
+        editor.setSelectionRange(end, end);
+      } catch {
+      }
+      this.page.repaint();
+    }
+    updateTextInputBounds(session) {
+      if (this.session !== session || !this.editor) return;
+      this.place(session);
+    }
+    stopTextInput(session) {
+      if (this.session !== session) return;
+      this.removeEditor();
+      this.session = null;
+    }
+    /** Ends the active session, if any, committing the text first (the document is going away). */
+    stop() {
+      this.dismiss(true);
+    }
+    dismiss(commit) {
+      if (this.dismissing) return;
+      this.dismissing = true;
+      try {
+        const session = this.session, editor = this.editor;
+        if (session && session.isActive() && editor && commit) session.setText(editor.value);
+        this.removeEditor();
+        session?.end();
+        this.session = null;
+        this.page.repaint();
+      } finally {
+        this.dismissing = false;
+      }
+    }
+    removeEditor() {
+      const editor = this.editor;
+      this.editor = null;
+      window.removeEventListener("scroll", this.onViewport, true);
+      window.removeEventListener("resize", this.onViewport);
+      editor?.remove();
+    }
+    /** The editor over the component's bounds, fixed to the viewport. */
+    place(session) {
+      const editor = this.editor;
+      if (!editor) return;
+      const [x, y, w, h] = session.getBounds();
+      const [left, top, width, height] = this.page.rect(x, y, w, h);
+      Object.assign(editor.style, {
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${Math.max(1, width)}px`,
+        height: `${Math.max(1, height)}px`
+      });
+    }
+    /** Matches the editor's text to the component's: size, colour, weight, alignment, padding. */
+    style(editor, session) {
+      const s = this.page.scale();
+      const c = session.getComponent();
+      const css = {
+        position: "fixed",
+        zIndex: "2147483646",
+        margin: "0",
+        border: "0",
+        outline: "none",
+        background: "transparent",
+        boxSizing: "border-box",
+        resize: "none",
+        overflow: "hidden",
+        fontFamily: "sans-serif",
+        lineHeight: "normal",
+        padding: `${(c.mPaddingTop ?? 0) * s}px ${(c.mPaddingRight ?? 0) * s}px ${(c.mPaddingBottom ?? 0) * s}px ${(c.mPaddingLeft ?? 0) * s}px`
+      };
+      if (typeof c.getFontSizeValue === "function") {
+        const size = c.getFontSizeValue();
+        if (size > 0) css.fontSize = `${size * s}px`;
+        const color = c.getColorValue() | 0;
+        css.color = argb(color);
+        css.caretColor = argb(color);
+        css.fontWeight = String(Math.round(c.getFontWeightValue() || 400));
+        const align = c.getTextAlignValue();
+        css.textAlign = align === 3 ? "center" : align === 2 || align === 6 ? "right" : "left";
+      }
+      Object.assign(editor.style, css);
+      editor.setAttribute("data-rc-text-input", String(session.getOperation().getTextId()));
+    }
+  };
+  function configure(editor, op) {
+    const input = editor instanceof HTMLInputElement ? editor : null;
+    let inputMode = "";
+    switch (op.getKeyboardType()) {
+      case T.KEYBOARD_NUMBER:
+        inputMode = "numeric";
+        break;
+      case T.KEYBOARD_DECIMAL:
+        inputMode = "decimal";
+        break;
+      case T.KEYBOARD_NUMBER_PASSWORD:
+        inputMode = "numeric";
+        if (input) input.type = "password";
+        break;
+      case T.KEYBOARD_PHONE:
+        inputMode = "tel";
+        if (input) input.type = "tel";
+        break;
+      case T.KEYBOARD_URI:
+        inputMode = "url";
+        if (input) input.type = "url";
+        break;
+      case T.KEYBOARD_EMAIL:
+        inputMode = "email";
+        if (input) input.type = "email";
+        break;
+      case T.KEYBOARD_PASSWORD:
+        if (input) input.type = "password";
+        break;
+      default:
+        inputMode = "text";
+    }
+    if (inputMode) editor.inputMode = inputMode;
+    const hint = {
+      [T.IME_ACTION_GO]: "go",
+      [T.IME_ACTION_SEARCH]: "search",
+      [T.IME_ACTION_SEND]: "send",
+      [T.IME_ACTION_PREVIOUS]: "previous",
+      [T.IME_ACTION_NEXT]: "next",
+      [T.IME_ACTION_DONE]: "done"
+    }[op.getImeAction()] ?? (op.hasFlag(T.FLAG_SINGLE_LINE) ? "done" : "enter");
+    editor.setAttribute("enterkeyhint", hint);
+    const correct = op.hasFlag(T.FLAG_AUTO_CORRECT);
+    editor.setAttribute("autocorrect", correct ? "on" : "off");
+    editor.spellcheck = correct;
+    editor.setAttribute("autocapitalize", op.hasFlag(T.FLAG_CAPITALIZE_CHARACTERS) ? "characters" : op.hasFlag(T.FLAG_CAPITALIZE_WORDS) ? "words" : op.hasFlag(T.FLAG_CAPITALIZE_SENTENCES) ? "sentences" : "off");
+    editor.autocomplete = "off";
+    if (op.getMaxLength() > 0) editor.maxLength = op.getMaxLength();
+  }
+  function filtered(text, op) {
+    let out = text;
+    switch (op.getFilter()) {
+      case T.FILTER_DIGITS:
+        out = out.replace(/[^0-9]/g, "");
+        break;
+      case T.FILTER_DECIMAL:
+        out = out.replace(/[^0-9.,-]/g, "");
+        break;
+      case T.FILTER_HEXADECIMAL:
+        out = out.replace(/[^0-9a-fA-F]/g, "");
+        break;
+      case T.FILTER_ALPHANUMERIC:
+        out = out.replace(/[^\p{L}\p{N}]/gu, "");
+        break;
+    }
+    if (op.hasFlag(T.FLAG_SINGLE_LINE)) out = out.replace(/[\r\n]+/g, " ");
+    if (op.getMaxLength() > 0 && out.length > op.getMaxLength()) out = out.slice(0, op.getMaxLength());
+    return out;
+  }
+  function argb(c) {
+    const a = (c >>> 24 & 255) / 255;
+    return `rgba(${c >>> 16 & 255}, ${c >>> 8 & 255}, ${c & 255}, ${a.toFixed(3)})`;
+  }
+
+  // ../kobento-ts/src/core/operations/Header.ts
+  var _Header = class _Header extends Operation {
+    constructor(majorVersion, minorVersion, patchVersion, properties = null, width = 256, height = 256, capabilities = 0) {
+      super();
+      this.mMajorVersion = majorVersion;
+      this.mMinorVersion = minorVersion;
+      this.mPatchVersion = patchVersion;
+      this.mWidth = width;
+      this.mHeight = height;
+      this.mCapabilities = capabilities;
+      this.mProperties = properties;
+      this.mProfiles = 0;
+      if (properties) {
+        const profileVal = properties.get(_Header.DOC_PROFILES);
+        if (profileVal != null) this.mProfiles = profileVal;
+        const widthVal = properties.get(_Header.DOC_WIDTH);
+        if (widthVal != null) this.mWidth = widthVal;
+        const heightVal = properties.get(_Header.DOC_HEIGHT);
+        if (heightVal != null) this.mHeight = heightVal;
+      }
+    }
+    get(property) {
+      return this.mProperties?.get(property) ?? null;
+    }
+    getInt(key, defaultValue) {
+      const v = this.mProperties?.get(key);
+      if (v != null && typeof v === "number") return v;
+      return defaultValue;
+    }
+    getProfiles() {
+      return this.mProfiles;
+    }
+    setVersion(doc) {
+      doc.setVersion(this.mMajorVersion, this.mMinorVersion, this.mPatchVersion);
+      if (!doc.mHeaderSized) {
+        doc.setWidth(this.mWidth);
+        doc.setHeight(this.mHeight);
+        doc.mHeaderSized = true;
+      }
+      doc.setAuthorDimensions(this.mWidth, this.mHeight);
+      doc.setRequiredCapabilities(this.mCapabilities);
+      doc.setProperties(this.mProperties);
+    }
+    write(buffer) {
+      buffer.start(_Header.OP_CODE);
+    }
+    apply(context) {
+      context.header(
+        this.mMajorVersion,
+        this.mMinorVersion,
+        this.mPatchVersion,
+        this.mWidth,
+        this.mHeight,
+        this.mCapabilities,
+        this.mProperties
+      );
+    }
+    deepToString(indent) {
+      return `${indent}Header v${this.mMajorVersion}.${this.mMinorVersion}.${this.mPatchVersion} ${this.mWidth}x${this.mHeight}`;
+    }
+    /** Peek the API level from the buffer without consuming bytes */
+    static peekApiLevel(buffer) {
+      const savedIndex = buffer.getIndex();
+      buffer.readByte();
+      const versionOrMagic = buffer.readInt();
+      buffer.setIndex(savedIndex);
+      if ((versionOrMagic & 4294901760) === _Header.MAGIC_NUMBER) {
+        const majorVersion = versionOrMagic & 65535;
+        const minorVersion = buffer.peekInt();
+        if (majorVersion >= 1) {
+          buffer.setIndex(savedIndex);
+          buffer.readByte();
+          buffer.readInt();
+          const minor = buffer.readInt();
+          buffer.setIndex(savedIndex);
+          if (minor >= 2) return 8;
+          if (minor >= 1) return 7;
+          return 6;
+        }
+        return 6;
+      }
+      if (versionOrMagic === 0) {
+        return 6;
+      }
+      return 6;
+    }
+    /** Read a Header from the buffer (modern format with property map) */
+    static readDirect(buffer) {
+      buffer.readByte();
+      const versionOrMagic = buffer.readInt();
+      if ((versionOrMagic & 4294901760) === _Header.MAGIC_NUMBER) {
+        const majorVersion2 = versionOrMagic & 65535;
+        const minorVersion2 = buffer.readInt();
+        const patchVersion2 = buffer.readInt();
+        const numProperties = buffer.readInt();
+        const properties = new IntMap();
+        if (numProperties > _Header.MAX_TABLE_SIZE) {
+          console.warn(`Header: property table size ${numProperties} exceeds limit ${_Header.MAX_TABLE_SIZE}, truncating`);
+        }
+        for (let i = 0; i < numProperties; i++) {
+          const tag = buffer.readShort();
+          const dataType = tag >> 10;
+          const key = tag & 1023;
+          const itemLen = buffer.readShort();
+          if (i >= _Header.MAX_TABLE_SIZE) {
+            for (let j = 0; j < itemLen; j++) buffer.readByte();
+            continue;
+          }
+          switch (dataType) {
+            case _Header.DATA_TYPE_INT:
+              properties.put(key, buffer.readInt());
+              break;
+            case _Header.DATA_TYPE_FLOAT:
+              properties.put(key, buffer.readFloat());
+              break;
+            case _Header.DATA_TYPE_LONG:
+              properties.put(key, buffer.readLong());
+              break;
+            case _Header.DATA_TYPE_STRING:
+              properties.put(key, buffer.readUTF8());
+              break;
+            default:
+              for (let j = 0; j < itemLen; j++) buffer.readByte();
+              break;
+          }
+        }
+        return new _Header(majorVersion2, minorVersion2, patchVersion2, properties);
+      }
+      const majorVersion = versionOrMagic;
+      const minorVersion = buffer.readInt();
+      const patchVersion = buffer.readInt();
+      const width = buffer.readInt();
+      const height = buffer.readInt();
+      const capabilities = buffer.readLong();
+      return new _Header(majorVersion, minorVersion, patchVersion, null, width, height, capabilities);
+    }
+    /** CompanionOperation.read implementation */
+    static read(buffer, operations) {
+      const savedIndex = buffer.getIndex() - 1;
+      buffer.setIndex(savedIndex);
+      const header = _Header.readDirect(buffer);
+      operations.push(header);
+    }
+  };
+  _Header.OP_CODE = 0;
+  _Header.MAGIC_NUMBER = 76283904;
+  _Header.MAX_TABLE_SIZE = 1e3;
+  // Property keys
+  _Header.DOC_WIDTH = 5;
+  _Header.DOC_HEIGHT = 6;
+  _Header.DOC_DENSITY_AT_GENERATION = 7;
+  /**
+   * How the document wants dp handled: LEGACY (0), PIXELS (1) or DP (2). Absent means
+   * LEGACY, which is what almost every document in the corpus is — under LEGACY only the
+   * dimension modifiers scale, and padding/spacing do not.
+   */
+  _Header.DOC_DENSITY_BEHAVIOR = 27;
+  _Header.DOC_DESIRED_FPS = 8;
+  _Header.DOC_CONTENT_DESCRIPTION = 9;
+  _Header.DOC_SOURCE = 11;
+  _Header.DOC_DATA_UPDATE = 12;
+  _Header.HOST_EXCEPTION_HANDLER = 13;
+  _Header.DOC_PROFILES = 14;
+  _Header.FEATURE_PAINT_MEASURE = 15;
+  _Header.DEBUG = 16;
+  _Header.FEATURE_MEASURE_VERSION = 17;
+  _Header.FEATURE_TOUCH_VERSION = 18;
+  _Header.FEATURE_PRIORITY_FIX = 23;
+  /** Which layout optimizations a document allows (CoreDocument.OPTIMIZATION_*; default all). */
+  _Header.FEATURE_OPTIMIZATION_LEVEL = 28;
+  // Data types
+  _Header.DATA_TYPE_INT = 0;
+  _Header.DATA_TYPE_FLOAT = 1;
+  _Header.DATA_TYPE_LONG = 2;
+  _Header.DATA_TYPE_STRING = 3;
+  var Header = _Header;
+
+  // ../kobento-ts/src/core/operations/layout/ContainerEnd.ts
+  var _ContainerEnd = class _ContainerEnd extends Operation {
+    write(buffer) {
+      buffer.start(_ContainerEnd.OP_CODE);
+    }
+    apply(_context) {
+    }
+    deepToString(indent) {
+      return `${indent}ContainerEnd`;
+    }
+    static read(_buffer, operations) {
+      operations.push(new _ContainerEnd());
+    }
+  };
+  _ContainerEnd.OP_CODE = 214;
+  var ContainerEnd = _ContainerEnd;
+
+  // ../kobento-ts/src/core/operations/layout/measure/MeasurePass.ts
+  var MeasurePass = class {
+    constructor() {
+      this.mList = /* @__PURE__ */ new Map();
+    }
+    clear() {
+      this.mList.clear();
+    }
+    add(measure) {
+      if (measure.mId === -1) throw new Error("Component has no id!");
+      this.mList.set(measure.mId, measure);
+    }
+    contains(id) {
+      return this.mList.has(id);
+    }
+    get(arg) {
+      if (typeof arg === "number") {
+        let m2 = this.mList.get(arg);
+        if (!m2) {
+          m2 = new ComponentMeasure(arg, 0, 0, 0, 0, ComponentMeasure.GONE);
+          this.mList.set(arg, m2);
+        }
+        return m2;
+      }
+      const c = arg;
+      const id = c.getComponentId();
+      let m = this.mList.get(id);
+      if (!m) {
+        m = new ComponentMeasure(
+          id,
+          c.getX(),
+          c.getY(),
+          c.getWidth(),
+          c.getHeight(),
+          c.mScheduledVisibility & 15
+        );
+        this.mList.set(id, m);
+      }
+      return m;
+    }
+  };
+
+  // ../kobento-ts/src/core/operations/layout/RootLayoutComponent.ts
+  var _RootLayoutComponent = class _RootLayoutComponent extends Component {
+    constructor(componentId = -1) {
+      super(componentId);
+      this.mCurrentId = -1;
+      this.mHasTouchListeners = false;
+    }
+    getHasTouchListeners() {
+      return this.mHasTouchListeners;
+    }
+    setHasTouchListeners(v) {
+      this.mHasTouchListeners = v;
+    }
+    assignIds(lastId) {
+      this.mCurrentId = lastId;
+      this.assignId(this);
+    }
+    assignId(component) {
+      if (component.getComponentId() === -1) {
+        this.mCurrentId--;
+        component.mComponentId = this.mCurrentId;
+      }
+      for (const op of component.getList()) {
+        if (op instanceof Component) {
+          this.assignId(op);
+        }
+      }
+    }
+    /**
+     * The root itself needs measuring; the components under it keep their state, as Java's
+     * (Component.invalidateMeasure walks up, never down). Marking the whole tree here made
+     * every component "needs measure" through a resize's pass, which turned the measure
+     * cache off for all of them. A component whose content changed marks itself and its
+     * parents; the per-pass constraints check covers the rest.
+     */
+    invalidateMeasure() {
+      this.mNeedsMeasure = true;
+    }
+    /** Every component in the tree needs measuring (the first layout's state). */
+    invalidateMeasureAll() {
+      this.mNeedsMeasure = true;
+      this.invalidateMeasureChildren(this);
+    }
+    invalidateMeasureChildren(component) {
+      component.mNeedsMeasure = true;
+      for (const op of component.getList()) {
+        if (op instanceof Component) {
+          this.invalidateMeasureChildren(op);
+        }
+      }
+    }
+    /** Measure then layout the tree of components */
+    layoutTree(context) {
+      if (!this.mNeedsMeasure) return;
+      this.mNeedsMeasure = false;
+      this.setWidth(context.mWidth);
+      this.setHeight(context.mHeight);
+      context.mViewportWidth = context.mWidth;
+      context.mViewportHeight = context.mHeight;
+      const measurePass = new MeasurePass();
+      for (const op of this.getList()) {
+        if (typeof op.measure === "function") {
+          const paintContext = context.getPaintContext();
+          if (paintContext) {
+            op.measure(paintContext, 0, this.mWidth, 0, this.mHeight, measurePass);
+            if (typeof op.layout === "function") {
+              op.layout(context, measurePass);
+            }
+          }
+        }
+      }
+    }
+    /** Measure the document and layout components, returning first child size */
+    measureDoc(context, minWidth, maxWidth, minHeight, maxHeight) {
+      this.mNeedsMeasure = false;
+      this.setWidth(context.mWidth);
+      this.setHeight(context.mHeight);
+      context.mViewportWidth = context.mWidth;
+      context.mViewportHeight = context.mHeight;
+      const measurePass = new MeasurePass();
+      let firstComponent = null;
+      for (const op of this.getList()) {
+        if (typeof op.measure === "function") {
+          if (firstComponent === null && op instanceof Component) {
+            firstComponent = op;
+          }
+          const paintContext = context.getPaintContext();
+          if (paintContext) {
+            op.measure(paintContext, minWidth, maxWidth, minHeight, maxHeight, measurePass);
+            if (typeof op.layout === "function") {
+              op.layout(context, measurePass);
+            }
+          }
+        }
+      }
+      if (firstComponent) {
+        this.setWidth(firstComponent.getWidth());
+        this.setHeight(firstComponent.getHeight());
+      }
+    }
+    paint(paintContext) {
+      this.mNeedsRepaint = false;
+      const remoteContext = paintContext.getContext();
+      paintContext.save();
+      if (!this.getParent()) {
+        paintContext.clipRect(0, 0, this.mWidth, this.mHeight);
+      }
+      this.paintOperations(paintContext);
+      paintContext.restore();
+    }
+    /**
+     * The root's paint operations only (androidx CL 4445989): the data operations declared in
+     * the root (strings, floats...) were applied when the document was initialized, and
+     * applying them again at paint would reset values changed since. Dirty variables are
+     * brought up to date first.
+     */
+    paintOperations(paintContext) {
+      const remoteContext = paintContext.getContext();
+      for (const op of this.getList()) {
+        if (op.isDirty() && typeof op.updateVariables === "function") {
+          op.updateVariables(remoteContext);
+          op.markNotDirty();
+        }
+        if (op instanceof PaintOperation) {
+          op.paint(paintContext);
+          remoteContext.incrementOpCount(op);
+        }
+      }
+    }
+    /**
+     * Used while the root's bounds are animated (after a resize): unlike the generic one
+     * (Component.paintingComponent), it does not apply the root's data operations again.
+     */
+    paintingComponent(paintContext) {
+      const context = paintContext.getContext();
+      const prev = context.mLastComponent;
+      context.mLastComponent = this;
+      paintContext.matrixSave();
+      paintContext.matrixTranslate(this.mX, this.mY);
+      this.paintOperations(paintContext);
+      paintContext.matrixRestore();
+      context.mLastComponent = prev;
+    }
+    getComponent(id) {
+      const queue = [this];
+      while (queue.length > 0) {
+        const c = queue.shift();
+        if (c.getComponentId() === id) return c;
+        for (const child of c.getList()) {
+          if (child instanceof Component) {
+            queue.push(child);
+          }
+        }
+      }
+      return null;
+    }
+    displayHierarchy() {
+      return `RootLayout(${this.getWidth()}x${this.getHeight()})`;
+    }
+    onClick(context, doc, x, y) {
+      for (const child of this.getList()) {
+        if (typeof child.onClick === "function") {
+          if (child.onClick(context, doc, x, y)) return true;
+        }
+      }
+      return false;
+    }
+    onTouchDown(context, doc, x, y) {
+      for (const child of this.getList()) {
+        if (typeof child.onTouchDown === "function") {
+          if (child.onTouchDown(context, doc, x, y)) return true;
+        }
+      }
+      return false;
+    }
+    write(buffer) {
+      buffer.start(_RootLayoutComponent.OP_CODE);
+      buffer.writeInt(this.getComponentId());
+    }
+    deepToString(indent) {
+      return `${indent}RootLayoutComponent(${this.getComponentId()})`;
+    }
+    static read(buffer, operations) {
+      const componentId = buffer.declareId();
+      const component = new _RootLayoutComponent(componentId);
+      operations.push(component);
+    }
+  };
+  _RootLayoutComponent.OP_CODE = 200;
+  var RootLayoutComponent = _RootLayoutComponent;
+
+  // ../kobento-ts/src/core/TimeVariables.ts
+  var TimeVariables = class {
+    constructor(clock) {
+      this.mLastAnimationTime = -1;
+      this.mClock = clock;
+      this.mStartTime = performance.now() / 1e3;
+    }
+    getClock() {
+      return this.mClock;
+    }
+    /** Seconds elapsed since this TimeVariables was created. */
+    getElapsedSeconds() {
+      return performance.now() / 1e3 - this.mStartTime;
+    }
+    updateTime(context) {
+      const snapshot = this.mClock.snapshot();
+      context.loadFloat(RemoteContext.ID_OFFSET_TO_UTC, snapshot.getOffsetSeconds());
+      context.loadFloat(RemoteContext.ID_CONTINUOUS_SEC, snapshot.getContinuousSeconds());
+      context.loadInteger(RemoteContext.ID_EPOCH_SECOND, snapshot.getEpochSeconds());
+      context.loadFloat(RemoteContext.ID_TIME_IN_SEC, snapshot.getTimeInSec());
+      context.loadFloat(RemoteContext.ID_TIME_IN_MIN, snapshot.getTimeInMin());
+      context.loadFloat(RemoteContext.ID_TIME_IN_HR, snapshot.getHour());
+      context.loadFloat(RemoteContext.ID_CALENDAR_MONTH, snapshot.getMonth());
+      context.loadFloat(RemoteContext.ID_DAY_OF_MONTH, snapshot.getDayOfMonth());
+      context.loadFloat(RemoteContext.ID_WEEK_DAY, snapshot.getDayOfWeek());
+      context.loadFloat(RemoteContext.ID_DAY_OF_YEAR, snapshot.getDayOfYear());
+      context.loadFloat(RemoteContext.ID_YEAR, snapshot.getYear());
+      const animTime = this.getElapsedSeconds();
+      const deltaTime = this.mLastAnimationTime >= 0 ? animTime - this.mLastAnimationTime : 0;
+      this.mLastAnimationTime = animTime;
+      context.loadFloat(RemoteContext.ID_ANIMATION_TIME, animTime);
+      context.setAnimationTime(animTime);
+      context.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, deltaTime);
+      context.loadFloat(RemoteContext.ID_API_LEVEL, CoreDocument.DOCUMENT_API_LEVEL);
+    }
+  };
 
   // ../kobento-ts/src/core/operations/DataOperations.ts
   var NANMAP_PATH_BASE = 3145728;
@@ -7128,15 +7616,23 @@ var RC = (() => {
   var _TextData = class _TextData extends Operation {
     constructor(textId, text) {
       super();
+      // The context this text was loaded into. Java applies a data operation when the document
+      // is initialized and, at paint, only when it is dirty (CoreDocument.paint, and since
+      // androidx CL 4445989 the root's paint too); here every frame applies every operation, so
+      // a string changed since the load (edited, set by the player) was reset each frame.
+      this.mLoadedIn = null;
       this.mTextId = textId;
       this.mText = text;
     }
     update(other) {
       this.mText = other.mText;
+      this.mLoadedIn = null;
     }
     write(_buffer) {
     }
     apply(context) {
+      if (this.mLoadedIn === context && !this.isDirty()) return;
+      this.mLoadedIn = context;
       context.loadText(this.mTextId, this.mText);
     }
     deepToString(indent) {
@@ -7165,6 +7661,11 @@ var RC = (() => {
     }
     getHeight() {
       return this.mHeight;
+    }
+    /** A URL bitmap declared 1x1 (size unknown) takes its picture's size once it arrives. */
+    setSize(width, height) {
+      this.mWidth = width;
+      this.mHeight = height;
     }
     update(other) {
       this.mEncoding = other.mEncoding;
@@ -10481,9 +10982,17 @@ var RC = (() => {
   // ../kobento-ts/src/core/PaintContext.ts
   var PaintContext = class {
     constructor(context) {
+      this.mTextInputSupport = null;
       this.mNeedsRepaint = false;
       this.mMeasureVersion = 0;
       this.mContext = context;
+    }
+    /** Installs the host support that edits strings a text input modifier declares editable (null: inert). */
+    setTextInputSupport(support) {
+      this.mTextInputSupport = support;
+    }
+    getTextInputSupport() {
+      return this.mTextInputSupport;
     }
     getContext() {
       return this.mContext;
@@ -15759,6 +16268,16 @@ var RC = (() => {
     }
     markDirty() {
     }
+    /**
+     * Java LayoutComputeOperation.evaluateInLayout: the document calls it before measuring, so
+     * a block whose expressions changed (a position following a variable, with nothing else
+     * changing) invalidates its component's measure and is laid out again. Without it only a
+     * change that invalidated the layout some other way -- a size -- moved the component.
+     */
+    evaluateInLayout(context) {
+      this.updateVariables(context);
+      return false;
+    }
     apply(_context) {
     }
     applyToMeasure(context, m, parent) {
@@ -15960,6 +16479,8 @@ var RC = (() => {
           op.setComponent(this);
           this.mComponentModifiers.push(op);
         } else if (op instanceof OffsetModifier) {
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof TextInputModifier) {
           this.mComponentModifiers.push(op);
         } else if (op instanceof ClickModifier || op instanceof MultiClickModifier) {
           op.setComponent(this);
@@ -16318,6 +16839,8 @@ var RC = (() => {
           paintContext.matrixTranslate(tx, ty);
         } else if (mod instanceof RippleModifier) {
           mod.ripple.paint(paintContext, context, dw, dh);
+        } else if (mod instanceof TextInputModifier) {
+          mod.paintModifier(paintContext);
         } else {
           mod.apply(context);
         }
@@ -16378,6 +16901,14 @@ var RC = (() => {
       }
       paintContext.matrixRestore();
     }
+    /**
+     * Whether a child of a scrolling component can show at all, to skip painting the rest (an
+     * optimisation of ours: the reference paints every child and lets the clip cut them).
+     * The clip is the component's whole box, and a padding after the scroll modifier belongs
+     * to the scrolled content (room at the end of a list, under a floating button), so the
+     * window counts the whole height, widened by the paddings on both sides: a row partly in
+     * view is painted and clipped. Too wide only paints a little more; too narrow drops rows.
+     */
     isChildVisibleInViewport(child) {
       const scrollMod = this.mScrollModifier;
       if (!scrollMod) return true;
@@ -16387,20 +16918,18 @@ var RC = (() => {
       const childH = child.getHeight();
       if (childW <= 0 && childH <= 0) return true;
       if (scrollMod.isVertical()) {
-        const hostHeight = this.mHeight - this.mPaddingTop - this.mPaddingBottom;
-        if (hostHeight <= 0) return true;
+        if (this.mHeight <= 0) return true;
         const scrollY = scrollMod.getScrollY();
-        const viewportTop = -scrollY;
-        const viewportBottom = viewportTop + hostHeight;
+        const viewportTop = -scrollY - this.mPaddingTop - this.mPaddingBottom;
+        const viewportBottom = -scrollY + this.mHeight;
         if (childY + childH < viewportTop || childY > viewportBottom) {
           return false;
         }
       } else {
-        const hostWidth = this.mWidth - this.mPaddingLeft - this.mPaddingRight;
-        if (hostWidth <= 0) return true;
+        if (this.mWidth <= 0) return true;
         const scrollX = scrollMod.getScrollX();
-        const viewportLeft = -scrollX;
-        const viewportRight = viewportLeft + hostWidth;
+        const viewportLeft = -scrollX - this.mPaddingLeft - this.mPaddingRight;
+        const viewportRight = -scrollX + this.mWidth;
         if (childX + childW < viewportLeft || childX > viewportRight) {
           return false;
         }
@@ -16471,6 +17000,8 @@ var RC = (() => {
           const mod = this.mComponentModifiers[i];
           if (mod instanceof ClickModifier || mod instanceof MultiClickModifier) {
             if (mod.onClick(context, doc, x - this.mX, y - this.mY)) handled = true;
+          } else if (mod instanceof TextInputModifier) {
+            if (mod.onClickComponent(context, this)) handled = true;
           }
         }
         return handled;
@@ -21128,7 +21659,12 @@ var RC = (() => {
       const length = this.mCachedString.length;
       const contentW = this.mWidth - this.mPaddingLeft - this.mPaddingRight;
       const contentH = this.mHeight - this.mPaddingTop - this.mPaddingBottom;
-      if (this.mComputedTextLayout) {
+      const drawText = !this.isEditing();
+      if (drawText && length === 0) {
+        TextInputModifier.find(this)?.paintHint(paintContext, this.mPaint, this.mColorValue, contentW, this.mTextAlignValue);
+      }
+      if (!drawText) {
+      } else if (this.mComputedTextLayout) {
         if (this.mOverflow !== OVERFLOW_VISIBLE) {
           paintContext.save();
           paintContext.clipRect(0, 0, contentW, contentH);
@@ -21137,7 +21673,7 @@ var RC = (() => {
         } else {
           paintContext.drawComplexText(this.mComputedTextLayout, contentW);
         }
-      } else {
+      } else if (length > 0) {
         let px = this.mTextX;
         switch (this.mTextAlignValue) {
           case TEXT_ALIGN_CENTER:
@@ -21163,6 +21699,19 @@ var RC = (() => {
       }
       paintContext.restorePaint();
       paintContext.restore();
+    }
+    // The text's style, for a host editor shown over it (Java CoreText getters).
+    getFontSizeValue() {
+      return this.mMeasureFontSize;
+    }
+    getColorValue() {
+      return this.mColorValue;
+    }
+    getFontWeightValue() {
+      return this.mFontWeightValue;
+    }
+    getTextAlignValue() {
+      return this.mTextAlignValue;
     }
     write(buffer) {
       buffer.start(_CoreText.OP_CODE);
@@ -22233,6 +22782,7 @@ var RC = (() => {
       }
       layout.setVisibility(Visibility.VISIBLE);
       measure.get(layout).setVisibility(Visibility.VISIBLE);
+      if (this.currentLayoutIndex !== this.measuredLayoutIndex) this.clearMeasureCache(layout, measure);
       layout.measure(context, minWidth, maxWidth, minHeight, maxHeight, measure);
       if (this.inTransition && this.currentLayoutIndex !== this.previousLayoutIndex) {
         const previousLayout = this.getLayout(this.previousLayoutIndex);
@@ -22293,6 +22843,11 @@ var RC = (() => {
       }
       measure.get(this).copyFrom(measure.get(layout));
       this.measuredLayoutIndex = this.currentLayoutIndex;
+    }
+    /** Drops the measure cache of `c` and its descendants in this pass. */
+    clearMeasureCache(c, measure) {
+      measure.get(c).clearCache();
+      if (c instanceof LayoutComponent) for (const k of c.mChildrenComponents) this.clearMeasureCache(k, measure);
     }
     layout(context, measure) {
       Component.prototype.layout.call(this, context, measure);
@@ -23444,6 +23999,7 @@ var RC = (() => {
       m.set(ClipRectModifier.OP_CODE, ClipRectModifier.read);
       m.set(ClickModifier.OP_CODE, ClickModifier.read);
       m.set(MultiClickModifier.OP_CODE, MultiClickModifier.read);
+      m.set(TextInputModifier.OP_CODE, TextInputModifier.read);
       m.set(DimensionConstraintsModifier.OP_CODE, DimensionConstraintsModifier.read);
       m.set(TouchDownModifier.OP_CODE, TouchDownModifier.read);
       m.set(TouchUpModifier.OP_CODE, TouchUpModifier.read);
@@ -25779,8 +26335,8 @@ var RC = (() => {
     getColorBuffer() {
       return this.mColor;
     }
-    setBaseColorArgb(argb) {
-      this.mBaseColorArgb = argb | 0;
+    setBaseColorArgb(argb2) {
+      this.mBaseColorArgb = argb2 | 0;
     }
     getBaseColorArgb() {
       return this.mBaseColorArgb;
@@ -25871,12 +26427,12 @@ var RC = (() => {
         if (p + 3 >= params.length) {
           break;
         }
-        const argb = colors[i] | 0;
+        const argb2 = colors[i] | 0;
         this.mLights.push({
           type: types[i],
-          r: fround5((argb >>> 16 & 255) * INV_255),
-          g: fround5((argb >>> 8 & 255) * INV_255),
-          b: fround5((argb & 255) * INV_255),
+          r: fround5((argb2 >>> 16 & 255) * INV_255),
+          g: fround5((argb2 >>> 8 & 255) * INV_255),
+          b: fround5((argb2 & 255) * INV_255),
           wx: params[p],
           wy: params[p + 1],
           wz: params[p + 2],
@@ -27740,11 +28296,11 @@ void main() {
   };
 
   // ../kobento-ts/src/web/CanvasPaintContext.ts
-  function argbToRgba(argb) {
-    const a = (argb >>> 24 & 255) / 255;
-    const r = argb >>> 16 & 255;
-    const g = argb >>> 8 & 255;
-    const b = argb & 255;
+  function argbToRgba(argb2) {
+    const a = (argb2 >>> 24 & 255) / 255;
+    const r = argb2 >>> 16 & 255;
+    const g = argb2 >>> 8 & 255;
+    const b = argb2 & 255;
     return `rgba(${r},${g},${b},${a.toFixed(3)})`;
   }
   var TRIM_STEPS = 32;
@@ -27976,6 +28532,12 @@ void main() {
         }
         throw new Error("No canvas factory available for graphics layers");
       };
+      /**
+       * Called when a bitmap that arrives after the first frame (a URL) is ready to draw, so an
+       * idle player paints again. The player sets it; without it the picture shows on the next
+       * repaint that something else causes.
+       */
+      this.onBitmapLoaded = null;
       /** The last shader pattern, reused while the shader, its uniforms and the transform stay the same. */
       this.shaderPatternCache = null;
       this.mTextMeasureCache = /* @__PURE__ */ new Map();
@@ -28049,6 +28611,15 @@ void main() {
     // --- Bitmap cache ---
     loadBitmap(imageId, encoding, type, width, height, bitmap) {
       if (this.bitmapPromises.has(imageId)) return;
+      if (encoding === 1) {
+        this.bitmapPromises.set(imageId, this.loadUrlBitmap(
+          imageId,
+          width,
+          height,
+          new TextDecoder().decode(bitmap)
+        ));
+        return;
+      }
       if (encoding === 3 || encoding === 4 || bitmap.length === 0) {
         if (encoding === 3) this.emptyBitmapSizes.set(imageId, { width, height });
         return;
@@ -28074,6 +28645,57 @@ void main() {
         img.src = url;
       });
       this.bitmapPromises.set(imageId, promise);
+    }
+    /**
+     * Fetch a URL bitmap, decode it and cache it. The declared size is the picture's size in
+     * the document (srcRight/srcBottom of a drawScaledBitmap are in its pixels): a picture of
+     * another size is resampled to it. 1x1, what storeBitmapUrl writes when the size is not
+     * known, takes the picture's own size instead, and the BitmapData then reports it.
+     */
+    async loadUrlBitmap(imageId, width, height, url) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (this.disposed) return;
+        let img = await this.decodeImage(bytes);
+        if (this.disposed) return;
+        const nw = img.naturalWidth ?? img.width, nh = img.naturalHeight ?? img.height;
+        const sized = width > 1 || height > 1;
+        if (sized && (nw !== width || nh !== height)) {
+          const c = this.createLayerCanvas(width, height);
+          c.imageSmoothingEnabled = true;
+          c.imageSmoothingQuality = "high";
+          c.drawImage(img, 0, 0, width, height);
+          img = c.canvas;
+        } else if (!sized) {
+          const data = this.getContext()?.getObject?.(imageId);
+          if (data && typeof data.setSize === "function") data.setSize(nw, nh);
+        }
+        this.bitmapCache.set(imageId, img);
+        this.needsRepaint();
+        this.onBitmapLoaded?.(imageId);
+      } catch (e) {
+        console.warn(`CanvasPaintContext: failed to load bitmap ${imageId} from ${url}`, e);
+      }
+    }
+    /** Bytes of an encoded picture (PNG, JPEG, WebP, GIF) to something drawImage takes. */
+    decodeImage(bytes) {
+      const blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)]);
+      if (typeof createImageBitmap === "function") return createImageBitmap(blob);
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      return new Promise((resolve2, reject) => {
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve2(img);
+        };
+        img.onerror = (e) => {
+          URL.revokeObjectURL(url);
+          reject(e);
+        };
+        img.src = url;
+      });
     }
     // `videos` maps image ids to video URLs. Called before the document's data pass, so a
     // bitmap with a video never starts a GIF decoder.
@@ -28398,14 +29020,14 @@ void main() {
         const layerCtx = this.createLayerCanvas(w, h);
         const imgData = layerCtx.createImageData(w, h);
         const data = imgData.data;
-        const colorComponents = colors.map((argb) => [
-          argb >>> 16 & 255,
+        const colorComponents = colors.map((argb2) => [
+          argb2 >>> 16 & 255,
           // R
-          argb >>> 8 & 255,
+          argb2 >>> 8 & 255,
           // G
-          argb & 255,
+          argb2 & 255,
           // B
-          (argb >>> 24 & 255) / 255
+          (argb2 >>> 24 & 255) / 255
           // A
         ]);
         for (let y = 0; y < h; y++) {
@@ -28543,10 +29165,10 @@ void main() {
             this.setFont();
             break;
           case PaintBundle.COLOR: {
-            const argb = arr[i++] | 0;
-            this.colorArgb = argb;
-            this.alpha = (argb >>> 24 & 255) / 255;
-            this.color = `rgb(${argb >>> 16 & 255},${argb >>> 8 & 255},${argb & 255})`;
+            const argb2 = arr[i++] | 0;
+            this.colorArgb = argb2;
+            this.alpha = (argb2 >>> 24 & 255) / 255;
+            this.color = `rgb(${argb2 >>> 16 & 255},${argb2 >>> 8 & 255},${argb2 & 255})`;
             break;
           }
           case PaintBundle.STROKE_WIDTH:
@@ -28713,10 +29335,10 @@ void main() {
             this.blendMode = this.mapBlendMode(upper);
             break;
           case PaintBundle.COLOR_ID: {
-            const argb = arr[i++] | 0;
-            this.colorArgb = argb;
-            this.alpha = (argb >>> 24 & 255) / 255;
-            this.color = `rgb(${argb >>> 16 & 255},${argb >>> 8 & 255},${argb & 255})`;
+            const argb2 = arr[i++] | 0;
+            this.colorArgb = argb2;
+            this.alpha = (argb2 >>> 24 & 255) / 255;
+            this.color = `rgb(${argb2 >>> 16 & 255},${argb2 >>> 8 & 255},${argb2 & 255})`;
             break;
           }
           case PaintBundle.COLOR_FILTER_ID: {
@@ -29990,12 +30612,12 @@ void main() {
       }
       sctx.drawImage(img, 0, 0);
       const data = sctx.getImageData(0, 0, w, h).data;
-      const argb = new Int32Array(w * h);
+      const argb2 = new Int32Array(w * h);
       for (let i = 0; i < w * h; i++) {
-        argb[i] = data[i * 4 + 3] << 24 | data[i * 4] << 16 | data[i * 4 + 1] << 8 | data[i * 4 + 2] | 0;
+        argb2[i] = data[i * 4 + 3] << 24 | data[i * 4] << 16 | data[i * 4 + 1] << 8 | data[i * 4 + 2] | 0;
       }
-      this.texturePixels.set(bitmapId, { argb, width: w, height: h });
-      ctx3d.setTextureData(argb, w, h);
+      this.texturePixels.set(bitmapId, { argb: argb2, width: w, height: h });
+      ctx3d.setTextureData(argb2, w, h);
     }
     setMaterial3D(specStrength, shininess) {
       this.ensure3D().setMaterial3D(specStrength, shininess);
@@ -30090,8 +30712,8 @@ void main() {
       if (ctx3d === null || blit === null) {
         return;
       }
-      const argb = ctx3d.getColorBuffer();
-      if (argb === null) {
+      const argb2 = ctx3d.getColorBuffer();
+      if (argb2 === null) {
         return;
       }
       const w = ctx3d.getWidth();
@@ -30099,7 +30721,7 @@ void main() {
       const img = blit.createImageData(w, h);
       const d = img.data;
       for (let i = 0; i < w * h; i++) {
-        const p = argb[i];
+        const p = argb2[i];
         d[i * 4] = p >>> 16 & 255;
         d[i * 4 + 1] = p >>> 8 & 255;
         d[i * 4 + 2] = p & 255;
@@ -30583,7 +31205,7 @@ void main() {
     // --- Text override ---
     overrideText(id, valueId) {
       const text = this.mRemoteComposeState.getFromId(valueId);
-      if (text) this.loadText(id, text);
+      if (typeof text === "string") this.loadText(id, text);
     }
     // --- Animated float ---
     loadAnimatedFloat(_id, _animatedFloat) {
@@ -31366,7 +31988,7 @@ void main() {
 
   // ../kobento-ts/src/web/HostApi.ts
   var TYPES = ["string", "float", "color", "image", "int", "long", "float_array"];
-  var hex = (argb) => "#" + (argb >>> 0).toString(16).toUpperCase().padStart(8, "0");
+  var hex = (argb2) => "#" + (argb2 >>> 0).toString(16).toUpperCase().padStart(8, "0");
   function parseColor(v) {
     if (typeof v === "number" && Number.isFinite(v)) return v | 0;
     const m = /^#?([0-9a-f]{6}|[0-9a-f]{8})$/i.exec(String(v).trim());
@@ -31587,6 +32209,25 @@ void main() {
        * else null: the document then fills the canvas, as resize() makes it.
        */
       this.viewport = null;
+      /**
+       * Text input (MODIFIER_TEXT_INPUT): an editor over a component whose string is editable,
+       * on a real page only (not headless, where nothing can type). setTextInputEnabled(false)
+       * leaves the modifier inert, the text shown as is.
+       */
+      this.textInput = typeof HTMLInputElement !== "undefined" && typeof document !== "undefined" && !!document.body ? new WebTextInputSupport({
+        rect: (x, y, w, h) => {
+          const r = this.canvas.getBoundingClientRect();
+          const sx = r.width / (this.canvas.width || 1), sy = r.height / (this.canvas.height || 1);
+          const s = this.mContentScale || 1;
+          return [r.left + (x * s + this.mContentOffsetX) * sx, r.top + (y * s + this.mContentOffsetY) * sy, w * s * sx, h * s * sy];
+        },
+        scale: () => {
+          const r = this.canvas.getBoundingClientRect();
+          return (this.mContentScale || 1) * (r.width / (this.canvas.width || 1));
+        },
+        repaint: () => this.repaint()
+      }) : null;
+      this.textInputEnabled = true;
       // Draws the custom components — embedded documents, videos — for every document this
       // player shows. It outlives the documents, so an embed marked `persist` carries across
       // them; a new document retires the rest.
@@ -31804,6 +32445,7 @@ void main() {
     }
     async loadFromArrayBuffer(data) {
       this.stop();
+      this.textInput?.stop();
       const buffer = RemoteComposeBuffer.fromArrayBuffer(data);
       const doc = new CoreDocument();
       doc.initFromBuffer(buffer);
@@ -31817,10 +32459,15 @@ void main() {
       doc.setHeight(docHeight);
       if (this.paintContext) this.paintContext.dispose();
       this.paintContext = new CanvasPaintContext(null, this.ctx);
+      if (this.textInputEnabled) this.paintContext.setTextInputSupport(this.textInput);
       if (this.paintContext.gpuForSoftware3D && drawsWireframe3D(doc.getOperations())) {
         this.paintContext.gpuForSoftware3D = false;
       }
       this.paintContext.setBitmapVideos(this.bitmapVideos);
+      this.paintContext.onBitmapLoaded = () => {
+        this.document?.invalidateMeasure();
+        this.scheduleRepaint();
+      };
       this.remoteContext = new WebRemoteContext(this.paintContext);
       doc.initializeContext(this.remoteContext);
       this.remoteContext.setPaintContext(this.paintContext);
@@ -31869,10 +32516,17 @@ void main() {
      */
     destroy() {
       this.stop();
+      this.textInput?.stop();
       this.canvas.removeEventListener("pointerdown", this.onPointerDown);
       if (this.paintContext) {
         this.paintContext.destroy();
       }
+    }
+    /** Text input on (the default, on a page) or off: off, an editable text is shown as is. */
+    setTextInputEnabled(enabled) {
+      this.textInputEnabled = enabled;
+      if (!enabled) this.textInput?.stop();
+      this.paintContext?.setTextInputSupport(enabled ? this.textInput : null);
     }
     repaint() {
       this.settleFrames = _RcdPlayer.SETTLE_FRAMES;

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HOST_ACTION_STRING_TYPE = exports.SEMANTICS_MODE_SET = exports.Writer = exports.TYPE_WRAP = exports.BITMAP_ENCODING_EMPTY = exports.BITMAP_ENCODING_INLINE = exports.BITMAP_TYPE_RAW8888 = exports.BITMAP_TYPE_PNG = exports.TYPE_WEIGHT = exports.TYPE_FILL = exports.TYPE_EXACT = exports.OP = void 0;
+exports.HOST_ACTION_STRING_TYPE = exports.SEMANTICS_MODE_SET = exports.Writer = exports.TYPE_WRAP = exports.BITMAP_ENCODING_EMPTY = exports.BITMAP_ENCODING_URL = exports.BITMAP_ENCODING_INLINE = exports.BITMAP_TYPE_RAW8888 = exports.BITMAP_TYPE_PNG = exports.TYPE_WEIGHT = exports.TYPE_FILL = exports.TYPE_EXACT = exports.OP = void 0;
 exports.refusedOperations = refusedOperations;
 exports.javaHashMapOrder = javaHashMapOrder;
 exports.modWidth = modWidth;
@@ -143,6 +143,7 @@ exports.TYPE_WEIGHT = 3;
 exports.BITMAP_TYPE_PNG = 1;
 exports.BITMAP_TYPE_RAW8888 = 3;
 exports.BITMAP_ENCODING_INLINE = 0;
+exports.BITMAP_ENCODING_URL = 1; // the payload is the picture's URL (UTF-8)
 exports.BITMAP_ENCODING_EMPTY = 3; // the player allocates it, the host fills it
 exports.TYPE_WRAP = 2;
 const INT_MAX = 2147483647;

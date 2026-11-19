@@ -112,6 +112,7 @@ export const TYPE_WEIGHT = 3;
 export const BITMAP_TYPE_PNG = 1;
 export const BITMAP_TYPE_RAW8888 = 3;
 export const BITMAP_ENCODING_INLINE = 0;
+export const BITMAP_ENCODING_URL = 1;     // the payload is the picture's URL (UTF-8)
 export const BITMAP_ENCODING_EMPTY = 3;   // the player allocates it, the host fills it
 export const TYPE_WRAP = 2;
 const INT_MAX = 2147483647;

@@ -100,8 +100,25 @@ prefix and the url-safe alphabet (`-`/`_`). Both make rcj raise, not miscompile,
 ever turns an error into a correct document — but it is a real difference in what converts,
 not a shared behaviour. Plain and whitespace-wrapped base64 are byte-identical on both sides.
 
-`url` is deliberately *not* accepted for a bitmap, because the reference does not accept it
-either — it fetches sounds from a URL but not images, and adding it here would diverge.
+**`url` is a json2rc extension.** The reference JSON parser has no `url` key for a bitmap
+(it fetches sounds from a URL, not images), but the format has the encoding:
+`RemoteComposeBuffer.storeBitmapUrl` writes DATA_BITMAP with type PNG and ENCODING_URL (1) in
+the high halves of the width and height words and the URL's UTF-8 bytes as the payload, and
+the Android player fetches it (behind `Limits.ENABLE_IMAGE_URLS`). This converter writes the
+same bytes:
+
+```json
+"resources": {"bitmaps": {"photo": {"url": "https://example.com/lisbon.jpg", "width": 800, "height": 600}}}
+```
+
+`width` and `height` are the picture's size in the document (source rectangles of
+`drawScaledBitmap` are in its pixels); a player resamples what it fetches to that size.
+Without them it is 1x1, as storeBitmapUrl writes, and the TS player takes the picture's own
+size when it arrives. Only `https:`, `http:` and `data:` URLs are accepted. The players draw
+nothing for the bitmap until it has arrived, so draw a placeholder under it (the library's
+Photo component does). The TypeScript player fetches it once and repaints when it is decoded;
+a document using it is not byte-checked against the Java parser, which rejects the key
+(`tests/check-bitmap-url.cjs` checks the encoding instead).
 
 ## Checked against the Java parser directly
 
