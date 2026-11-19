@@ -4714,6 +4714,12 @@ var RC = (() => {
       this.mNeedsMeasure = true;
       this.mNeedsRepaint = true;
       this.mFirstLayout = true;
+      // Whether this component has been laid out visible once. One that has only ever been GONE
+      // (a title or page shown by a visibility modifier, not yet selected) was laid out at a
+      // placeholder position (its parent's origin): its first entrance starts at its target
+      // bounds and only fades, instead of moving from that position (a slide down the first
+      // time a hidden title appeared, a plain fade every time after).
+      this.mLaidOutVisible = false;
       // The visibility this component was last laid out with: what an animation starts from.
       // (A visibility modifier sets mVisibility as soon as its variable changes; the reference
       // schedules it, leaving mVisibility at the laid-out value until the next layout.)
@@ -4891,8 +4897,8 @@ var RC = (() => {
       const allowAnimation = !this.mFirstLayout && context.isAnimationEnabled() && this.mAnimationSpec.isAnimationEnabled() && m.getAllowsAnimation() && !(Visibility.isGone(this.mLayoutVisibility) && Visibility.isGone(m.getVisibility()));
       if (allowAnimation) {
         if (this.mAnimateMeasure === null) {
-          const origin = new ComponentMeasure(this.mComponentId, this.mX, this.mY, this.mWidth, this.mHeight, this.mLayoutVisibility);
           const target = new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), m.getVisibility());
+          const origin = this.mLaidOutVisible ? new ComponentMeasure(this.mComponentId, this.mX, this.mY, this.mWidth, this.mHeight, this.mLayoutVisibility) : new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), this.mLayoutVisibility);
           if (!target.same(origin)) {
             const now = context.mClock?.millis() ?? Date.now();
             this.mAnimateMeasure = new AnimateMeasure(
@@ -4931,6 +4937,7 @@ var RC = (() => {
         this.markNeedsBoundsAnimation();
       }
       this.mLayoutVisibility = m.getVisibility();
+      if (!Visibility.isGone(m.getVisibility())) this.mLaidOutVisible = true;
       this.mFirstLayout = false;
     }
     animatingBounds(context) {
@@ -22793,6 +22800,7 @@ var RC = (() => {
           const prev = this.statePaintedComponents.get(id)?.[this.previousLayoutIndex] ?? null;
           if (prev && c !== prev) {
             c.mFirstLayout = false;
+            c.mLaidOutVisible = true;
             c.setX(prev.getX());
             c.setY(prev.getY());
             c.setWidth(prev.getWidth());
