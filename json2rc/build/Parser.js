@@ -3978,7 +3978,8 @@ class Parser {
         const ml = typeof o.maxLength === "number" ? o.maxLength : Number(o.maxLength ?? 0);
         const maxLength = Number.isFinite(ml) ? Math.max(0, Math.trunc(ml)) : 0;
         const hint = o.hint;
-        const hintId = hint === undefined || hint === null || hint === "" ? 0 : this.resolveTextId(hint);
+        // A hint given, even empty, is a string of its own (Java: component.has("hint")).
+        const hintId = hint === undefined || hint === null ? 0 : this.resolveTextId(hint);
         return [keyboard, ime, flags, maxLength, filter, hintId, content];
     }
     /**
