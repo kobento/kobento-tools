@@ -60,6 +60,21 @@ export function collectInteractionTargets(doc) {
 
     const root = getRootComponent(doc);
     walkComponents(root, (comp, depth) => {
+        // A text input layout (LAYOUT_TEXT_INPUT) is a target without a click modifier: a tap
+        // its content does not take opens the editor on its string. (Recognised by its API:
+        // the player bundle may be minified.)
+        if (typeof comp?.hasInputFlag === 'function' && typeof comp?.getTextId === 'function') {
+            targets.push({
+                kind: 'text',
+                comp, depth,
+                componentId: componentIdOf(comp),
+                componentName: componentName(comp),
+                bounds: componentBounds(comp),
+                textId: comp.getTextId(),
+                maxLength: typeof comp.getMaxLength === 'function' ? comp.getMaxLength() : 0,
+                actions: []
+            });
+        }
         modifiersOf(comp).forEach(mod => {
             const code = opCodeOf(mod);
             if (code !== OP_CLICK_MODIFIER && code !== OP_MULTI_CLICK_MODIFIER) return;
@@ -201,6 +216,20 @@ function targetCardHtml(t, index) {
     const boundsStr = b ? `${Math.round(b.x)}, ${Math.round(b.y)} → ${Math.round(b.x + b.w)}, ${Math.round(b.y + b.h)}  (${Math.round(b.w)}×${Math.round(b.h)})` : 'no bounds';
     const empty = b && (b.w <= 0 || b.h <= 0);
 
+    if (t.kind === 'text') {
+        return `
+            <div style="border:1px solid var(--border-color); border-left:3px solid var(--accent-blue); border-radius:5px; padding:7px 10px; margin-bottom:6px;">
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:3px; flex-wrap:wrap;">
+                    <span class="badge" style="background:var(--accent-blue); color:#04121f;">text</span>
+                    <strong style="font-size:0.78rem;">${esc(t.componentName)}</strong>
+                    <span style="font-size:0.72rem; color:var(--accent-emerald); font-family:var(--code-font);">[${t.componentId}]</span>
+                    <span style="font-size:0.72rem; color:var(--text-muted); font-family:var(--code-font);">text_${t.textId}${t.maxLength > 0 ? ` · max ${t.maxLength}` : ''}</span>
+                </div>
+                <div style="font-family:var(--code-font); font-size:0.72rem; color:${empty ? 'var(--accent-amber)' : 'var(--text-secondary)'};">${esc(boundsStr)}${empty ? '  — zero-sized, cannot be hit' : ''}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">A text field: a tap its content does not take opens the editor on text_${t.textId}. Tap it in the Player panel to type.</div>
+            </div>`;
+    }
+
     if (t.kind === 'area') {
         return `
             <div style="border:1px solid var(--border-color); border-left:3px solid var(--accent-amber); border-radius:5px; padding:7px 10px; margin-bottom:6px;">
@@ -248,13 +277,14 @@ export function renderInteractionPanel() {
     const targets = collectInteractionTargets(doc);
     if (!targets.length) {
         container.innerHTML = `<div style="padding:14px; color:var(--text-muted); font-size:0.78rem; line-height:1.5;">
-            This document has no click modifiers, click areas or touch expressions. Nothing in it responds to input.</div>`;
+            This document has no click modifiers, click areas, touch expressions or text fields. Nothing in it responds to input.</div>`;
         return;
     }
 
     const clicks = targets.filter(t => t.kind === 'click').length;
     const areas = targets.filter(t => t.kind === 'area').length;
     const touches = targets.filter(t => t.kind === 'touch').length;
+    const fields = targets.filter(t => t.kind === 'text').length;
     const noAction = targets.filter(t => t.kind === 'click' && t.actions.length === 0).length;
     const zeroSized = targets.filter(t => t.bounds && (t.bounds.w <= 0 || t.bounds.h <= 0)).length;
 
@@ -267,6 +297,7 @@ export function renderInteractionPanel() {
             ${clicks ? `<span><strong style="color:var(--accent-emerald);">${clicks}</strong> click</span>` : ''}
             ${areas ? `<span><strong style="color:var(--accent-amber);">${areas}</strong> area</span>` : ''}
             ${touches ? `<span><strong style="color:#a855f7;">${touches}</strong> drag</span>` : ''}
+            ${fields ? `<span><strong style="color:var(--accent-blue);">${fields}</strong> text</span>` : ''}
         </div>
         ${warn.length ? `<div style="padding:5px 9px; border:1px solid rgba(251,191,36,0.4); background:rgba(251,191,36,0.1); border-radius:5px; color:var(--accent-amber); font-size:0.72rem; margin-bottom:8px;">⚠️ ${esc(warn.join(' · '))}</div>` : ''}
         ${targets.map(targetCardHtml).join('')}`;
