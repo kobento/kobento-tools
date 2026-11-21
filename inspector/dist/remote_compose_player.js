@@ -9620,6 +9620,11 @@ var RC = (() => {
         const color = text.getColorValue() | 0;
         css.color = argb(color);
         css.caretColor = argb(color);
+        css["--rc-placeholder"] = argb(color);
+        if (Visibility.isInvisible(text.mVisibility ?? 0)) {
+          css.color = "transparent";
+          css.caretColor = "transparent";
+        }
         css.fontWeight = String(Math.round(text.getFontWeightValue() || 400));
         if (text.getFontStyle() === 1) css.fontStyle = "italic";
         const align = text.getTextAlignValue();
@@ -9628,7 +9633,10 @@ var RC = (() => {
         css.fontSize = `${36 * s}px`;
         css.color = "rgb(0, 0, 0)";
       }
-      Object.assign(editor.style, css);
+      for (const [k, v] of Object.entries(css)) {
+        if (k.startsWith("--")) editor.style.setProperty(k, v);
+        else editor.style[k] = v;
+      }
       editor.setAttribute("data-rc-text-input", String(session.getLayout().getTextId()));
     }
   };
@@ -9636,7 +9644,7 @@ var RC = (() => {
     if (typeof document === "undefined" || document.getElementById("rc-text-input-style")) return;
     const style = document.createElement("style");
     style.id = "rc-text-input-style";
-    style.textContent = "[data-rc-text-input]::placeholder { color: currentColor; opacity: 0.45; }";
+    style.textContent = "[data-rc-text-input]::placeholder { color: var(--rc-placeholder, currentColor); opacity: 0.45; }";
     (document.head ?? document.body).appendChild(style);
   }
   function configure(editor, op) {
@@ -27039,6 +27047,11 @@ var RC = (() => {
           break;
       }
     }
+    /** Clears the colour and keeps the depth: what was composited is gone, and later meshes
+     *  of the pass still depth-test against it. */
+    clearColor3D() {
+      this.mColor?.fill(0);
+    }
     clearDepth3D() {
       if (this.mZbuf === null || this.mColor === null) {
         return;
@@ -29204,6 +29217,8 @@ void main() {
       this.d3glDirty = false;
       /** A run of GL meshes drawn but not yet composited (drawMesh3DModelSpace), and its size. */
       this.d3glPending = null;
+      /** Software meshes drawn and not yet blitted (as the GL ones: a run goes on once). */
+      this.d3SoftPending = false;
       /** Texture generation last uploaded to GL, so an unchanged texture is not re-uploaded. */
       this.d3glTexGen = -1;
       this.d3Blit = null;
@@ -31184,6 +31199,11 @@ void main() {
      * end of a frame (RcdPlayer.renderFrame).
      */
     flush3D() {
+      if (this.d3SoftPending) {
+        this.d3SoftPending = false;
+        this.blit3D();
+        this.d3?.clearColor3D();
+      }
       const p = this.d3glPending;
       if (!p || !this.d3gl) return;
       this.d3glPending = null;
@@ -31302,8 +31322,9 @@ void main() {
           return;
         }
       }
+      if (this.d3glPending) this.flush3D();
       ctx3d.drawMesh3D(meshId, mode);
-      this.blit3D();
+      this.d3SoftPending = true;
     }
     /**
      * GL backend (modes 6/7): the real GPU pipeline.
@@ -31319,6 +31340,7 @@ void main() {
       if (this.d3gl === null) this.d3gl = new WebGL3DRenderer();
       const gl = this.d3gl;
       if (!gl.isAvailable()) return false;
+      if (this.d3SoftPending) this.flush3D();
       const mesh = ctx3d.getMesh(meshId);
       if (!mesh) return true;
       const useSmooth = smooth && mesh.normals !== null;
@@ -31364,7 +31386,6 @@ void main() {
      * document order; matching that keeps mixed 2D/3D documents looking the same.
      */
     blit3D() {
-      this.flush3D();
       const ctx3d = this.d3;
       const blit = this.d3Blit;
       if (ctx3d === null || blit === null) {

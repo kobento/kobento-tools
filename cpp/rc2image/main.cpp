@@ -656,6 +656,15 @@ static int run(int argc, char* argv[]) {
     rcskia::SkiaPaintContext paintCtx(context, canvas);
     context.setPaintContext(&paintCtx);
     context.setDocument(&doc);
+    // Software 3D is drawn into a buffer k times the document's size and scaled back: k = 2
+    // antialiases its edges. 2 up to about a megapixel, as the web player's 'auto' chooses, 1
+    // above (four times the pixels to fill); RC_3D_SUPERSAMPLE=k overrides. At 1 every mesh
+    // edge came out stepped in the example pictures.
+    {
+        int k = static_cast<long long>(doc.getWidth()) * doc.getHeight() <= 1050000 ? 2 : 1;
+        if (const char* e = std::getenv("RC_3D_SUPERSAMPLE")) k = std::max(1, std::atoi(e));
+        paintCtx.setSupersample3D(k);
+    }
 
     // Host for embedded "rc:<file>" sub-documents, resolved next to the input file.
     rcskia::RcDocumentHost rcHost;
