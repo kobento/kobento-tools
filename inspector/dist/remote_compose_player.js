@@ -28102,6 +28102,19 @@ void main() {
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       this.passStarted = true;
     }
+    /**
+     * Clear the colour after a composite and keep the depth: the next mesh still depth-tests
+     * against everything drawn in the pass, but only it is in the canvas when it is composited.
+     * Compositing the accumulated canvas after every mesh drew each earlier mesh again, and an
+     * edge pixel at partial coverage drawn over itself N times turns opaque (1 - (1 - a)^N):
+     * the MSAA edges came out hard. Composited once each, they keep their coverage.
+     */
+    clearComposited() {
+      const gl = this.gl;
+      if (!gl || !this.passStarted) return;
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
     /** Drop a mesh's uploaded buffers, so a redefinition is not drawn from stale geometry. */
     invalidateMesh(meshId) {
       const gl = this.gl;
@@ -29177,6 +29190,8 @@ void main() {
       this.d3glMesh = createCanvasMesh();
       /** Whether anything has been drawn into the GL canvas this 3D pass. */
       this.d3glDirty = false;
+      /** A run of GL meshes drawn but not yet composited (drawMesh3DModelSpace), and its size. */
+      this.d3glPending = null;
       /** Texture generation last uploaded to GL, so an unchanged texture is not re-uploaded. */
       this.d3glTexGen = -1;
       this.d3Blit = null;
@@ -31150,6 +31165,19 @@ void main() {
       this.resetPaintState();
       this.clearNeedsRepaint();
     }
+    /**
+     * Composite the GL meshes drawn since the last flush, then clear the GL colour (not its
+     * depth, so later meshes of the pass still depth-test against them). Called before anything
+     * else touches the canvas, under the same transform the meshes were drawn for, and at the
+     * end of a frame (RcdPlayer.renderFrame).
+     */
+    flush3D() {
+      const p = this.d3glPending;
+      if (!p || !this.d3gl) return;
+      this.d3glPending = null;
+      this.ctx.drawImage(this.d3gl.getCanvas(), 0, 0, p.w, p.h);
+      this.d3gl.clearComposited();
+    }
     surfaceW() {
       return this.surfaceWidth || this.ctx.canvas.width;
     }
@@ -31187,6 +31215,7 @@ void main() {
       this.ensure3D().matrix3Op(sub, args);
     }
     clearDepth3D() {
+      this.flush3D();
       this.ensure3D().clearDepth3D();
       if (this.d3gl && this.d3gl.isAvailable()) {
         this.d3gl.beginPass(this.surfaceW(), this.surfaceH());
@@ -31287,7 +31316,7 @@ void main() {
       if (!gl.drawModelSpace(meshId, mesh, ctx3d.getGlFrame(), useSmooth, w, h)) {
         return false;
       }
-      this.ctx.drawImage(gl.getCanvas(), 0, 0, w, h);
+      this.d3glPending = { w, h };
       globalThis.__rcGlModelDraws = gl.modelDrawCount;
       return true;
     }
@@ -31300,6 +31329,7 @@ void main() {
      * draws a mesh, then a label, then another mesh expects that order.
      */
     drawMesh3DGl(ctx3d, meshId, smooth, useDepth) {
+      this.flush3D();
       if (this.d3gl === null) this.d3gl = new WebGL3DRenderer();
       const gl = this.d3gl;
       if (!gl.isAvailable()) return false;
@@ -31322,6 +31352,7 @@ void main() {
      * document order; matching that keeps mixed 2D/3D documents looking the same.
      */
     blit3D() {
+      this.flush3D();
       const ctx3d = this.d3;
       const blit = this.d3Blit;
       if (ctx3d === null || blit === null) {
@@ -31407,6 +31438,44 @@ void main() {
    */
   _CanvasPaintContext.gpuForSoftware3D = true;
   var CanvasPaintContext = _CanvasPaintContext;
+  for (const name of [
+    "drawRect",
+    "drawCircle",
+    "drawLine",
+    "drawOval",
+    "drawRoundRect",
+    "drawArc",
+    "drawSector",
+    "drawMesh",
+    "drawPath",
+    "drawTextRun",
+    "drawTextOnPath",
+    "drawComplexText",
+    "drawBitmap",
+    "drawBitmapSimple",
+    "drawTweenPath",
+    "drawToBitmap",
+    "matrixSave",
+    "matrixRestore",
+    "matrixTranslate",
+    "matrixScale",
+    "matrixRotate",
+    "matrixSkew",
+    "matrixFromPath",
+    "matrixFromMesh",
+    "clipRect",
+    "clipPath",
+    "startGraphicsLayer",
+    "endGraphicsLayer"
+  ]) {
+    const proto = CanvasPaintContext.prototype;
+    const original = proto[name];
+    if (typeof original !== "function") throw new Error(`CanvasPaintContext.${name} is not a method`);
+    proto[name] = function(...args) {
+      this.flush3D();
+      return original.apply(this, args);
+    };
+  }
 
   // ../kobento-ts/src/core/DefaultSystemColors.ts
   function C(c) {
@@ -32240,6 +32309,7 @@ void main() {
       paint.clearNeedsRepaint();
       try {
         doc.paint(ctx, Theme.DARK);
+        paint.flush3D?.();
       } finally {
         canvas.restore();
       }
@@ -32946,6 +33016,7 @@ void main() {
           theme = isDark ? Theme.DARK : Theme.LIGHT;
         }
         this.document.paint(this.remoteContext, theme);
+        this.paintContext.flush3D();
         if (this.variableListener) {
           this.variableListener(this.remoteContext.mRemoteComposeState.getFloatEntries());
         }
