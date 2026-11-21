@@ -927,13 +927,26 @@ static int run(int argc, char* argv[]) {
         const double cxr = surfW / 2.0, cyr = surfH / 2.0, r = std::min(surfW, surfH) / 2.0;
         int64_t outside = 0; int oMinX = surfW, oMinY = surfH, oMaxX = -1, oMaxY = -1;
         const uint32_t grey = SkPreMultiplyColor(SkColorSetARGB(255, 0x3A, 0x3A, 0x3A));
+        // A background that runs on past the circle (a gradient, a photo's soft edge) is not
+        // content: an outside pixel close to the one just inside the circle on the same ray is
+        // that background continuing. Text and shapes differ from it sharply. (Read from a copy:
+        // the outside is painted grey as it goes.)
+        std::vector<uint32_t> snap((size_t) surfW * surfH);
+        for (int y = 0; y < surfH; y++) std::memcpy(&snap[(size_t) y * surfW], pixmap.addr32(0, y), surfW * 4);
+        auto near = [](uint32_t a, uint32_t b) {
+            for (int s = 0; s < 32; s += 8) { if (std::abs(int((a >> s) & 0xFF) - int((b >> s) & 0xFF)) > 28) return false; }
+            return true;
+        };
         for (int y = 0; y < surfH; y++) {
             uint32_t* row = pixmap.writable_addr32(0, y);
             for (int x = 0; x < surfW; x++) {
                 const double dx = x + 0.5 - cxr, dy = y + 0.5 - cyr, d = std::sqrt(dx * dx + dy * dy);
                 if (d <= r) continue;
+                const double k = (r - 3.0) / d;
+                const int ix = std::clamp(int(cxr + dx * k), 0, surfW - 1), iy = std::clamp(int(cyr + dy * k), 0, surfH - 1);
+                const bool continues = near(snap[(size_t) y * surfW + x], snap[(size_t) iy * surfW + ix]);
                 // A 1 dp band at the edge is antialiasing, not content.
-                if (d > r + 1.0 && row[x] != bgPM0 && row[x] != dom0) {
+                if (d > r + 1.0 && row[x] != bgPM0 && row[x] != dom0 && !continues) {
                     outside++;
                     oMinX = std::min(oMinX, x); oMaxX = std::max(oMaxX, x);
                     oMinY = std::min(oMinY, y); oMaxY = std::max(oMaxY, y);
