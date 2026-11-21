@@ -909,12 +909,27 @@ class Parser {
                     const direction = k === "verticalscroll" ? 0 : 1;
                     let position = value;
                     let stop;
+                    let maxName;
+                    let initialBits;
                     if (value && typeof value === "object" && !Array.isArray(value)) {
                         const spec = value;
                         position = spec.position ?? 0;
                         stop = this.scrollStop(spec);
+                        // rcj extension: name the scroll extent (content minus viewport), which
+                        // the player writes at each layout, so the document can read it
+                        // (a reading progress of @pos / @max).
+                        if (spec.maxName !== undefined)
+                            maxName = String(spec.maxName);
+                        // rcj extension: where the scroll starts (dp, a constant or an
+                        // expression), e.g. a wheel picker opening on its current value. The
+                        // reference always starts at 0.
+                        if (spec.initial !== undefined)
+                            initialBits = this.fbits(spec.initial);
                     }
-                    out.push((0, Writer_1.modClipRect)(), (0, Writer_1.modScroll)(direction, this.fbits(position), stop));
+                    if (maxName !== undefined && this.variables.has(maxName)) {
+                        throw new NotImplementedComponent(`scroll maxName '${maxName}' is already a variable`);
+                    }
+                    out.push((0, Writer_1.modClipRect)(), (0, Writer_1.modScroll)(direction, this.fbits(position), stop, maxName === undefined ? undefined : (bits) => this.variables.set(maxName, bits), initialBits));
                 }
                 else if (k === "visibility") {
                     // A variable id, not a boolean: the document flips the variable and

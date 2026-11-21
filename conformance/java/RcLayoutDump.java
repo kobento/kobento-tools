@@ -51,6 +51,8 @@ public class RcLayoutDump {
             else if (args[i].equals("--click") || args[i].equals("--click-frame")) steps.add(new Object[] {args[i], Float.parseFloat(args[++i]), Float.parseFloat(args[++i])});
             else if (args[i].equals("--advance")) steps.add(new Object[] {args[i], Float.parseFloat(args[++i]), 0f});
             else if (args[i].equals("--settle")) steps.add(new Object[] {args[i], 0f, 0f});
+            else if (args[i].equals("--drag")) steps.add(new Object[] {args[i], Float.parseFloat(args[++i]), Float.parseFloat(args[++i]),
+                    Float.parseFloat(args[++i]), Float.parseFloat(args[++i])});
         }
         CoreDocument doc = new CoreDocument();
         doc.initFromBuffer(RemoteComposeBuffer.fromInputStream(new ByteArrayInputStream(bytes)));
@@ -130,6 +132,19 @@ public class RcLayoutDump {
             if (kind.startsWith("--click")) {
                 doc.onClick(ctx, a, b);
                 if (kind.equals("--click")) settle(doc, ctx, w, h, frames); else paint(doc, ctx, w, h);
+            } else if (kind.equals("--drag")) {
+                // A finger from (a, b) to (x1, y1) over 10 frames of 16 ms, released without
+                // velocity (it settles where the stop mode puts it), then the frames settle.
+                float x1 = (Float) st[3], y1 = (Float) st[4];
+                doc.touchDown(ctx, a, b);
+                paint(doc, ctx, w, h);
+                for (int k = 1; k <= 10; k++) {
+                    now += 16;
+                    doc.touchDrag(ctx, a + (x1 - a) * k / 10f, b + (y1 - b) * k / 10f);
+                    paint(doc, ctx, w, h);
+                }
+                doc.touchUp(ctx, x1, y1, 0f, 0f);
+                settle(doc, ctx, w, h, frames);
             } else if (kind.equals("--advance")) {
                 now += (long) a;
                 paint(doc, ctx, w, h);

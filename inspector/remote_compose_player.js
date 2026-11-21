@@ -10370,7 +10370,10 @@ var RC = (() => {
       this.mValue = isNaNBits(valueBits) && idFromBits(valueBits) === _FloatConstant.RAND_ID ? Math.random() : intBitsToFloat(valueBits);
     }
     update(other) {
-      this.mValue = other.mValue;
+      if (other.mValue !== this.mValue) {
+        this.mValue = other.mValue;
+        this.markDirty();
+      }
     }
     write(_buffer) {
     }
@@ -25877,6 +25880,7 @@ var RC = (() => {
         }
         if (apply) {
           const opIsDirty = op.isDirty();
+          if (op instanceof FloatConstant && !opIsDirty) continue;
           if (opIsDirty && typeof op.updateVariables === "function") {
             op.markNotDirty();
             op.updateVariables(context);

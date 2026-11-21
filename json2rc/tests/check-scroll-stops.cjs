@@ -7,7 +7,7 @@
 //
 //   node json2rc/tests/check-scroll-stops.cjs
 const assert = require("assert/strict");
-const { convert } = require("../build/Parser.js");
+const { convert, convertWithSymbols } = require("../build/Parser.js");
 
 const NAN_ID = (bits) => ((bits & 0xff800000) >>> 0) === 0xff800000 && (bits & 0x7fffff) ? bits & 0x7fffff : null;
 function doc(scroll, vars = {}) {
@@ -28,14 +28,15 @@ function scrollOf(json) {
         const packed = b.readInt32BE(k); k += 4;
         const spec = [];
         for (let s = 0; s < (packed & 0xffff); s++, k += 4) spec.push(b.readInt32BE(k));
-        return { notchMax, mode: packed >>> 16, spec };
+        return { notchMax, mode: packed >>> 16, spec, initial: b.readFloatBE(i + 22) };
     }
     assert.fail("no scroll modifier followed by its touch expression");
 }
 const f = (bits) => Buffer.from(Int32Array.of(bits).buffer).readFloatLE(0);
 
 let s = scrollOf(doc("@pos"));
-assert.deepEqual([s.mode, s.spec.length], [0, 0], "a plain scroll stops gently, no spec");
+assert.deepEqual([s.mode, s.spec.length, s.initial], [0, 0, 0], "a plain scroll stops gently, no spec, starts at 0");
+assert.equal(scrollOf(doc({ position: "@pos", initial: 720 })).initial, 720, "initial is the touch expression's default");
 
 s = scrollOf(doc({ position: "@pos", notches: 4 }));
 assert.equal(s.mode, 3, "notches: STOP_NOTCHES_EVEN");
@@ -63,4 +64,10 @@ assert.deepEqual([s.mode, s.spec.length], [2, 0]);
 assert.throws(() => convert(doc({ position: "@pos", stopMode: "notchesEven" })), /needs notches/);
 assert.throws(() => convert(doc({ position: "@pos", stopMode: "notchesAbsolute" })), /needs stops/);
 assert.throws(() => convert(doc({ position: "@pos", stopMode: "bouncy" })), /expected one of/);
+// maxName names the scroll extent the player writes (the modifier's max id), for the document.
+const named = doc({ position: "@pos", maxName: "posMax" });
+const { bytes, symbols } = convertWithSymbols(named);
+const b = Buffer.from(bytes), at = b.indexOf(226);
+assert.equal(symbols.variables.posMax, NAN_ID(b.readInt32BE(at + 9)) ?? -1, "posMax is the max id");
+assert.throws(() => convert(doc({ position: "@pos", maxName: "pos" })), /already a variable/);
 console.log("  scroll stops: ok");

@@ -711,8 +711,9 @@ class Writer {
      * knows the content size. Reserving them is still required, because their ids are baked
      * into the modifier and everything allocated afterwards depends on the count.
      */
-    addModifierScroll(direction, positionBits, stop) {
+    addModifierScroll(direction, positionBits, stop, onMax, initialBits) {
         const maxBits = (0, WireBuffer_1.asNanBits)(this.allocDataId());
+        onMax?.(maxBits);
         const notchMaxBits = (0, WireBuffer_1.asNanBits)(this.allocDataId());
         this.buffer.start(exports.OP.MODIFIER_SCROLL);
         this.buffer.writeInt(direction);
@@ -724,7 +725,7 @@ class Writer {
         const touchId = direction === 0 ? 14 : 13; // FLOAT_TOUCH_POS_Y / _X
         const mul = (0, WireBuffer_1.asNanBits)(0x310000 + 3); // AnimatedFloatExpression MUL
         const exp = [(0, WireBuffer_1.asNanBits)(touchId), (0, WireBuffer_1.floatToRawIntBits)(-1.0), mul];
-        this.touchExpression((0, WireBuffer_1.floatToRawIntBits)(0.0), // default
+        this.touchExpression(initialBits ?? (0, WireBuffer_1.floatToRawIntBits)(0.0), // default: where the scroll starts
         (0, WireBuffer_1.floatToRawIntBits)(0.0), // min
         maxBits, // max: the reserved extent
         stop?.mode ?? 0, // STOP_GENTLY unless a stop mode is given
@@ -1636,8 +1637,8 @@ function modBorder(width, corner, color, shape, legacy = true) {
     };
 }
 /** A scroll modifier and the touch expression that drives it. */
-function modScroll(direction, positionBits, stop) {
-    return (w) => w.addModifierScroll(direction, positionBits, stop);
+function modScroll(direction, positionBits, stop, onMax, initialBits) {
+    return (w) => w.addModifierScroll(direction, positionBits, stop, onMax, initialBits);
 }
 /**
  * MODIFIER_VISIBILITY (211): the component is shown or hidden by a *variable*.
