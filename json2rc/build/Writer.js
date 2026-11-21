@@ -363,6 +363,29 @@ class Writer {
         this.containerEnd();
     }
     /**
+     * LAYOUT_TEXT_INPUT (60, TextInputLayout): a box (start/top) whose content shows the string
+     * textId the user can edit. The ids, then a sparse attribute list (short count, then byte id
+     * and int value pairs, defaults omitted), the modifiers and the content; close it with
+     * endContainer(). options: [keyboardType, imeAction, inputFlags, maxLength, filter, hintId,
+     * contentType], in attribute id order (1..7).
+     */
+    startTextInput(textId, options, mods) {
+        const cid = this.allocComponentId();
+        this.buffer.start(60);
+        this.buffer.writeInt(cid);
+        this.buffer.writeInt(-1); // animationId
+        this.buffer.writeInt(textId);
+        const set = options.map((v, i) => [i + 1, v]).filter(([, v]) => v !== 0); // every default is 0
+        this.buffer.writeShort(set.length);
+        for (const [id, v] of set) {
+            this.buffer.writeByte(id);
+            this.buffer.writeInt(v);
+        }
+        for (const m of mods)
+            m(this);
+        this.contentStart();
+    }
+    /**
      * A childless box: BoxStart, modifiers, one ContainerEnd.
      *
      * Not startBox+endBox with nothing between — that form also writes a content op and so

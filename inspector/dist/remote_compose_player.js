@@ -18,7 +18,7 @@ var RC = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // ../kobento-ts/src/web/main.ts
+  // src/web/main.ts
   var main_exports = {};
   __export(main_exports, {
     CanvasPaintContext: () => CanvasPaintContext,
@@ -36,7 +36,7 @@ var RC = (() => {
     pinClock: () => pinClock
   });
 
-  // ../kobento-ts/src/core/Operation.ts
+  // src/core/Operation.ts
   var _Operation = class _Operation {
     constructor() {
       this.mDirty = true;
@@ -74,7 +74,131 @@ var RC = (() => {
   _Operation.ENABLE_DIRTY_FLAG_OPTIMIZATION = true;
   var Operation = _Operation;
 
-  // ../kobento-ts/src/core/operations/Utils.ts
+  // src/core/operations/utilities/easing/Easing.ts
+  var Easing = class {
+    constructor() {
+      this.mType = 0;
+    }
+    getType() {
+      return this.mType;
+    }
+  };
+  Easing.CUBIC_STANDARD = 1;
+  Easing.CUBIC_ACCELERATE = 2;
+  Easing.CUBIC_DECELERATE = 3;
+  Easing.CUBIC_LINEAR = 4;
+  Easing.CUBIC_ANTICIPATE = 5;
+  Easing.CUBIC_OVERSHOOT = 6;
+  Easing.CUBIC_CUSTOM = 11;
+  Easing.SPLINE_CUSTOM = 12;
+  Easing.EASE_OUT_BOUNCE = 13;
+  Easing.EASE_OUT_ELASTIC = 14;
+
+  // src/core/operations/layout/animation/AnimationSpec.ts
+  function intToAnimation(v) {
+    switch (v & 255) {
+      case 0:
+        return 0 /* FADE_IN */;
+      case 1:
+        return 1 /* FADE_OUT */;
+      case 2:
+        return 2 /* SLIDE_LEFT */;
+      case 3:
+        return 3 /* SLIDE_RIGHT */;
+      case 4:
+        return 4 /* SLIDE_TOP */;
+      case 5:
+        return 5 /* SLIDE_BOTTOM */;
+      case 6:
+        return 6 /* ROTATE */;
+      case 7:
+        return 7 /* PARTICLE */;
+      default:
+        return 0 /* FADE_IN */;
+    }
+  }
+  var _AnimationSpec = class _AnimationSpec extends Operation {
+    constructor(animationId = -1, motionDuration = 300, motionEasingType = Easing.CUBIC_STANDARD, visibilityDuration = 300, visibilityEasingType = Easing.CUBIC_STANDARD, enterAnimation = 0 /* FADE_IN */, exitAnimation = 1 /* FADE_OUT */) {
+      super();
+      this.mAnimationId = animationId;
+      this.mMotionDuration = motionDuration;
+      this.mMotionEasingType = motionEasingType;
+      this.mVisibilityDuration = visibilityDuration;
+      this.mVisibilityEasingType = visibilityEasingType;
+      this.mEnterAnimation = enterAnimation;
+      this.mExitAnimation = exitAnimation;
+    }
+    isAnimationEnabled() {
+      return this.mAnimationId !== 0;
+    }
+    getAnimationId() {
+      return this.mAnimationId;
+    }
+    getMotionDuration() {
+      return this.mMotionDuration;
+    }
+    getMotionEasingType() {
+      return this.mMotionEasingType;
+    }
+    getVisibilityDuration() {
+      return this.mVisibilityDuration;
+    }
+    getVisibilityEasingType() {
+      return this.mVisibilityEasingType;
+    }
+    getEnterAnimation() {
+      return this.mEnterAnimation;
+    }
+    getExitAnimation() {
+      return this.mExitAnimation;
+    }
+    write(buffer) {
+      buffer.start(_AnimationSpec.OP_CODE);
+      buffer.writeInt(this.mAnimationId);
+      buffer.writeFloat(this.mMotionDuration);
+      buffer.writeInt(this.mMotionEasingType);
+      buffer.writeFloat(this.mVisibilityDuration);
+      buffer.writeInt(this.mVisibilityEasingType);
+      buffer.writeInt(this.mEnterAnimation);
+      buffer.writeInt(this.mExitAnimation);
+    }
+    apply(_context) {
+    }
+    deepToString(indent) {
+      return `${indent}AnimationSpec(id=${this.mAnimationId}, motion=${this.mMotionDuration}ms, vis=${this.mVisibilityDuration}ms)`;
+    }
+    static read(buffer, operations) {
+      const animationId = buffer.readId();
+      const motionDuration = buffer.readFloat();
+      const motionEasingType = buffer.readInt();
+      const visibilityDuration = buffer.readFloat();
+      const visibilityEasingType = buffer.readInt();
+      const rawEnter = buffer.readInt();
+      const rawExit = buffer.readInt();
+      const enterAnimation = intToAnimation(rawEnter);
+      const exitAnimation = intToAnimation(rawExit);
+      if ((rawEnter & 255) === 8 || (rawExit & 255) === 8) {
+        buffer.readId();
+        buffer.readId();
+      }
+      const op = new _AnimationSpec(
+        animationId,
+        motionDuration,
+        motionEasingType,
+        visibilityDuration,
+        visibilityEasingType,
+        enterAnimation,
+        exitAnimation
+      );
+      operations.push(op);
+    }
+  };
+  _AnimationSpec.OP_CODE = 14;
+  _AnimationSpec.DEFAULT = new _AnimationSpec(-1, 300, Easing.CUBIC_STANDARD, 300, Easing.CUBIC_STANDARD, 0 /* FADE_IN */, 1 /* FADE_OUT */);
+  _AnimationSpec.DISABLED = new _AnimationSpec(0, 0, Easing.CUBIC_STANDARD, 0, Easing.CUBIC_STANDARD, 0 /* FADE_IN */, 1 /* FADE_OUT */);
+  var AnimationSpec = _AnimationSpec;
+
+  // src/core/operations/Utils.ts
   var _dv = new DataView(new ArrayBuffer(4));
   function intBitsToFloat(bits) {
     _dv.setInt32(0, bits, false);
@@ -191,7 +315,7 @@ var RC = (() => {
     return a << 24 | r << 16 | g << 8 | b | 0;
   }
 
-  // ../kobento-ts/src/core/operations/utilities/IntMap.ts
+  // src/core/operations/utilities/IntMap.ts
   var NOT_PRESENT = -2147483648;
   var DEFAULT_CAPACITY = 16;
   var LOAD_FACTOR = 0.75;
@@ -298,7 +422,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/IntFloatMap.ts
+  // src/core/operations/utilities/IntFloatMap.ts
   var NOT_PRESENT2 = -2147483648;
   var DEFAULT_CAPACITY2 = 16;
   var LOAD_FACTOR2 = 0.75;
@@ -377,7 +501,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/IntIntMap.ts
+  // src/core/operations/utilities/IntIntMap.ts
   var NOT_PRESENT3 = -2147483648;
   var DEFAULT_CAPACITY3 = 16;
   var LOAD_FACTOR3 = 0.75;
@@ -449,7 +573,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/RemoteComposeState.ts
+  // src/core/RemoteComposeState.ts
   var _RemoteComposeState = class _RemoteComposeState {
     constructor() {
       this.mIntDataMap = new IntMap();
@@ -781,7 +905,7 @@ var RC = (() => {
   _RemoteComposeState.MAX_DATA = 1e4;
   var RemoteComposeState = _RemoteComposeState;
 
-  // ../kobento-ts/src/core/RemoteClock.ts
+  // src/core/RemoteClock.ts
   function createSnapshot(millis) {
     const d = new Date(millis);
     const year = d.getFullYear();
@@ -824,7 +948,7 @@ var RC = (() => {
   };
   var SYSTEM_CLOCK = SystemClock;
 
-  // ../kobento-ts/src/core/OperationMeasurement.ts
+  // src/core/OperationMeasurement.ts
   var INSTANCE_ID = /* @__PURE__ */ Symbol("rcMeasureId");
   var OperationMeasurement = class {
     constructor(sink) {
@@ -947,7 +1071,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/RemoteContext.ts
+  // src/core/RemoteContext.ts
   var _RemoteContext = class _RemoteContext {
     constructor(clock = SYSTEM_CLOCK) {
       this.mRemoteComposeState = new RemoteComposeState();
@@ -1258,462 +1382,7 @@ var RC = (() => {
   _RemoteContext.LAST_BASELINE = asNan(37);
   var RemoteContext = _RemoteContext;
 
-  // ../kobento-ts/src/core/operations/paint/PaintBundle.ts
-  var _f32dv = new DataView(new ArrayBuffer(4));
-  function intBitsToFloat2(bits) {
-    _f32dv.setInt32(0, bits);
-    return _f32dv.getFloat32(0);
-  }
-  function floatToRawIntBits2(v) {
-    _f32dv.setFloat32(0, v);
-    return _f32dv.getInt32(0);
-  }
-  function isNaNBitsLocal(bits) {
-    return (bits & 2139095040) === 2139095040 && (bits & 8388607) !== 0;
-  }
-  function idFromBitsLocal(bits) {
-    return bits & 4194303;
-  }
-  function fixFloatVar(val, context) {
-    if (isNaNBitsLocal(val)) {
-      return floatToRawIntBits2(context.getFloat(idFromBitsLocal(val)));
-    }
-    return val;
-  }
-  function fixColor(val, context) {
-    return context.getColor(val);
-  }
-  function listenFloatVar(val, context, op) {
-    if (isNaNBitsLocal(val)) {
-      context.listensTo(idFromBitsLocal(val), op);
-    }
-  }
-  var _PaintBundle = class _PaintBundle {
-    constructor() {
-      // The flat int array and current position
-      this.mArray = [];
-      this.mOutArray = null;
-      this.mPos = 0;
-    }
-    read(buffer) {
-      const len = buffer.readInt();
-      if (len <= 0 || len > 1024) {
-        throw new Error(`PaintBundle: invalid length ${len}`);
-      }
-      this.mArray = new Array(len);
-      for (let i = 0; i < len; i++) {
-        this.mArray[i] = buffer.readInt();
-      }
-      this.mPos = len;
-      const remap = buffer.getRemapContext?.();
-      if (remap) this.resolveIds(remap);
-    }
-    /**
-     * PaintBundle.resolveIds / resolveGradientIds: inside a pattern, remap the ids (and NaN-boxed
-     * float ids) the bundle carries to this inflation's. Two departures from the reference, where
-     * its walk disagrees with how the bundle is written (and with its own applyPaintChange):
-     * TEXTURE is three words (bitmap id, tile modes, filter), and a sweep gradient has no tile
-     * mode word.
-     */
-    resolveIds(remap) {
-      const a = this.mArray, len = this.mPos;
-      const fl = (i2) => {
-        if (i2 < len) a[i2] = remap.resolveNanIdBits(a[i2]);
-      };
-      const id = (i2) => {
-        if (i2 < len) a[i2] = remap.resolveId(a[i2]);
-      };
-      let i = 0;
-      while (i < len) {
-        const cmd = a[i++];
-        const tag = cmd & 65535;
-        const upper = cmd >> 16 & 65535;
-        switch (tag) {
-          case _PaintBundle.STROKE_MITER:
-          case _PaintBundle.STROKE_WIDTH:
-          case _PaintBundle.ALPHA:
-          case _PaintBundle.TEXT_SIZE:
-          case _PaintBundle.SHADER_MATRIX:
-            fl(i++);
-            break;
-          case _PaintBundle.COLOR_FILTER_ID:
-          case _PaintBundle.COLOR_ID:
-          case _PaintBundle.SHADER:
-          case _PaintBundle.TYPEFACE:
-          case _PaintBundle.FALLBACK_TYPEFACE:
-            id(i++);
-            break;
-          case _PaintBundle.TEXTURE:
-            id(i);
-            i += 3;
-            break;
-          case _PaintBundle.COLOR:
-          case _PaintBundle.COLOR_FILTER:
-            i++;
-            break;
-          case _PaintBundle.FONT_AXIS:
-            for (let j = 0; j < upper && i < len; j++) {
-              id(i++);
-              fl(i++);
-            }
-            break;
-          case _PaintBundle.GRADIENT: {
-            if (i >= len) break;
-            const control = a[i++];
-            const numColors = control & 255;
-            const regBits = control >> 16 & 65535;
-            for (let j = 0; j < numColors && i < len; j++, i++) {
-              if ((regBits & 1 << j) !== 0) id(i);
-            }
-            if (i >= len) break;
-            const numStops = a[i++];
-            for (let j = 0; j < numStops && i < len; j++) fl(i++);
-            fl(i++);
-            fl(i++);
-            if (upper === _PaintBundle.LINEAR_GRADIENT) {
-              fl(i++);
-              fl(i++);
-              i++;
-            } else if (upper === _PaintBundle.RADIAL_GRADIENT) {
-              fl(i++);
-              i++;
-            } else if (upper === 3) {
-              fl(i++);
-              fl(i++);
-              fl(i++);
-              fl(i++);
-              i++;
-            }
-            break;
-          }
-          case _PaintBundle.PATH_EFFECT:
-            for (let j = 0; j < upper && i < len; j++) fl(i++);
-            break;
-          default:
-            break;
-        }
-      }
-    }
-    /** Returns the resolved array (mOutArray if available, otherwise mArray). */
-    getArray() {
-      return this.mOutArray ?? this.mArray;
-    }
-    getLength() {
-      return this.mPos;
-    }
-    // --- Programmatic setters for building paint bundles at runtime ---
-    reset() {
-      this.mArray = [];
-      this.mOutArray = null;
-      this.mPos = 0;
-    }
-    setStyle(style) {
-      this.mArray[this.mPos++] = _PaintBundle.STYLE | style << 16;
-    }
-    setColor(aOrColor, r, g, b) {
-      if (r !== void 0 && g !== void 0 && b !== void 0) {
-        const ai = Math.round(aOrColor * 255) & 255;
-        const ri = Math.round(r * 255) & 255;
-        const gi = Math.round(g * 255) & 255;
-        const bi = Math.round(b * 255) & 255;
-        aOrColor = (ai << 24 | ri << 16 | gi << 8 | bi) >>> 0;
-      }
-      this.mArray[this.mPos++] = _PaintBundle.COLOR;
-      this.mArray[this.mPos++] = aOrColor;
-    }
-    setTextSize(size) {
-      this.mArray[this.mPos++] = _PaintBundle.TEXT_SIZE;
-      _f32dv.setFloat32(0, size);
-      this.mArray[this.mPos++] = _f32dv.getInt32(0);
-    }
-    setTextStyle(typeface, fontWeight, italic) {
-      const style = fontWeight & 1023 | (italic ? 2048 : 0);
-      this.mArray[this.mPos++] = _PaintBundle.TYPEFACE | style << 16;
-      this.mArray[this.mPos++] = typeface;
-    }
-    setTextAxis(axisTags, axisValues) {
-      const count = axisTags.length;
-      this.mArray[this.mPos++] = _PaintBundle.FONT_AXIS | count << 16;
-      for (let i = 0; i < count; i++) {
-        this.mArray[this.mPos++] = axisTags[i];
-        _f32dv.setFloat32(0, axisValues[i]);
-        this.mArray[this.mPos++] = _f32dv.getInt32(0);
-      }
-    }
-    setStrokeWidth(width) {
-      this.mArray[this.mPos++] = _PaintBundle.STROKE_WIDTH;
-      _f32dv.setFloat32(0, width);
-      this.mArray[this.mPos++] = _f32dv.getInt32(0);
-    }
-    registerListening(context, op) {
-      let i = 0;
-      const arr = this.mArray;
-      while (i < this.mPos) {
-        const cmd = arr[i++];
-        const tag = cmd & 65535;
-        switch (tag) {
-          case _PaintBundle.STROKE_MITER:
-          case _PaintBundle.STROKE_WIDTH:
-          case _PaintBundle.ALPHA:
-          case _PaintBundle.TEXT_SIZE:
-            listenFloatVar(arr[i], context, op);
-            i++;
-            break;
-          case _PaintBundle.COLOR_FILTER_ID:
-          case _PaintBundle.COLOR_ID:
-            context.listensTo(arr[i], op);
-            i++;
-            break;
-          case _PaintBundle.COLOR:
-          case _PaintBundle.TYPEFACE:
-          case _PaintBundle.SHADER:
-          case _PaintBundle.COLOR_FILTER:
-          case _PaintBundle.FALLBACK_TYPEFACE:
-            i++;
-            break;
-          case _PaintBundle.STROKE_JOIN:
-          case _PaintBundle.FILTER_BITMAP:
-          case _PaintBundle.STROKE_CAP:
-          case _PaintBundle.STYLE:
-          case _PaintBundle.IMAGE_FILTER_QUALITY:
-          case _PaintBundle.BLEND_MODE:
-          case _PaintBundle.ANTI_ALIAS:
-          case _PaintBundle.CLEAR_COLOR_FILTER:
-            break;
-          case _PaintBundle.FONT_AXIS: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              i++;
-              listenFloatVar(arr[i], context, op);
-              i++;
-            }
-            break;
-          }
-          case _PaintBundle.TEXTURE:
-            i += 3;
-            break;
-          case _PaintBundle.SHADER_MATRIX:
-            i++;
-            break;
-          case _PaintBundle.GRADIENT:
-            i = this.registerGradientListening(cmd, arr, i, context, op);
-            break;
-          case _PaintBundle.PATH_EFFECT: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              listenFloatVar(arr[i], context, op);
-              i++;
-            }
-            break;
-          }
-          default:
-            break;
-        }
-      }
-    }
-    registerGradientListening(cmd, arr, startIdx, context, op) {
-      let i = startIdx;
-      const meta = arr[i++];
-      const numColors = meta & 255;
-      const register = meta >> 16 & 65535;
-      for (let j = 0; j < numColors; j++) {
-        if ((register & 1 << j) !== 0) {
-          context.listensTo(arr[i], op);
-        }
-        i++;
-      }
-      const numStops = arr[i++];
-      for (let j = 0; j < numStops; j++) {
-        listenFloatVar(arr[i], context, op);
-        i++;
-      }
-      const gradType = cmd >> 16 & 65535;
-      switch (gradType) {
-        case _PaintBundle.LINEAR_GRADIENT:
-          for (let j = 0; j < 4; j++) {
-            listenFloatVar(arr[i], context, op);
-            i++;
-          }
-          i++;
-          break;
-        case _PaintBundle.RADIAL_GRADIENT:
-          for (let j = 0; j < 3; j++) {
-            listenFloatVar(arr[i], context, op);
-            i++;
-          }
-          i++;
-          break;
-        case _PaintBundle.SWEEP_GRADIENT:
-          for (let j = 0; j < 2; j++) {
-            listenFloatVar(arr[i], context, op);
-            i++;
-          }
-          break;
-      }
-      return i;
-    }
-    /**
-     * Resolve NaN-encoded float variable IDs and color IDs in paint parameters.
-     * Matches Java PaintBundle.updateVariables().
-     */
-    updateVariables(context) {
-      if (this.mOutArray === null) {
-        this.mOutArray = this.mArray.slice();
-      } else {
-        for (let j = 0; j < this.mArray.length; j++) {
-          this.mOutArray[j] = this.mArray[j];
-        }
-      }
-      let i = 0;
-      const arr = this.mArray;
-      const out = this.mOutArray;
-      while (i < this.mPos) {
-        const cmd = arr[i++];
-        const tag = cmd & 65535;
-        switch (tag) {
-          case _PaintBundle.STROKE_MITER:
-          case _PaintBundle.STROKE_WIDTH:
-          case _PaintBundle.ALPHA:
-          case _PaintBundle.TEXT_SIZE:
-            out[i] = fixFloatVar(arr[i], context);
-            i++;
-            break;
-          case _PaintBundle.COLOR_FILTER_ID:
-          case _PaintBundle.COLOR_ID:
-            out[i] = fixColor(arr[i], context);
-            i++;
-            break;
-          case _PaintBundle.COLOR:
-          case _PaintBundle.TYPEFACE:
-          case _PaintBundle.SHADER:
-          case _PaintBundle.COLOR_FILTER:
-          case _PaintBundle.FALLBACK_TYPEFACE:
-            i++;
-            break;
-          case _PaintBundle.STROKE_JOIN:
-          case _PaintBundle.FILTER_BITMAP:
-          case _PaintBundle.STROKE_CAP:
-          case _PaintBundle.STYLE:
-          case _PaintBundle.IMAGE_FILTER_QUALITY:
-          case _PaintBundle.BLEND_MODE:
-          case _PaintBundle.ANTI_ALIAS:
-          case _PaintBundle.CLEAR_COLOR_FILTER:
-            break;
-          case _PaintBundle.FONT_AXIS: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              i++;
-              out[i] = fixFloatVar(arr[i], context);
-              i++;
-            }
-            break;
-          }
-          case _PaintBundle.TEXTURE:
-            i += 3;
-            break;
-          case _PaintBundle.SHADER_MATRIX:
-            i++;
-            break;
-          case _PaintBundle.GRADIENT:
-            i = this.updateGradientVars(cmd, arr, out, i, context);
-            break;
-          case _PaintBundle.PATH_EFFECT: {
-            const count = cmd >> 16 & 65535;
-            for (let j = 0; j < count; j++) {
-              out[i] = fixFloatVar(arr[i], context);
-              i++;
-            }
-            break;
-          }
-          default:
-            break;
-        }
-      }
-    }
-    updateGradientVars(cmd, arr, out, startIdx, context) {
-      let i = startIdx;
-      const gradType = cmd >> 16 & 65535;
-      const meta = arr[i++];
-      const numColors = meta & 255;
-      const register = meta >> 16 & 65535;
-      for (let j = 0; j < numColors; j++) {
-        if ((register & 1 << j) !== 0) {
-          out[i] = fixColor(arr[i], context);
-        }
-        i++;
-      }
-      const numStops = arr[i++];
-      for (let j = 0; j < numStops; j++) {
-        out[i] = fixFloatVar(arr[i], context);
-        i++;
-      }
-      switch (gradType) {
-        case _PaintBundle.LINEAR_GRADIENT:
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          i++;
-          break;
-        case _PaintBundle.RADIAL_GRADIENT:
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          i++;
-          break;
-        case _PaintBundle.SWEEP_GRADIENT:
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          out[i] = fixFloatVar(arr[i], context);
-          i++;
-          break;
-      }
-      return i;
-    }
-  };
-  // Paint property tags (matching Java PaintBundle constants)
-  _PaintBundle.TEXT_SIZE = 1;
-  _PaintBundle.COLOR = 4;
-  _PaintBundle.STROKE_WIDTH = 5;
-  _PaintBundle.STROKE_MITER = 6;
-  _PaintBundle.STROKE_CAP = 7;
-  _PaintBundle.STYLE = 8;
-  _PaintBundle.SHADER = 9;
-  _PaintBundle.IMAGE_FILTER_QUALITY = 10;
-  _PaintBundle.GRADIENT = 11;
-  _PaintBundle.ALPHA = 12;
-  _PaintBundle.COLOR_FILTER = 13;
-  _PaintBundle.ANTI_ALIAS = 14;
-  _PaintBundle.STROKE_JOIN = 15;
-  _PaintBundle.TYPEFACE = 16;
-  _PaintBundle.FILTER_BITMAP = 17;
-  _PaintBundle.BLEND_MODE = 18;
-  _PaintBundle.COLOR_ID = 19;
-  _PaintBundle.COLOR_FILTER_ID = 20;
-  _PaintBundle.CLEAR_COLOR_FILTER = 21;
-  _PaintBundle.SHADER_MATRIX = 22;
-  _PaintBundle.FONT_AXIS = 23;
-  _PaintBundle.TEXTURE = 24;
-  _PaintBundle.PATH_EFFECT = 25;
-  _PaintBundle.FALLBACK_TYPEFACE = 26;
-  // Gradient types (wire format values)
-  _PaintBundle.LINEAR_GRADIENT = 0;
-  _PaintBundle.RADIAL_GRADIENT = 1;
-  _PaintBundle.SWEEP_GRADIENT = 2;
-  // Style constants
-  _PaintBundle.FILL = 0;
-  _PaintBundle.STROKE = 1;
-  _PaintBundle.FILL_AND_STROKE = 2;
-  var PaintBundle = _PaintBundle;
-
-  // ../kobento-ts/src/core/PaintOperation.ts
+  // src/core/PaintOperation.ts
   var PTR_DEREFERENCE = 1 << 30;
   var VALUE_MASK = 65535;
   function isContainer(op) {
@@ -1757,27 +1426,7 @@ var RC = (() => {
   PaintOperation.PTR_DEREFERENCE = PTR_DEREFERENCE;
   PaintOperation.VALUE_MASK = VALUE_MASK;
 
-  // ../kobento-ts/src/core/operations/utilities/easing/Easing.ts
-  var Easing = class {
-    constructor() {
-      this.mType = 0;
-    }
-    getType() {
-      return this.mType;
-    }
-  };
-  Easing.CUBIC_STANDARD = 1;
-  Easing.CUBIC_ACCELERATE = 2;
-  Easing.CUBIC_DECELERATE = 3;
-  Easing.CUBIC_LINEAR = 4;
-  Easing.CUBIC_ANTICIPATE = 5;
-  Easing.CUBIC_OVERSHOOT = 6;
-  Easing.CUBIC_CUSTOM = 11;
-  Easing.SPLINE_CUSTOM = 12;
-  Easing.EASE_OUT_BOUNCE = 13;
-  Easing.EASE_OUT_ELASTIC = 14;
-
-  // ../kobento-ts/src/core/operations/utilities/easing/CubicEasing.ts
+  // src/core/operations/utilities/easing/CubicEasing.ts
   var STANDARD = [0.4, 0, 0.2, 1];
   var ACCELERATE = [0.4, 0.05, 0.8, 0.7];
   var DECELERATE = [0, 0, 0.2, 0.95];
@@ -1870,7 +1519,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/easing/BounceCurve.ts
+  // src/core/operations/utilities/easing/BounceCurve.ts
   var N1 = 7.5625;
   var D1 = 2.75;
   var BounceCurve = class extends Easing {
@@ -1910,7 +1559,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/easing/ElasticOutCurve.ts
+  // src/core/operations/utilities/easing/ElasticOutCurve.ts
   var C4 = 2 * Math.PI / 3;
   var TWENTY_PI = 20 * Math.PI;
   var LOG_8 = Math.log(8);
@@ -1926,7 +1575,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/easing/MonotonicCurveFit.ts
+  // src/core/operations/utilities/easing/MonotonicCurveFit.ts
   var MonotonicCurveFit = class _MonotonicCurveFit {
     constructor(time, y) {
       // same shape as mY
@@ -2040,7 +1689,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/easing/StepCurve.ts
+  // src/core/operations/utilities/easing/StepCurve.ts
   var StepCurve = class _StepCurve extends Easing {
     constructor(params, offset, len) {
       super();
@@ -2077,9 +1726,9 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/easing/FloatAnimation.ts
+  // src/core/operations/utilities/easing/FloatAnimation.ts
   var _dv2 = new DataView(new ArrayBuffer(4));
-  function floatToRawIntBits3(v) {
+  function floatToRawIntBits2(v) {
     _dv2.setFloat32(0, v, false);
     return _dv2.getInt32(0, false);
   }
@@ -2102,7 +1751,7 @@ var RC = (() => {
       this.mDuration = this.mSpec.length === 0 ? 1 : this.mSpec[0];
       let len = 0;
       if (this.mSpec.length > 1) {
-        const numType = floatToRawIntBits3(this.mSpec[1]);
+        const numType = floatToRawIntBits2(this.mSpec[1]);
         this.mType = numType & 255;
         const wrap = (numType >> 8 & 1) > 0;
         const init = (numType >> 8 & 2) > 0;
@@ -2236,7 +1885,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/utilities/easing/SpringStopEngine.ts
+  // src/core/operations/utilities/easing/SpringStopEngine.ts
   var SpringStopEngine = class {
     constructor(parameters) {
       this.mDamping = 0.5;
@@ -2327,7 +1976,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/FloatExpression.ts
+  // src/core/operations/FloatExpression.ts
   var ARR_SENTINEL = 2 ** 42;
   function arrIdFromStack(x) {
     return x >= ARR_SENTINEL ? x - ARR_SENTINEL | 0 : idFromNan(x);
@@ -2973,7 +2622,7 @@ var RC = (() => {
   _FloatExpression.ID_REGION_ARRAY = 2097152;
   var FloatExpression = _FloatExpression;
 
-  // ../kobento-ts/src/core/operations/utilities/AnimatedFloatExpression.ts
+  // src/core/operations/utilities/AnimatedFloatExpression.ts
   var ARR_SENTINEL2 = 2 ** 42;
   function arrIdFromStack2(x) {
     return x >= ARR_SENTINEL2 ? x - ARR_SENTINEL2 | 0 : idFromNan(x);
@@ -3438,7 +3087,7 @@ var RC = (() => {
   _AnimatedFloatExpression.ID_REGION_ARRAY = 2097152;
   var AnimatedFloatExpression = _AnimatedFloatExpression;
 
-  // ../kobento-ts/src/core/operations/utilities/touch/VelocityEasing.ts
+  // src/core/operations/utilities/touch/VelocityEasing.ts
   var Stage = class {
     constructor(n) {
       this.mStartV = 0;
@@ -3662,7 +3311,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/TouchExpression.ts
+  // src/core/operations/TouchExpression.ts
   var _TouchExpression = class _TouchExpression extends Operation {
     constructor(id, exp, defValueBits, minBits, maxBits, touchEffects, velocityId, stopMode, stopSpec, easingSpec) {
       super();
@@ -4106,7 +3755,7 @@ var RC = (() => {
   _TouchExpression.STOP_NOTCHES_SINGLE_EVEN = 7;
   var TouchExpression = _TouchExpression;
 
-  // ../kobento-ts/src/core/operations/layout/measure/ComponentMeasure.ts
+  // src/core/operations/layout/measure/ComponentMeasure.ts
   var _ComponentMeasure = class _ComponentMeasure {
     constructor(id, x, y, w, h, visibility = _ComponentMeasure.VISIBLE) {
       this.mAllowsAnimation = true;
@@ -4224,111 +3873,462 @@ var RC = (() => {
   _ComponentMeasure.INVISIBLE = 2;
   var ComponentMeasure = _ComponentMeasure;
 
-  // ../kobento-ts/src/core/operations/layout/animation/AnimationSpec.ts
-  function intToAnimation(v) {
-    switch (v & 255) {
-      case 0:
-        return 0 /* FADE_IN */;
-      case 1:
-        return 1 /* FADE_OUT */;
-      case 2:
-        return 2 /* SLIDE_LEFT */;
-      case 3:
-        return 3 /* SLIDE_RIGHT */;
-      case 4:
-        return 4 /* SLIDE_TOP */;
-      case 5:
-        return 5 /* SLIDE_BOTTOM */;
-      case 6:
-        return 6 /* ROTATE */;
-      case 7:
-        return 7 /* PARTICLE */;
-      default:
-        return 0 /* FADE_IN */;
+  // src/core/operations/paint/PaintBundle.ts
+  var _f32dv = new DataView(new ArrayBuffer(4));
+  function intBitsToFloat2(bits) {
+    _f32dv.setInt32(0, bits);
+    return _f32dv.getFloat32(0);
+  }
+  function floatToRawIntBits3(v) {
+    _f32dv.setFloat32(0, v);
+    return _f32dv.getInt32(0);
+  }
+  function isNaNBitsLocal(bits) {
+    return (bits & 2139095040) === 2139095040 && (bits & 8388607) !== 0;
+  }
+  function idFromBitsLocal(bits) {
+    return bits & 4194303;
+  }
+  function fixFloatVar(val, context) {
+    if (isNaNBitsLocal(val)) {
+      return floatToRawIntBits3(context.getFloat(idFromBitsLocal(val)));
+    }
+    return val;
+  }
+  function fixColor(val, context) {
+    return context.getColor(val);
+  }
+  function listenFloatVar(val, context, op) {
+    if (isNaNBitsLocal(val)) {
+      context.listensTo(idFromBitsLocal(val), op);
     }
   }
-  var _AnimationSpec = class _AnimationSpec extends Operation {
-    constructor(animationId = -1, motionDuration = 300, motionEasingType = Easing.CUBIC_STANDARD, visibilityDuration = 300, visibilityEasingType = Easing.CUBIC_STANDARD, enterAnimation = 0 /* FADE_IN */, exitAnimation = 1 /* FADE_OUT */) {
-      super();
-      this.mAnimationId = animationId;
-      this.mMotionDuration = motionDuration;
-      this.mMotionEasingType = motionEasingType;
-      this.mVisibilityDuration = visibilityDuration;
-      this.mVisibilityEasingType = visibilityEasingType;
-      this.mEnterAnimation = enterAnimation;
-      this.mExitAnimation = exitAnimation;
+  var _PaintBundle = class _PaintBundle {
+    constructor() {
+      // The flat int array and current position
+      this.mArray = [];
+      this.mOutArray = null;
+      this.mPos = 0;
     }
-    isAnimationEnabled() {
-      return this.mAnimationId !== 0;
-    }
-    getAnimationId() {
-      return this.mAnimationId;
-    }
-    getMotionDuration() {
-      return this.mMotionDuration;
-    }
-    getMotionEasingType() {
-      return this.mMotionEasingType;
-    }
-    getVisibilityDuration() {
-      return this.mVisibilityDuration;
-    }
-    getVisibilityEasingType() {
-      return this.mVisibilityEasingType;
-    }
-    getEnterAnimation() {
-      return this.mEnterAnimation;
-    }
-    getExitAnimation() {
-      return this.mExitAnimation;
-    }
-    write(buffer) {
-      buffer.start(_AnimationSpec.OP_CODE);
-      buffer.writeInt(this.mAnimationId);
-      buffer.writeFloat(this.mMotionDuration);
-      buffer.writeInt(this.mMotionEasingType);
-      buffer.writeFloat(this.mVisibilityDuration);
-      buffer.writeInt(this.mVisibilityEasingType);
-      buffer.writeInt(this.mEnterAnimation);
-      buffer.writeInt(this.mExitAnimation);
-    }
-    apply(_context) {
-    }
-    deepToString(indent) {
-      return `${indent}AnimationSpec(id=${this.mAnimationId}, motion=${this.mMotionDuration}ms, vis=${this.mVisibilityDuration}ms)`;
-    }
-    static read(buffer, operations) {
-      const animationId = buffer.readId();
-      const motionDuration = buffer.readFloat();
-      const motionEasingType = buffer.readInt();
-      const visibilityDuration = buffer.readFloat();
-      const visibilityEasingType = buffer.readInt();
-      const rawEnter = buffer.readInt();
-      const rawExit = buffer.readInt();
-      const enterAnimation = intToAnimation(rawEnter);
-      const exitAnimation = intToAnimation(rawExit);
-      if ((rawEnter & 255) === 8 || (rawExit & 255) === 8) {
-        buffer.readId();
-        buffer.readId();
+    read(buffer) {
+      const len = buffer.readInt();
+      if (len <= 0 || len > 1024) {
+        throw new Error(`PaintBundle: invalid length ${len}`);
       }
-      const op = new _AnimationSpec(
-        animationId,
-        motionDuration,
-        motionEasingType,
-        visibilityDuration,
-        visibilityEasingType,
-        enterAnimation,
-        exitAnimation
-      );
-      operations.push(op);
+      this.mArray = new Array(len);
+      for (let i = 0; i < len; i++) {
+        this.mArray[i] = buffer.readInt();
+      }
+      this.mPos = len;
+      const remap = buffer.getRemapContext?.();
+      if (remap) this.resolveIds(remap);
+    }
+    /**
+     * PaintBundle.resolveIds / resolveGradientIds: inside a pattern, remap the ids (and NaN-boxed
+     * float ids) the bundle carries to this inflation's. Two departures from the reference, where
+     * its walk disagrees with how the bundle is written (and with its own applyPaintChange):
+     * TEXTURE is three words (bitmap id, tile modes, filter), and a sweep gradient has no tile
+     * mode word.
+     */
+    resolveIds(remap) {
+      const a = this.mArray, len = this.mPos;
+      const fl = (i2) => {
+        if (i2 < len) a[i2] = remap.resolveNanIdBits(a[i2]);
+      };
+      const id = (i2) => {
+        if (i2 < len) a[i2] = remap.resolveId(a[i2]);
+      };
+      let i = 0;
+      while (i < len) {
+        const cmd = a[i++];
+        const tag = cmd & 65535;
+        const upper = cmd >> 16 & 65535;
+        switch (tag) {
+          case _PaintBundle.STROKE_MITER:
+          case _PaintBundle.STROKE_WIDTH:
+          case _PaintBundle.ALPHA:
+          case _PaintBundle.TEXT_SIZE:
+          case _PaintBundle.SHADER_MATRIX:
+            fl(i++);
+            break;
+          case _PaintBundle.COLOR_FILTER_ID:
+          case _PaintBundle.COLOR_ID:
+          case _PaintBundle.SHADER:
+          case _PaintBundle.TYPEFACE:
+          case _PaintBundle.FALLBACK_TYPEFACE:
+            id(i++);
+            break;
+          case _PaintBundle.TEXTURE:
+            id(i);
+            i += 3;
+            break;
+          case _PaintBundle.COLOR:
+          case _PaintBundle.COLOR_FILTER:
+            i++;
+            break;
+          case _PaintBundle.FONT_AXIS:
+            for (let j = 0; j < upper && i < len; j++) {
+              id(i++);
+              fl(i++);
+            }
+            break;
+          case _PaintBundle.GRADIENT: {
+            if (i >= len) break;
+            const control = a[i++];
+            const numColors = control & 255;
+            const regBits = control >> 16 & 65535;
+            for (let j = 0; j < numColors && i < len; j++, i++) {
+              if ((regBits & 1 << j) !== 0) id(i);
+            }
+            if (i >= len) break;
+            const numStops = a[i++];
+            for (let j = 0; j < numStops && i < len; j++) fl(i++);
+            fl(i++);
+            fl(i++);
+            if (upper === _PaintBundle.LINEAR_GRADIENT) {
+              fl(i++);
+              fl(i++);
+              i++;
+            } else if (upper === _PaintBundle.RADIAL_GRADIENT) {
+              fl(i++);
+              i++;
+            } else if (upper === 3) {
+              fl(i++);
+              fl(i++);
+              fl(i++);
+              fl(i++);
+              i++;
+            }
+            break;
+          }
+          case _PaintBundle.PATH_EFFECT:
+            for (let j = 0; j < upper && i < len; j++) fl(i++);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    /** Returns the resolved array (mOutArray if available, otherwise mArray). */
+    getArray() {
+      return this.mOutArray ?? this.mArray;
+    }
+    getLength() {
+      return this.mPos;
+    }
+    // --- Programmatic setters for building paint bundles at runtime ---
+    reset() {
+      this.mArray = [];
+      this.mOutArray = null;
+      this.mPos = 0;
+    }
+    setStyle(style) {
+      this.mArray[this.mPos++] = _PaintBundle.STYLE | style << 16;
+    }
+    setColor(aOrColor, r, g, b) {
+      if (r !== void 0 && g !== void 0 && b !== void 0) {
+        const ai = Math.round(aOrColor * 255) & 255;
+        const ri = Math.round(r * 255) & 255;
+        const gi = Math.round(g * 255) & 255;
+        const bi = Math.round(b * 255) & 255;
+        aOrColor = (ai << 24 | ri << 16 | gi << 8 | bi) >>> 0;
+      }
+      this.mArray[this.mPos++] = _PaintBundle.COLOR;
+      this.mArray[this.mPos++] = aOrColor;
+    }
+    setTextSize(size) {
+      this.mArray[this.mPos++] = _PaintBundle.TEXT_SIZE;
+      _f32dv.setFloat32(0, size);
+      this.mArray[this.mPos++] = _f32dv.getInt32(0);
+    }
+    setTextStyle(typeface, fontWeight, italic) {
+      const style = fontWeight & 1023 | (italic ? 2048 : 0);
+      this.mArray[this.mPos++] = _PaintBundle.TYPEFACE | style << 16;
+      this.mArray[this.mPos++] = typeface;
+    }
+    setTextAxis(axisTags, axisValues) {
+      const count = axisTags.length;
+      this.mArray[this.mPos++] = _PaintBundle.FONT_AXIS | count << 16;
+      for (let i = 0; i < count; i++) {
+        this.mArray[this.mPos++] = axisTags[i];
+        _f32dv.setFloat32(0, axisValues[i]);
+        this.mArray[this.mPos++] = _f32dv.getInt32(0);
+      }
+    }
+    setStrokeWidth(width) {
+      this.mArray[this.mPos++] = _PaintBundle.STROKE_WIDTH;
+      _f32dv.setFloat32(0, width);
+      this.mArray[this.mPos++] = _f32dv.getInt32(0);
+    }
+    registerListening(context, op) {
+      let i = 0;
+      const arr = this.mArray;
+      while (i < this.mPos) {
+        const cmd = arr[i++];
+        const tag = cmd & 65535;
+        switch (tag) {
+          case _PaintBundle.STROKE_MITER:
+          case _PaintBundle.STROKE_WIDTH:
+          case _PaintBundle.ALPHA:
+          case _PaintBundle.TEXT_SIZE:
+            listenFloatVar(arr[i], context, op);
+            i++;
+            break;
+          case _PaintBundle.COLOR_FILTER_ID:
+          case _PaintBundle.COLOR_ID:
+            context.listensTo(arr[i], op);
+            i++;
+            break;
+          case _PaintBundle.COLOR:
+          case _PaintBundle.TYPEFACE:
+          case _PaintBundle.SHADER:
+          case _PaintBundle.COLOR_FILTER:
+          case _PaintBundle.FALLBACK_TYPEFACE:
+            i++;
+            break;
+          case _PaintBundle.STROKE_JOIN:
+          case _PaintBundle.FILTER_BITMAP:
+          case _PaintBundle.STROKE_CAP:
+          case _PaintBundle.STYLE:
+          case _PaintBundle.IMAGE_FILTER_QUALITY:
+          case _PaintBundle.BLEND_MODE:
+          case _PaintBundle.ANTI_ALIAS:
+          case _PaintBundle.CLEAR_COLOR_FILTER:
+            break;
+          case _PaintBundle.FONT_AXIS: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              i++;
+              listenFloatVar(arr[i], context, op);
+              i++;
+            }
+            break;
+          }
+          case _PaintBundle.TEXTURE:
+            i += 3;
+            break;
+          case _PaintBundle.SHADER_MATRIX:
+            i++;
+            break;
+          case _PaintBundle.GRADIENT:
+            i = this.registerGradientListening(cmd, arr, i, context, op);
+            break;
+          case _PaintBundle.PATH_EFFECT: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              listenFloatVar(arr[i], context, op);
+              i++;
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    }
+    registerGradientListening(cmd, arr, startIdx, context, op) {
+      let i = startIdx;
+      const meta = arr[i++];
+      const numColors = meta & 255;
+      const register = meta >> 16 & 65535;
+      for (let j = 0; j < numColors; j++) {
+        if ((register & 1 << j) !== 0) {
+          context.listensTo(arr[i], op);
+        }
+        i++;
+      }
+      const numStops = arr[i++];
+      for (let j = 0; j < numStops; j++) {
+        listenFloatVar(arr[i], context, op);
+        i++;
+      }
+      const gradType = cmd >> 16 & 65535;
+      switch (gradType) {
+        case _PaintBundle.LINEAR_GRADIENT:
+          for (let j = 0; j < 4; j++) {
+            listenFloatVar(arr[i], context, op);
+            i++;
+          }
+          i++;
+          break;
+        case _PaintBundle.RADIAL_GRADIENT:
+          for (let j = 0; j < 3; j++) {
+            listenFloatVar(arr[i], context, op);
+            i++;
+          }
+          i++;
+          break;
+        case _PaintBundle.SWEEP_GRADIENT:
+          for (let j = 0; j < 2; j++) {
+            listenFloatVar(arr[i], context, op);
+            i++;
+          }
+          break;
+      }
+      return i;
+    }
+    /**
+     * Resolve NaN-encoded float variable IDs and color IDs in paint parameters.
+     * Matches Java PaintBundle.updateVariables().
+     */
+    updateVariables(context) {
+      if (this.mOutArray === null) {
+        this.mOutArray = this.mArray.slice();
+      } else {
+        for (let j = 0; j < this.mArray.length; j++) {
+          this.mOutArray[j] = this.mArray[j];
+        }
+      }
+      let i = 0;
+      const arr = this.mArray;
+      const out = this.mOutArray;
+      while (i < this.mPos) {
+        const cmd = arr[i++];
+        const tag = cmd & 65535;
+        switch (tag) {
+          case _PaintBundle.STROKE_MITER:
+          case _PaintBundle.STROKE_WIDTH:
+          case _PaintBundle.ALPHA:
+          case _PaintBundle.TEXT_SIZE:
+            out[i] = fixFloatVar(arr[i], context);
+            i++;
+            break;
+          case _PaintBundle.COLOR_FILTER_ID:
+          case _PaintBundle.COLOR_ID:
+            out[i] = fixColor(arr[i], context);
+            i++;
+            break;
+          case _PaintBundle.COLOR:
+          case _PaintBundle.TYPEFACE:
+          case _PaintBundle.SHADER:
+          case _PaintBundle.COLOR_FILTER:
+          case _PaintBundle.FALLBACK_TYPEFACE:
+            i++;
+            break;
+          case _PaintBundle.STROKE_JOIN:
+          case _PaintBundle.FILTER_BITMAP:
+          case _PaintBundle.STROKE_CAP:
+          case _PaintBundle.STYLE:
+          case _PaintBundle.IMAGE_FILTER_QUALITY:
+          case _PaintBundle.BLEND_MODE:
+          case _PaintBundle.ANTI_ALIAS:
+          case _PaintBundle.CLEAR_COLOR_FILTER:
+            break;
+          case _PaintBundle.FONT_AXIS: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              i++;
+              out[i] = fixFloatVar(arr[i], context);
+              i++;
+            }
+            break;
+          }
+          case _PaintBundle.TEXTURE:
+            i += 3;
+            break;
+          case _PaintBundle.SHADER_MATRIX:
+            i++;
+            break;
+          case _PaintBundle.GRADIENT:
+            i = this.updateGradientVars(cmd, arr, out, i, context);
+            break;
+          case _PaintBundle.PATH_EFFECT: {
+            const count = cmd >> 16 & 65535;
+            for (let j = 0; j < count; j++) {
+              out[i] = fixFloatVar(arr[i], context);
+              i++;
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    }
+    updateGradientVars(cmd, arr, out, startIdx, context) {
+      let i = startIdx;
+      const gradType = cmd >> 16 & 65535;
+      const meta = arr[i++];
+      const numColors = meta & 255;
+      const register = meta >> 16 & 65535;
+      for (let j = 0; j < numColors; j++) {
+        if ((register & 1 << j) !== 0) {
+          out[i] = fixColor(arr[i], context);
+        }
+        i++;
+      }
+      const numStops = arr[i++];
+      for (let j = 0; j < numStops; j++) {
+        out[i] = fixFloatVar(arr[i], context);
+        i++;
+      }
+      switch (gradType) {
+        case _PaintBundle.LINEAR_GRADIENT:
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          i++;
+          break;
+        case _PaintBundle.RADIAL_GRADIENT:
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          i++;
+          break;
+        case _PaintBundle.SWEEP_GRADIENT:
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          out[i] = fixFloatVar(arr[i], context);
+          i++;
+          break;
+      }
+      return i;
     }
   };
-  _AnimationSpec.OP_CODE = 14;
-  _AnimationSpec.DEFAULT = new _AnimationSpec(-1, 300, Easing.CUBIC_STANDARD, 300, Easing.CUBIC_STANDARD, 0 /* FADE_IN */, 1 /* FADE_OUT */);
-  _AnimationSpec.DISABLED = new _AnimationSpec(0, 0, Easing.CUBIC_STANDARD, 0, Easing.CUBIC_STANDARD, 0 /* FADE_IN */, 1 /* FADE_OUT */);
-  var AnimationSpec = _AnimationSpec;
+  // Paint property tags (matching Java PaintBundle constants)
+  _PaintBundle.TEXT_SIZE = 1;
+  _PaintBundle.COLOR = 4;
+  _PaintBundle.STROKE_WIDTH = 5;
+  _PaintBundle.STROKE_MITER = 6;
+  _PaintBundle.STROKE_CAP = 7;
+  _PaintBundle.STYLE = 8;
+  _PaintBundle.SHADER = 9;
+  _PaintBundle.IMAGE_FILTER_QUALITY = 10;
+  _PaintBundle.GRADIENT = 11;
+  _PaintBundle.ALPHA = 12;
+  _PaintBundle.COLOR_FILTER = 13;
+  _PaintBundle.ANTI_ALIAS = 14;
+  _PaintBundle.STROKE_JOIN = 15;
+  _PaintBundle.TYPEFACE = 16;
+  _PaintBundle.FILTER_BITMAP = 17;
+  _PaintBundle.BLEND_MODE = 18;
+  _PaintBundle.COLOR_ID = 19;
+  _PaintBundle.COLOR_FILTER_ID = 20;
+  _PaintBundle.CLEAR_COLOR_FILTER = 21;
+  _PaintBundle.SHADER_MATRIX = 22;
+  _PaintBundle.FONT_AXIS = 23;
+  _PaintBundle.TEXTURE = 24;
+  _PaintBundle.PATH_EFFECT = 25;
+  _PaintBundle.FALLBACK_TYPEFACE = 26;
+  // Gradient types (wire format values)
+  _PaintBundle.LINEAR_GRADIENT = 0;
+  _PaintBundle.RADIAL_GRADIENT = 1;
+  _PaintBundle.SWEEP_GRADIENT = 2;
+  // Style constants
+  _PaintBundle.FILL = 0;
+  _PaintBundle.STROKE = 1;
+  _PaintBundle.FILL_AND_STROKE = 2;
+  var PaintBundle = _PaintBundle;
 
-  // ../kobento-ts/src/core/operations/layout/animation/AnimateMeasure.ts
+  // src/core/operations/layout/animation/AnimateMeasure.ts
   var AnimateMeasure = class {
     constructor(startTime, component, original, target, duration, durationVisibilityChange, enterAnimation = 0 /* FADE_IN */, exitAnimation = 1 /* FADE_OUT */, motionEasingType = Easing.CUBIC_STANDARD, visibilityEasingType = Easing.CUBIC_ACCELERATE) {
       this.mP = 0;
@@ -4645,7 +4645,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/layout/Component.ts
+  // src/core/operations/layout/Component.ts
   var _Visibility = class _Visibility {
     static isGone(v) {
       if (v >> 4 > 0) return (v & _Visibility.OVERRIDE_GONE) === _Visibility.OVERRIDE_GONE;
@@ -4703,20 +4703,16 @@ var RC = (() => {
        * again when that state is shown, instead of staying GONE pass after pass.
        */
       this.mScheduledVisibility = Visibility.VISIBLE;
-      /**
-       * True while a host editor is shown over this component by a text input modifier: a text
-       * component then draws no text, the editor shows it (Java Component.isEditing).
-       */
-      this.mEditing = false;
       this.mNeedsMeasure = true;
       this.mNeedsRepaint = true;
       this.mFirstLayout = true;
-      // Whether this component has been laid out visible once. One that has only ever been GONE
-      // (a title or page shown by a visibility modifier, not yet selected) was laid out at a
-      // placeholder position (its parent's origin): its first entrance starts at its target
-      // bounds and only fades, instead of moving from that position (a slide down the first
-      // time a hidden title appeared, a plain fade every time after).
-      this.mLaidOutVisible = false;
+      // Whether this component was shown at its last layout: it and every ancestor not GONE.
+      // A layout animation moves a component from those bounds only when they were shown ones.
+      // One that was GONE, or inside a GONE ancestor, was laid out at placeholder bounds (its
+      // parent's origin, or the width a GONE panel gives its children): it enters at its target
+      // bounds and only fades. Otherwise a hidden title slid down the first time it appeared
+      // (CMP-77), and a list inside a panel shown by a tab grew from a sliver every time (CMP-49).
+      this.mShown = false;
       // The visibility this component was last laid out with: what an animation starts from.
       // (A visibility modifier sets mVisibility as soon as its variable changes; the reference
       // schedules it, leaving mVisibility at the laid-out value until the next layout.)
@@ -4739,12 +4735,6 @@ var RC = (() => {
       this.mY = y;
       this.mWidth = width;
       this.mHeight = height;
-    }
-    isEditing() {
-      return this.mEditing;
-    }
-    setEditing(editing) {
-      this.mEditing = editing;
     }
     getComponentId() {
       return this.mComponentId;
@@ -4895,7 +4885,7 @@ var RC = (() => {
       if (allowAnimation) {
         if (this.mAnimateMeasure === null) {
           const target = new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), m.getVisibility());
-          const origin = this.mLaidOutVisible ? new ComponentMeasure(this.mComponentId, this.mX, this.mY, this.mWidth, this.mHeight, this.mLayoutVisibility) : new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), this.mLayoutVisibility);
+          const origin = this.mShown ? new ComponentMeasure(this.mComponentId, this.mX, this.mY, this.mWidth, this.mHeight, this.mLayoutVisibility) : new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), this.mLayoutVisibility);
           if (!target.same(origin)) {
             const now = context.mClock?.millis() ?? Date.now();
             this.mAnimateMeasure = new AnimateMeasure(
@@ -4934,7 +4924,7 @@ var RC = (() => {
         this.markNeedsBoundsAnimation();
       }
       this.mLayoutVisibility = m.getVisibility();
-      if (!Visibility.isGone(m.getVisibility())) this.mLaidOutVisible = true;
+      this.mShown = !Visibility.isGone(m.getVisibility()) && (this.mParent === null || this.mParent.mShown);
       this.mFirstLayout = false;
     }
     animatingBounds(context) {
@@ -5244,70 +5234,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/TextInput.ts
-  var TextInputSession = class {
-    constructor(mContext, mComponent, mOperation) {
-      this.mContext = mContext;
-      this.mComponent = mComponent;
-      this.mOperation = mOperation;
-      this.mBounds = [0, 0, 0, 0];
-      this.mActive = true;
-      this.updateBounds();
-    }
-    getComponentId() {
-      return this.mComponent.getComponentId();
-    }
-    getComponent() {
-      return this.mComponent;
-    }
-    getOperation() {
-      return this.mOperation;
-    }
-    getContext() {
-      return this.mContext;
-    }
-    /** The edited component's bounds relative to the document root: [x, y, width, height], document pixels. */
-    getBounds() {
-      return this.mBounds;
-    }
-    /** The edited string's current value. */
-    getText() {
-      return this.mContext.getText(this.mOperation.getTextId()) ?? "";
-    }
-    /** Writes a new value of the string: every binding on it updates, and a repaint is asked for. */
-    setText(text) {
-      if (!this.mActive) return;
-      this.mContext.loadText(this.mOperation.getTextId(), text);
-      this.mContext.needsRepaint();
-    }
-    /** The placeholder shown when the text is empty, or null if none was declared. */
-    getHint() {
-      const id = this.mOperation.getHintId();
-      return id !== 0 ? this.mContext.getText(id) : null;
-    }
-    isActive() {
-      return this.mActive;
-    }
-    /** Ends the session (the host dismissed its editor): the component draws its text again. */
-    end() {
-      if (!this.mActive) return;
-      this.mActive = false;
-      this.mOperation.onSessionEnded(this.mContext, this);
-    }
-    /** Recomputes getBounds() from the component's current place; true when they changed. */
-    updateBounds() {
-      const [x, y, w, h] = this.mBounds;
-      const c = this.mComponent;
-      const loc = this.mComponent.getLocationInWindow();
-      this.mBounds[0] = loc[0] - (c.mPaddingLeft ?? 0);
-      this.mBounds[1] = loc[1] - (c.mPaddingTop ?? 0);
-      this.mBounds[2] = this.mComponent.getWidth();
-      this.mBounds[3] = this.mComponent.getHeight();
-      return x !== this.mBounds[0] || y !== this.mBounds[1] || w !== this.mBounds[2] || h !== this.mBounds[3];
-    }
-  };
-
-  // ../kobento-ts/src/core/operations/layout/modifiers/ModifierOperations.ts
+  // src/core/operations/layout/modifiers/ModifierOperations.ts
   var _WidthModifier = class _WidthModifier extends Operation {
     constructor(type, valueBits) {
       super();
@@ -6772,19 +6699,2482 @@ var RC = (() => {
   };
   _AccessibilitySemantics.OP_CODE = 250;
   var AccessibilitySemantics = _AccessibilitySemantics;
-  var _TextInputModifier = class _TextInputModifier extends Operation {
-    constructor(mTextId, mKeyboardType, mImeAction, mFlags, mMaxLength, mFilter, mHintId) {
+
+  // src/core/operations/DataDynamicListFloat.ts
+  var _DataDynamicListFloat = class _DataDynamicListFloat extends Operation {
+    constructor(id, nbValuesBits) {
       super();
+      this.isDynamic = true;
+      this.mId = id;
+      const nbValues = isNaNBits(nbValuesBits) ? NaN : intBitsToFloat(nbValuesBits);
+      if (nbValues > _DataDynamicListFloat.MAX_FLOAT_ARRAY) {
+        throw new Error("Array too large");
+      }
+      this.mValues = new Float32Array(Math.floor(nbValues) || 0);
+      this.mArrayLengthBits = nbValuesBits;
+      this.mArrayLengthOut = nbValues;
+    }
+    updateVariables(context) {
+      if (isNaNBits(this.mArrayLengthBits)) {
+        this.mArrayLengthOut = context.getFloat(idFromBits(this.mArrayLengthBits));
+      }
+      if (Math.floor(this.mArrayLengthOut) !== this.mValues.length) {
+        this.mValues = new Float32Array(Math.floor(this.mArrayLengthOut) || 0);
+      }
+    }
+    registerListening(context) {
+      context.addCollection(this.mId, this);
+      if (isNaNBits(this.mArrayLengthBits)) {
+        context.listensTo(idFromBits(this.mArrayLengthBits), this);
+      }
+    }
+    apply(context) {
+      context.addCollection(this.mId, this);
+    }
+    getFloatValue(index) {
+      return this.mValues[index];
+    }
+    getFloats() {
+      return this.mValues;
+    }
+    getLength() {
+      return this.mValues.length;
+    }
+    updateValues(values) {
+      if (values.length !== this.mValues.length) {
+        this.mValues = new Float32Array(values.length);
+      }
+      this.mValues.set(values);
+    }
+    write(buffer) {
+      buffer.start(_DataDynamicListFloat.OP_CODE);
+      buffer.writeInt(this.mId);
+      buffer.writeFloat(this.mValues.length);
+    }
+    deepToString(indent) {
+      return `${indent}DataDynamicListFloat(id=${this.mId}, len=${this.mValues.length})`;
+    }
+    static read(buffer, operations) {
+      const id = buffer.declareId();
+      const lenBits = buffer.readNanIdBits();
+      const len = isNaNBits(lenBits) ? NaN : intBitsToFloat(lenBits);
+      if (len > _DataDynamicListFloat.MAX_FLOAT_ARRAY) {
+        throw new Error(`${len} entries exceeds max = ${_DataDynamicListFloat.MAX_FLOAT_ARRAY}`);
+      }
+      operations.push(new _DataDynamicListFloat(id, lenBits));
+    }
+  };
+  _DataDynamicListFloat.OP_CODE = 197;
+  _DataDynamicListFloat.MAX_FLOAT_ARRAY = 2e3;
+  var DataDynamicListFloat = _DataDynamicListFloat;
+
+  // src/core/operations/layout/modifiers/LayoutComputeOperation.ts
+  var _LayoutComputeOperation = class _LayoutComputeOperation extends Operation {
+    constructor(type, boundsId, animateChanges) {
+      super();
+      this.mList = [];
+      this.mParent = null;
+      this.mBounds = new Float32Array(6);
+      this.mType = type;
+      this.mBoundsId = boundsId;
+      this.mAnimateChanges = animateChanges;
+    }
+    getList() {
+      return this.mList;
+    }
+    getType() {
+      return this.mType;
+    }
+    setParent(parent) {
+      this.mParent = parent;
+    }
+    registerListening(context) {
+      for (const op of this.mList) {
+        if (typeof op.registerListening === "function") {
+          op.registerListening(context);
+        }
+      }
+    }
+    updateVariables(context) {
+      let needsInvalidate = false;
+      for (const op of this.mList) {
+        if (typeof op.updateVariables === "function" && op.isDirty()) {
+          op.updateVariables(context);
+          context.incrementOpCount(op);
+          op.apply(context);
+          op.markNotDirty();
+          needsInvalidate = true;
+        }
+      }
+      if (needsInvalidate && this.mParent && typeof this.mParent.invalidateMeasure === "function") {
+        this.mParent.invalidateMeasure();
+      }
+    }
+    markDirty() {
+    }
+    /**
+     * Java LayoutComputeOperation.evaluateInLayout: the document calls it before measuring, so
+     * a block whose expressions changed (a position following a variable, with nothing else
+     * changing) invalidates its component's measure and is laid out again. Without it only a
+     * change that invalidated the layout some other way -- a size -- moved the component.
+     */
+    evaluateInLayout(context) {
+      this.updateVariables(context);
+      return false;
+    }
+    apply(_context) {
+    }
+    applyToMeasure(context, m, parent) {
+      const collectionsAccess = context.getContext().getCollectionsAccess();
+      if (!collectionsAccess) return false;
+      const array = collectionsAccess.getArray(this.mBoundsId);
+      if (!array) return false;
+      this.mBounds[0] = m.getX();
+      this.mBounds[1] = m.getY();
+      this.mBounds[2] = m.getW();
+      this.mBounds[3] = m.getH();
+      this.mBounds[4] = parent.getW();
+      this.mBounds[5] = parent.getH();
+      if (array instanceof DataDynamicListFloat) {
+        array.updateValues(this.mBounds);
+      }
+      for (const operation of this.mList) {
+        if (typeof operation.updateVariables === "function" && operation.isDirty()) {
+          operation.updateVariables(context.getContext());
+        }
+        operation.apply(context.getContext());
+      }
+      const bounds = array.getFloats?.() ?? null;
+      if (!bounds) return false;
+      switch (this.mType) {
+        case _LayoutComputeOperation.TYPE_MEASURE:
+          m.setW(bounds[2]);
+          m.setH(bounds[3]);
+          break;
+        case _LayoutComputeOperation.TYPE_POSITION:
+          m.setX(bounds[0]);
+          m.setY(bounds[1]);
+          break;
+        default:
+          m.setX(bounds[0]);
+          m.setY(bounds[1]);
+          m.setW(bounds[2]);
+          m.setH(bounds[3]);
+      }
+      m.setAllowsAnimation(this.mAnimateChanges);
+      const positionChanged = bounds[0] !== this.mBounds[0] || bounds[1] !== this.mBounds[1];
+      const dimensionChanged = bounds[2] !== this.mBounds[2] || bounds[3] !== this.mBounds[3];
+      if (this.mType === _LayoutComputeOperation.TYPE_MEASURE && dimensionChanged) return true;
+      if (this.mType === _LayoutComputeOperation.TYPE_POSITION && positionChanged) return true;
+      return dimensionChanged || positionChanged;
+    }
+    write(buffer) {
+      buffer.start(_LayoutComputeOperation.OP_CODE);
+      buffer.writeInt(this.mType);
+      buffer.writeInt(this.mBoundsId);
+      buffer.writeBoolean(this.mAnimateChanges);
+    }
+    deepToString(indent) {
+      return `${indent}LayoutComputeOperation(type=${this.mType}, boundsId=${this.mBoundsId})`;
+    }
+    static read(buffer, operations) {
+      const type = buffer.readInt();
+      const boundsId = buffer.readId();
+      const animateChanges = buffer.readBoolean();
+      operations.push(new _LayoutComputeOperation(type, boundsId, animateChanges));
+    }
+  };
+  _LayoutComputeOperation.OP_CODE = 238;
+  _LayoutComputeOperation.TYPE_MEASURE = 0;
+  _LayoutComputeOperation.TYPE_POSITION = 1;
+  var LayoutComputeOperation = _LayoutComputeOperation;
+
+  // src/core/operations/layout/LayoutComponentContent.ts
+  var _LayoutComponentContent = class _LayoutComponentContent extends Component {
+    constructor(componentId) {
+      super(componentId);
+    }
+    write(buffer) {
+      buffer.start(_LayoutComponentContent.OP_CODE);
+      buffer.writeInt(this.getComponentId());
+    }
+    apply(_context) {
+    }
+    deepToString(indent) {
+      return `${indent}LayoutComponentContent(${this.getComponentId()})`;
+    }
+    static read(buffer, operations) {
+      const componentId = buffer.declareId();
+      operations.push(new _LayoutComponentContent(componentId));
+    }
+  };
+  _LayoutComponentContent.OP_CODE = 201;
+  var LayoutComponentContent = _LayoutComponentContent;
+
+  // src/core/operations/layout/CanvasContent.ts
+  var _CanvasContent = class _CanvasContent extends Component {
+    constructor(componentId) {
+      super(componentId);
+    }
+    write(buffer) {
+      buffer.start(_CanvasContent.OP_CODE);
+      buffer.writeInt(this.getComponentId());
+    }
+    apply(_context) {
+    }
+    deepToString(indent) {
+      return `${indent}CanvasContent(${this.getComponentId()})`;
+    }
+    static read(buffer, operations) {
+      const componentId = buffer.declareId();
+      operations.push(new _CanvasContent(componentId));
+    }
+  };
+  _CanvasContent.OP_CODE = 207;
+  var CanvasContent = _CanvasContent;
+
+  // src/core/operations/ComponentValue.ts
+  var _ComponentValue = class _ComponentValue extends Operation {
+    constructor(type, componentId, valueId) {
+      super();
+      this.mType = type;
+      this.mComponentId = componentId;
+      this.mValueId = valueId;
+    }
+    getType() {
+      return this.mType;
+    }
+    getComponentId2() {
+      return this.mComponentId;
+    }
+    getValueId() {
+      return this.mValueId;
+    }
+    write(_buffer) {
+    }
+    apply(context) {
+      const doc = context.getDocument();
+      if (!doc) return;
+      const component = doc.getComponent(this.mComponentId);
+      if (!component) {
+        if (this.mType === _ComponentValue.WIDTH) {
+          context.loadFloat(this.mValueId, doc.getWidth());
+        } else if (this.mType === _ComponentValue.HEIGHT) {
+          context.loadFloat(this.mValueId, doc.getHeight());
+        }
+        return;
+      }
+      let lc = component;
+      if (lc.constructor?.OP_CODE === 201) {
+        const parent = lc.getParent?.();
+        if (parent) lc = parent;
+      }
+      if (typeof lc.addComponentValue === "function") lc.addComponentValue(this);
+      switch (this.mType) {
+        case _ComponentValue.WIDTH:
+          context.loadFloat(this.mValueId, lc.getWidth ? lc.getWidth() : doc.getWidth());
+          break;
+        case _ComponentValue.HEIGHT:
+          context.loadFloat(this.mValueId, lc.getHeight ? lc.getHeight() : doc.getHeight());
+          break;
+        case _ComponentValue.POS_X:
+          context.loadFloat(this.mValueId, lc.getX ? lc.getX() : 0);
+          break;
+        case _ComponentValue.POS_Y:
+          context.loadFloat(this.mValueId, lc.getY ? lc.getY() : 0);
+          break;
+        case _ComponentValue.POS_ROOT_X: {
+          const loc = lc.getLocationInWindow ? lc.getLocationInWindow() : [0, 0];
+          context.loadFloat(this.mValueId, loc[0]);
+          break;
+        }
+        case _ComponentValue.POS_ROOT_Y: {
+          const loc = lc.getLocationInWindow ? lc.getLocationInWindow() : [0, 0];
+          context.loadFloat(this.mValueId, loc[1]);
+          break;
+        }
+        case _ComponentValue.CONTENT_WIDTH:
+          context.loadFloat(this.mValueId, lc.getContentWidth ? lc.getContentWidth() : lc.getWidth ? lc.getWidth() : 0);
+          break;
+        case _ComponentValue.CONTENT_HEIGHT:
+          context.loadFloat(this.mValueId, lc.getContentHeight ? lc.getContentHeight() : lc.getHeight ? lc.getHeight() : 0);
+          break;
+        default:
+          context.loadFloat(this.mValueId, 0);
+          break;
+      }
+    }
+    deepToString(indent) {
+      return `${indent}ComponentValue(${this.mType}, ${this.mComponentId}, ${this.mValueId})`;
+    }
+    static read(buffer, operations) {
+      const type = buffer.readInt();
+      const componentId = buffer.readId();
+      const valueId = buffer.readId();
+      operations.push(new _ComponentValue(type, componentId, valueId));
+    }
+  };
+  _ComponentValue.OP_CODE = 150;
+  _ComponentValue.WIDTH = 0;
+  _ComponentValue.HEIGHT = 1;
+  _ComponentValue.POS_X = 2;
+  _ComponentValue.POS_Y = 3;
+  _ComponentValue.POS_ROOT_X = 4;
+  _ComponentValue.POS_ROOT_Y = 5;
+  _ComponentValue.CONTENT_WIDTH = 6;
+  _ComponentValue.CONTENT_HEIGHT = 7;
+  var ComponentValue = _ComponentValue;
+
+  // src/core/operations/layout/LayoutComponent.ts
+  var LayoutComponent = class _LayoutComponent extends Component {
+    constructor() {
+      super(...arguments);
+      // Extracted modifiers
+      this.mWidthMod = null;
+      this.mHeightMod = null;
+      // Min/max constraints reach a component two ways: the older WidthIn/HeightIn ops
+      // (231/232) and DimensionConstraints (243), which is what `requiredWidthIn` and
+      // `requiredHeightIn` compile to. Both expose getMin()/getMax(), and the measure
+      // pass only needs that, so store either.
+      this.mWidthInMod = null;
+      this.mHeightInMod = null;
+      this.mZIndexMod = null;
+      this.mGraphicsLayerMod = null;
+      // Padding
+      this.mPaddingLeft = 0;
+      // Padding declared *before* the size modifier, which is the only padding that adds
+      // to an explicit width/height. The reference walks the modifier list and stops at
+      // the size modifier (LayoutComponent.computeModifierDefinedWidth), so
+      // `.width(200).padding(30)` is 200 wide with 140 of content, while
+      // `.padding(30).width(200)` is 260 wide — exactly Compose's modifier-order rule.
+      this.mPadBeforeWidth = 0;
+      this.mHasWidthOp = false;
+      this.mHasHeightOp = false;
+      this.mPadBeforeHeight = 0;
+      this.mPaddingRight = 0;
+      this.mPaddingTop = 0;
+      this.mPaddingBottom = 0;
+      // Children components extracted during inflate
+      this.mChildrenComponents = [];
+      // Draw content operations (DrawContentModifier pattern)
+      this.mDrawContentOperations = null;
+      // Component modifier operations (non-structural modifiers that need paint)
+      this.mComponentModifiers = [];
+      // Content operations (paint ops from LayoutComponentContent/CanvasContent)
+      this.mContentOps = [];
+      // Has CanvasLayout-style content
+      this.mHasCanvasLayoutContent = false;
+      // Computed layout modifiers (LayoutComputeOperation)
+      this.mComputedLayoutModifiers = null;
+      // ComponentValue bindings (Java ComponentData pattern)
+      // Collected during inflate; updated during measure to expose dimensions as float variables
+      // (The base Component's list, typed: public there because a ComponentValue registers itself.)
+      this.mComponentValues = null;
+      // Scroll measurement state
+      this.mScrollModifier = null;
+      this.mScrollContentDimension = 0;
+      this.mScrollHostDimension = 0;
+      /** The operations at the component's own level (not modifiers, not content): Java's ComponentData in mList. */
+      this.mComponentDataOps = [];
+      this.mDynamicMemo = null;
+    }
+    getWidthModifier() {
+      return this.mWidthMod;
+    }
+    getHeightModifier() {
+      return this.mHeightMod;
+    }
+    getWidthInModifier() {
+      return this.mWidthInMod;
+    }
+    getHeightInModifier() {
+      return this.mHeightInMod;
+    }
+    getScrollModifier() {
+      return this.mScrollModifier;
+    }
+    inflate() {
+      this.mChildrenComponents = [];
+      this.mComponentModifiers = [];
+      this.mContentOps = [];
+      this.mComponentDataOps = [];
+      this.mDynamicMemo = null;
+      this.mPaddingLeft = 0;
+      this.mPaddingRight = 0;
+      this.mPaddingTop = 0;
+      this.mPaddingBottom = 0;
+      this.mPadBeforeWidth = 0;
+      this.mPadBeforeHeight = 0;
+      let sawWidth = false;
+      let sawHeight = false;
+      this.mComputedLayoutModifiers = null;
+      for (const op of this.getList()) {
+        if (op instanceof AnimationSpec) {
+          this.mAnimationSpec = op;
+          this.mAnimationId = op.getAnimationId();
+        }
+        if (op instanceof PaddingModifier) {
+          this.mPaddingLeft += op.mLeftValue;
+          this.mPaddingTop += op.mTopValue;
+          this.mPaddingRight += op.mRightValue;
+          this.mPaddingBottom += op.mBottomValue;
+          if (!sawWidth) this.mPadBeforeWidth += op.mLeftValue + op.mRightValue;
+          if (!sawHeight) this.mPadBeforeHeight += op.mTopValue + op.mBottomValue;
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof WidthModifier) {
+          this.mWidthMod = op;
+          sawWidth = true;
+        } else if (op instanceof HeightModifier) {
+          sawHeight = true;
+          this.mHeightMod = op;
+        } else if (op instanceof WidthInModifier) {
+          this.mWidthInMod = op;
+        } else if (op instanceof HeightInModifier) {
+          this.mHeightInMod = op;
+        } else if (op instanceof DimensionConstraintsModifier) {
+          const t = op.getType();
+          if (t === DimensionConstraintsModifier.HORIZONTAL || t === DimensionConstraintsModifier.REQUIRED_HORIZONTAL) {
+            this.mWidthInMod = op;
+          } else if (t === DimensionConstraintsModifier.VERTICAL || t === DimensionConstraintsModifier.REQUIRED_VERTICAL) {
+            this.mHeightInMod = op;
+          }
+        } else if (op instanceof ZIndexModifier) {
+          this.mZIndexMod = op;
+          this.mZIndex = op.mValue ?? 0;
+        } else if (op instanceof GraphicsLayerModifier) {
+          this.mGraphicsLayerMod = op;
+        } else if (op instanceof VisibilityModifier) {
+          op.setParent(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof BackgroundModifier) {
+          op.setComponent(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof BorderModifier) {
+          op.setComponent(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof RoundedClipRectModifier) {
+          op.setComponent(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof ClipRectModifier) {
+          op.setComponent(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof OffsetModifier) {
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof ClickModifier || op instanceof MultiClickModifier) {
+          op.setComponent(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof TouchDownModifier || op instanceof TouchUpModifier || op instanceof TouchCancelModifier) {
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof ScrollModifier) {
+          this.mScrollModifier = op;
+          op.inflate(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof MarqueeModifier) {
+          op.setComponent(this);
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof RippleModifier) {
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof AccessibilitySemantics) {
+          this.mComponentModifiers.push(op);
+        } else if (op instanceof LayoutComputeOperation) {
+          if (this.mComputedLayoutModifiers === null) {
+            this.mComputedLayoutModifiers = [];
+          }
+          op.setParent(this);
+          this.mComputedLayoutModifiers.push(op);
+        } else if (op instanceof DrawContentModifier) {
+          this.mDrawContentOperations = [];
+        } else if (op instanceof LayoutComponentContent || op instanceof CanvasContent) {
+          if (op instanceof LayoutComponentContent) op.setParent(this);
+          for (const contentOp of op.getList()) {
+            if (contentOp instanceof Component) {
+              contentOp.setParent(this);
+              this.mChildrenComponents.push(contentOp);
+              contentOp.inflate();
+              if (contentOp instanceof CanvasContent) {
+                this.mHasCanvasLayoutContent = true;
+              }
+            } else if (contentOp instanceof ComponentValue) {
+              if (this.mComponentValues === null) {
+                this.mComponentValues = [];
+              }
+              this.mComponentValues.push(contentOp);
+            } else {
+              if (typeof contentOp.setComponent === "function") {
+                contentOp.setComponent(this);
+              }
+              this.mContentOps.push(contentOp);
+            }
+          }
+          if (op instanceof CanvasContent) {
+            this.mHasCanvasLayoutContent = true;
+          }
+        } else if (op instanceof Component) {
+          op.setParent(this);
+          this.mChildrenComponents.push(op);
+          op.inflate();
+        } else {
+          this.mComponentDataOps.push(op);
+          if (this.mDrawContentOperations !== null) {
+            this.mDrawContentOperations.push(op);
+          } else {
+            this.mContentOps.push(op);
+          }
+        }
+      }
+      this.mHasWidthOp = sawWidth;
+      this.mHasHeightOp = sawHeight;
+      if (!this.mWidthMod) {
+        this.mWidthMod = new WidthModifier(WidthModifier.WRAP, 0);
+      }
+      if (!this.mHeightMod) {
+        this.mHeightMod = new HeightModifier(HeightModifier.WRAP, 0);
+      }
+      if (this.mAnimationSpec !== AnimationSpec.DEFAULT) {
+        for (const c of this.mChildrenComponents) {
+          if (c.mAnimationSpec === AnimationSpec.DEFAULT) c.mAnimationSpec = this.mAnimationSpec;
+        }
+      }
+      this.mX = 0;
+      this.mY = 0;
+      this.mWidth = this.modifierDefinedWidth(true);
+      this.mHeight = this.modifierDefinedHeight(true);
+    }
+    // --- Layout helpers ---
+    isWidthFill() {
+      return this.mWidthMod?.getType() === WidthModifier.FILL;
+    }
+    isHeightFill() {
+      return this.mHeightMod?.getType() === HeightModifier.FILL;
+    }
+    isWidthWrap() {
+      return this.mWidthMod?.getType() === WidthModifier.WRAP;
+    }
+    isHeightWrap() {
+      return this.mHeightMod?.getType() === HeightModifier.WRAP;
+    }
+    isWidthExact() {
+      const t = this.mWidthMod?.getType();
+      return t === WidthModifier.EXACT || t === WidthModifier.EXACT_DP;
+    }
+    isHeightExact() {
+      const t = this.mHeightMod?.getType();
+      return t === HeightModifier.EXACT || t === HeightModifier.EXACT_DP;
+    }
+    hasWidthWeight() {
+      return this.mWidthMod?.getType() === WidthModifier.WEIGHT;
+    }
+    hasHeightWeight() {
+      return this.mHeightMod?.getType() === HeightModifier.WEIGHT;
+    }
+    getWidthModValue() {
+      return this.mWidthMod?.getValue() ?? 0;
+    }
+    getHeightModValue() {
+      return this.mHeightMod?.getValue() ?? 0;
+    }
+    hasComputedLayout() {
+      return this.mComputedLayoutModifiers !== null;
+    }
+    hasDynamicComputes() {
+      if (this.mDynamicMemo !== null) return this.mDynamicMemo;
+      let dynamic = false;
+      for (const op of this.mComponentDataOps) {
+        if (op instanceof Component) continue;
+        if (op instanceof ComponentValue) continue;
+        if (typeof op.updateVariables === "function") {
+          dynamic = true;
+          break;
+        }
+      }
+      if (!dynamic) for (const c of this.mChildrenComponents) {
+        if (c.isVariableSupportComponent()) {
+          dynamic = true;
+          break;
+        }
+      }
+      this.mDynamicMemo = dynamic;
+      return dynamic;
+    }
+    childComponentsForCache() {
+      return this.mChildrenComponents;
+    }
+    applyComputedLayout(type, context, m, parent) {
+      if (this.mComputedLayoutModifiers !== null) {
+        let needsMeasure = false;
+        for (const modifier of this.mComputedLayoutModifiers) {
+          if (modifier.getType() === type) {
+            needsMeasure = modifier.applyToMeasure(context, m, parent) || needsMeasure;
+          }
+        }
+        return needsMeasure;
+      }
+      return false;
+    }
+    // --- Intrinsic size (matches Java LayoutComponent) ---
+    // Java LayoutManager.minIntrinsicHeight/Width: the modifier-defined size (isMin) or
+    // the largest child, whichever is bigger.
+    minIntrinsicHeight() {
+      let height = this.modifierDefinedHeight(true);
+      for (const c of this.mChildrenComponents) {
+        height = Math.max(height, c.minIntrinsicHeight());
+      }
+      return height;
+    }
+    minIntrinsicWidth() {
+      let width = this.modifierDefinedWidth(true);
+      for (const c of this.mChildrenComponents) {
+        width = Math.max(width, c.minIntrinsicWidth());
+      }
+      return width;
+    }
+    /**
+     * Java LayoutComponent.computeModifierDefinedWidth(context, isMin): the padding met
+     * before the width modifier, plus its exact value (a fill is 0 when isMin, else
+     * unbounded), raised to its widthIn minimum.
+     */
+    modifierDefinedWidth(isMin = false) {
+      let w = 0;
+      const t = this.mWidthMod?.getType();
+      if (this.mWidthMod && this.mHasWidthOp) {
+        if (t === WidthModifier.EXACT || t === WidthModifier.EXACT_DP) {
+          w = this.mWidthMod.getValue();
+        } else if (t === WidthModifier.FILL || t === WidthModifier.FILL_PARENT_MAX_WIDTH) {
+          w = isMin ? 0 : Number.MAX_VALUE;
+        }
+        const wIn = this.mWidthInMod;
+        if (wIn && wIn.getMin() >= 0) w = Math.max(w, wIn.getMin());
+      }
+      return this.mPadBeforeWidth + w;
+    }
+    /** Java LayoutComponent.computeModifierDefinedHeight(context, isMin). */
+    modifierDefinedHeight(isMin = false) {
+      let h = 0;
+      const t = this.mHeightMod?.getType();
+      if (this.mHeightMod && this.mHasHeightOp) {
+        if (t === HeightModifier.EXACT || t === HeightModifier.EXACT_DP) {
+          h = this.mHeightMod.getValue();
+        } else if (t === HeightModifier.FILL || t === HeightModifier.FILL_PARENT_MAX_HEIGHT) {
+          h = isMin ? 0 : Number.MAX_VALUE;
+        }
+        const hIn = this.mHeightInMod;
+        if (hIn && hIn.getMin() >= 0) h = Math.max(h, hIn.getMin());
+      }
+      return this.mPadBeforeHeight + h;
+    }
+    computeModifierDefinedWidth() {
+      if (this.isWidthExact()) return this.getWidthModValue() + this.mPaddingLeft + this.mPaddingRight;
+      return -1;
+    }
+    computeModifierDefinedHeight() {
+      if (this.isHeightExact()) return this.getHeightModValue() + this.mPaddingTop + this.mPaddingBottom;
+      return -1;
+    }
+    // --- ComponentValue (Java ComponentData pattern) ---
+    /** Update bound float variables with this component's dimensions/position.
+     *  Matches Java Component.updateComponentValues — called during both measure
+     *  (for WIDTH/HEIGHT) and layout (for all types including POS_X/POS_Y). */
+    updateComponentValues(context, measuredW, measuredH) {
+      if (this.mComponentValues === null) return;
+      for (const cv of this.mComponentValues) {
+        switch (cv.getType()) {
+          case ComponentValue.WIDTH:
+            context.loadFloat(cv.getValueId(), measuredW);
+            break;
+          case ComponentValue.HEIGHT:
+            context.loadFloat(cv.getValueId(), measuredH);
+            break;
+          case ComponentValue.POS_X:
+            context.loadFloat(cv.getValueId(), this.mX);
+            break;
+          case ComponentValue.POS_Y:
+            context.loadFloat(cv.getValueId(), this.mY);
+            break;
+          case ComponentValue.POS_ROOT_X: {
+            const loc = this.getLocationInWindow();
+            context.loadFloat(cv.getValueId(), loc[0]);
+            break;
+          }
+          case ComponentValue.POS_ROOT_Y: {
+            const loc = this.getLocationInWindow();
+            context.loadFloat(cv.getValueId(), loc[1]);
+            break;
+          }
+          case ComponentValue.CONTENT_WIDTH:
+            context.loadFloat(cv.getValueId(), measuredW - this.mPaddingLeft - this.mPaddingRight);
+            break;
+          case ComponentValue.CONTENT_HEIGHT:
+            context.loadFloat(cv.getValueId(), measuredH - this.mPaddingTop - this.mPaddingBottom);
+            break;
+        }
+      }
+    }
+    // --- Layout ---
+    layout(context, measure) {
+      super.layout(context, measure);
+      this.updateComponentValues(context, this.mWidth, this.mHeight);
+      for (const child of this.mChildrenComponents) {
+        child.layout(context, measure);
+      }
+      this.mNeedsMeasure = false;
+    }
+    animatingBounds(context) {
+      super.animatingBounds(context);
+      this.updateComponentValues(context, this.mWidth, this.mHeight);
+      this.layoutModifiers(this.mWidth, this.mHeight);
+    }
+    /** Walk modifiers reducing dimensions by padding and passing to decorators.
+     *  Matches Java ComponentModifiers.layout(). */
+    layoutModifiers(w, h) {
+      let currentW = w;
+      let currentH = h;
+      for (const mod of this.mComponentModifiers) {
+        if (mod instanceof PaddingModifier) {
+          currentW -= mod.mLeftValue + mod.mRightValue;
+          currentH -= mod.mTopValue + mod.mBottomValue;
+        }
+        if (typeof mod.layoutDecorator === "function") {
+          mod.layoutDecorator(currentW, currentH);
+        }
+      }
+    }
+    // --- Paint ---
+    drawContent(paintContext) {
+      paintContext.matrixSave();
+      paintContext.matrixTranslate(-this.mX, -this.mY);
+      this.paintingComponent(paintContext);
+      paintContext.matrixRestore();
+    }
+    paint(paintContext) {
+      if (this.applyAnimationAsNeeded(paintContext)) {
+        return;
+      }
+      if (Visibility.isGone(this.mVisibility)) return;
+      if (Visibility.isInvisible(this.mVisibility)) return;
+      if (this.mDrawContentOperations !== null && this.mDrawContentOperations.length > 0) {
+        paintContext.matrixSave();
+        paintContext.matrixTranslate(this.mX, this.mY);
+        const context = paintContext.getContext();
+        for (const op of this.mDrawContentOperations) {
+          context.incrementOpCount(op);
+          if (op.isDirty() && typeof op.updateVariables === "function") {
+            op.markNotDirty();
+            op.updateVariables(context);
+          }
+          op.apply(context);
+        }
+        paintContext.matrixRestore();
+      } else {
+        this.paintLayered(paintContext);
+      }
+    }
+    /**
+     * paintingComponent inside the graphicsLayer, if any. Java LayoutComponent / CoreText
+     * paintingComponent: at the component's origin, startGraphicsLayer(w, h), hand it the
+     * non-default attributes (fillInAttributes -> setGraphicsLayer), paint modifiers, content
+     * and children into it, then endGraphicsLayer composites it with alpha, scale, rotation
+     * and translation. Java evaluates the attribute values in the modifier's paint(), after
+     * fillInAttributes, so a variable shows a frame late; evaluating first gives the same
+     * values without that lag. A layout animation (AnimateMeasure.paint) paints through here
+     * too, as Java's does through paintingComponent: it painted without the layer, so a
+     * screen fading in while it slid (translationX) showed in place, see-through (CMP-76).
+     */
+    paintLayered(paintContext) {
+      if (!this.mGraphicsLayerMod) {
+        this.paintingComponent(paintContext);
+        return;
+      }
+      const layer = this.mGraphicsLayerMod;
+      layer.evaluate(paintContext);
+      paintContext.matrixSave();
+      paintContext.matrixTranslate(this.mX, this.mY);
+      paintContext.startGraphicsLayer(Math.trunc(this.getWidth()), Math.trunc(this.getHeight()));
+      const attributes = /* @__PURE__ */ new Map();
+      layer.fillInAttributes(attributes);
+      paintContext.setGraphicsLayer(attributes);
+      paintContext.matrixTranslate(-this.mX, -this.mY);
+      this.paintingComponent(paintContext);
+      paintContext.endGraphicsLayer();
+      paintContext.matrixRestore();
+    }
+    /**
+     * Java ComponentModifiers.paint: paint the modifiers (background, border, clip, ...) at
+     * the component's origin, each padding translating the ones after it; the translations
+     * are backed out at the end. Every component kind runs it from its paintingComponent
+     * (LayoutComponent, CoreText, TextLayout, ImageLayout, Custom in Java).
+     */
+    paintModifiers(paintContext) {
+      const context = paintContext.getContext();
+      let tx = 0;
+      let ty = 0;
+      for (const mod of [this.mWidthMod, this.mHeightMod]) {
+        if (mod && mod.isDirty()) {
+          mod.markNotDirty();
+          mod.updateVariables(context);
+        }
+      }
+      let dw = this.mWidth;
+      let dh = this.mHeight;
+      for (const mod of this.mComponentModifiers) {
+        context.incrementOpCount(mod);
+        if (mod.isDirty() && typeof mod.updateVariables === "function") {
+          mod.markNotDirty();
+          mod.updateVariables(context);
+        }
+        if (mod instanceof PaddingModifier) {
+          paintContext.matrixTranslate(mod.mLeftValue, mod.mTopValue);
+          tx += mod.mLeftValue;
+          ty += mod.mTopValue;
+          dw -= mod.mLeftValue + mod.mRightValue;
+          dh -= mod.mTopValue + mod.mBottomValue;
+        } else if (mod instanceof ClickModifier || mod instanceof MultiClickModifier) {
+          paintContext.matrixTranslate(-tx, -ty);
+          mod.ripple.paint(paintContext, context, this.mWidth, this.mHeight);
+          paintContext.matrixTranslate(tx, ty);
+        } else if (mod instanceof RippleModifier) {
+          mod.ripple.paint(paintContext, context, dw, dh);
+        } else {
+          mod.apply(context);
+        }
+      }
+      paintContext.matrixTranslate(-tx, -ty);
+    }
+    paintingComponent(paintContext) {
+      if (Visibility.isGone(this.mVisibility) && this.mAnimateMeasure === null) return;
+      const context = paintContext.getContext();
+      paintContext.matrixSave();
+      paintContext.matrixTranslate(this.mX, this.mY);
+      this.paintModifiers(paintContext);
+      paintContext.matrixTranslate(this.mPaddingLeft, this.mPaddingTop);
+      for (const op of this.mContentOps) {
+        context.incrementOpCount(op);
+        if (op.isDirty() && typeof op.updateVariables === "function") {
+          op.markNotDirty();
+          op.updateVariables(context);
+        }
+        op.apply(context);
+      }
+      const children = this.mChildrenComponents;
+      const shouldPaintChild = (child) => {
+        return (child.mAnimateMeasure !== null || !Visibility.isGone(child.mVisibility)) && this.isChildVisibleInViewport(child);
+      };
+      const paintChild = (child) => {
+        if (child.isDirty() && typeof child.updateVariables === "function") {
+          child.updateVariables(context);
+          child.markNotDirty();
+        }
+        if (shouldPaintChild(child)) {
+          context.incrementOpCount(child);
+          child.paint(paintContext);
+        }
+      };
+      if (children.length > 1) {
+        let needsSort = false;
+        for (const c of children) {
+          if (c.mZIndex !== 0) {
+            needsSort = true;
+            break;
+          }
+        }
+        if (needsSort) {
+          const sorted = [...children].sort((a, b) => a.mZIndex - b.mZIndex);
+          for (const child of sorted) {
+            paintChild(child);
+          }
+        } else {
+          for (const child of children) {
+            paintChild(child);
+          }
+        }
+      } else {
+        for (const child of children) {
+          paintChild(child);
+        }
+      }
+      paintContext.matrixRestore();
+    }
+    /**
+     * Whether a child of a scrolling component can show at all, to skip painting the rest (an
+     * optimisation of ours: the reference paints every child and lets the clip cut them).
+     * The clip is the component's whole box, and a padding after the scroll modifier belongs
+     * to the scrolled content (room at the end of a list, under a floating button), so the
+     * window counts the whole height, widened by the paddings on both sides: a row partly in
+     * view is painted and clipped. Too wide only paints a little more; too narrow drops rows.
+     */
+    isChildVisibleInViewport(child) {
+      const scrollMod = this.mScrollModifier;
+      if (!scrollMod) return true;
+      const childX = child.getX();
+      const childY = child.getY();
+      const childW = child.getWidth();
+      const childH = child.getHeight();
+      if (childW <= 0 && childH <= 0) return true;
+      if (scrollMod.isVertical()) {
+        if (this.mHeight <= 0) return true;
+        const scrollY = scrollMod.getScrollY();
+        const viewportTop = -scrollY - this.mPaddingTop - this.mPaddingBottom;
+        const viewportBottom = -scrollY + this.mHeight;
+        if (childY + childH < viewportTop || childY > viewportBottom) {
+          return false;
+        }
+      } else {
+        if (this.mWidth <= 0) return true;
+        const scrollX = scrollMod.getScrollX();
+        const viewportLeft = -scrollX - this.mPaddingLeft - this.mPaddingRight;
+        const viewportRight = -scrollX + this.mWidth;
+        if (childX + childW < viewportLeft || childX > viewportRight) {
+          return false;
+        }
+      }
+      return true;
+    }
+    /** Matches Java Component.updateVariables — re-push dimension/position values
+     *  when a component is marked dirty (e.g. by animation or expression change). */
+    updateVariables(context) {
+      if (this.mComponentValues !== null && this.mComponentValues.length > 0) {
+        this.updateComponentValues(context, this.mWidth, this.mHeight);
+      }
+      this.updatePadding();
+    }
+    /**
+     * Java LayoutComponent.updatePadding: re-sum the padding from the modifiers' resolved
+     * values. inflate() sums them once, before the data pass has run the modifiers'
+     * updateVariables, so a padding that resolves later (a variable, or a literal scaled by
+     * DENSITY_BEHAVIOR_DP) was left at its authored value.
+     */
+    updatePadding() {
+      this.mPaddingLeft = 0;
+      this.mPaddingTop = 0;
+      this.mPaddingRight = 0;
+      this.mPaddingBottom = 0;
+      this.mPadBeforeWidth = 0;
+      this.mPadBeforeHeight = 0;
+      let sawWidth = false;
+      let sawHeight = false;
+      for (const op of this.getList()) {
+        if (op instanceof PaddingModifier) {
+          this.mPaddingLeft += op.mLeftValue;
+          this.mPaddingTop += op.mTopValue;
+          this.mPaddingRight += op.mRightValue;
+          this.mPaddingBottom += op.mBottomValue;
+          if (!sawWidth) this.mPadBeforeWidth += op.mLeftValue + op.mRightValue;
+          if (!sawHeight) this.mPadBeforeHeight += op.mTopValue + op.mBottomValue;
+        } else if (op instanceof WidthModifier) {
+          sawWidth = true;
+        } else if (op instanceof HeightModifier) {
+          sawHeight = true;
+        }
+      }
+    }
+    // Inherits apply() from Component → PaintOperation chain.
+    // No override needed — matches Java LayoutComponent which does not override apply().
+    // --- Scroll ---
+    getScrollX() {
+      return this.mScrollModifier ? this.mScrollModifier.getScrollX() : 0;
+    }
+    getScrollY() {
+      return this.mScrollModifier ? this.mScrollModifier.getScrollY() : 0;
+    }
+    onClick(context, doc, x, y) {
+      if (!this.isVisible()) return false;
+      if (!(x >= this.mX && x <= this.mX + this.mWidth && y >= this.mY && y <= this.mY + this.mHeight)) return false;
+      const cx = x - this.mX - this.mPaddingLeft - this.getScrollX();
+      const cy = y - this.mY - this.mPaddingTop - this.getScrollY();
+      for (let i = this.mChildrenComponents.length - 1; i >= 0; i--) {
+        const child = this.mChildrenComponents[i];
+        if (child instanceof Component) {
+          if (child.onClick(context, doc, cx, cy)) return true;
+        }
+      }
+      {
+        let handled = false;
+        for (let i = this.mComponentModifiers.length - 1; i >= 0; i--) {
+          const mod = this.mComponentModifiers[i];
+          if (mod instanceof ClickModifier || mod instanceof MultiClickModifier) {
+            if (mod.onClick(context, doc, x - this.mX, y - this.mY)) handled = true;
+          }
+        }
+        return handled;
+      }
+      return false;
+    }
+    /**
+     * Touch dispatch, ported from `Component.onTouchDown` in the reference.
+     *
+     * This class has to override the base implementation because the base walks `mChildren`
+     * — the raw operation list — while a layout component keeps its children in
+     * `mChildrenComponents`. That divergence is what broke drag: `onTouchDown` was
+     * overridden and found the children, `onTouchDrag`/`Up`/`Cancel` were inherited and
+     * walked a list that, for a ColumnLayout with 12 children, holds 6 unrelated ops. Down
+     * worked and nothing after it did.
+     *
+     * Three rules come from the reference and all three matter:
+     *
+     *  - **Children receive window coordinates**, not content-relative ones. The previous
+     *    code subtracted this component's origin before recursing, so every level of
+     *    nesting shifted the hit test further off; only `getLocationInWindow` knows the
+     *    real offset, and `contains` already works in window space.
+     *  - **Iterate backwards and let the first component win.** The top-most component
+     *    under the finger captures the gesture; without this, several overlapping
+     *    components all captured the same press and then all received the drags.
+     *  - **`force` skips the bounds test.** This is what locks a drag to the component the
+     *    press landed in: `CoreDocument` only forwards drag/up to components that captured
+     *    the press, and passes force, so they keep receiving events after the finger has
+     *    moved outside them.
+     */
+    onTouchDown(context, doc, x, y) {
+      if (!this.contains(x, y)) return false;
+      return this.dispatchTouch(context, doc, x, y, 0, 0, true, "down");
+    }
+    onTouchDrag(context, doc, x, y, force) {
+      if (!force && !this.contains(x, y)) return false;
+      return this.dispatchTouch(context, doc, x, y, 0, 0, force, "drag");
+    }
+    onTouchUp(context, doc, x, y, dx, dy, force) {
+      if (!force && !this.contains(x, y)) return false;
+      return this.dispatchTouch(context, doc, x, y, dx, dy, force, "up");
+    }
+    onTouchCancel(context, doc, x, y, force) {
+      if (!force && !this.contains(x, y)) return false;
+      return this.dispatchTouch(context, doc, x, y, 0, 0, force, "cancel");
+    }
+    /**
+     * The shared body of all four, mirroring the reference's single loop.
+     *
+     * The reference keeps components, touch handlers and touch expressions in one list and
+     * switches on type; here they live in three collections, so the loop is unrolled but
+     * the order and the coordinate spaces are the same: children first (window coords),
+     * then this component's own consumers (local coords).
+     */
+    dispatchTouch(context, doc, x, y, dx, dy, force, phase) {
+      const loc = this.getLocationInWindow();
+      const lx = x - loc[0];
+      const ly = y - loc[1];
+      let handled = false;
+      let componentHandled = false;
+      for (let i = this.mChildrenComponents.length - 1; i >= 0; i--) {
+        const child = this.mChildrenComponents[i];
+        if (!(child instanceof _LayoutComponent)) continue;
+        if (componentHandled) continue;
+        const took = phase === "down" ? child.onTouchDown(context, doc, x, y) : phase === "drag" ? child.onTouchDrag(context, doc, x, y, force) : phase === "up" ? child.onTouchUp(context, doc, x, y, dx, dy, force) : child.onTouchCancel(context, doc, x, y, force);
+        if (took) componentHandled = true;
+      }
+      for (const op of this.mContentOps) {
+        if (op instanceof TouchExpression) {
+          if (this.deliverToExpression(op, context, lx, ly, dx, dy, phase)) {
+            if (phase === "down") doc.appliedTouchOperation(this);
+            handled = true;
+          }
+        }
+      }
+      for (const child of this.mChildrenComponents) {
+        if (!(child instanceof _LayoutComponent)) {
+          if (this.dispatchToOps(child.getList(), context, doc, lx, ly, dx, dy, phase)) {
+            handled = true;
+          }
+        }
+      }
+      for (const mod of this.mComponentModifiers) {
+        if (phase === "down" && mod instanceof RippleModifier) {
+          mod.ripple.animate(context, lx, ly);
+          handled = true;
+        } else if (phase === "down" && mod instanceof TouchDownModifier) {
+          mod.onTouchDown(context);
+          handled = true;
+        } else if (phase === "down" && (mod instanceof TouchUpModifier || mod instanceof TouchCancelModifier)) {
+          doc.modifierTouchTarget?.(this);
+          handled = true;
+        } else if (phase === "up" && mod instanceof TouchUpModifier) {
+          mod.onTouchUp(context);
+          doc.touchModifierRan?.(this);
+          handled = true;
+        } else if (phase === "cancel" && mod instanceof TouchCancelModifier) {
+          mod.onTouchCancel(context);
+          doc.touchModifierRan?.(this);
+          handled = true;
+        }
+      }
+      if (this.mScrollModifier) {
+        if (phase === "down") {
+          this.mScrollModifier.onTouchDown(context, lx, ly);
+          doc.appliedTouchOperation(this);
+          handled = true;
+        } else if (phase === "drag") {
+          if (this.mScrollModifier.onTouchDrag(context, lx, ly)) {
+            handled = true;
+          }
+        } else if (phase === "up") {
+          if (this.mScrollModifier.onTouchUp(context, lx, ly, dx, dy)) {
+            handled = true;
+          }
+        } else if (this.mScrollModifier.onTouchCancel(context, lx, ly)) {
+          handled = true;
+        }
+      }
+      return componentHandled || handled;
+    }
+    /** This component's own touch-up / touch-cancel modifier actions (a swipe's release). */
+    runOwnTouchModifiers(context, phase) {
+      for (const mod of this.mComponentModifiers) {
+        if (phase === "up" && mod instanceof TouchUpModifier) mod.onTouchUp(context);
+        else if (phase === "cancel" && mod instanceof TouchCancelModifier) mod.onTouchCancel(context);
+      }
+    }
+    /** One touch phase on a single expression. Only `down` is bounds-checked, as upstream. */
+    deliverToExpression(op, context, lx, ly, dx, dy, phase) {
+      op.updateVariables(context);
+      if (phase === "down") {
+        op.touchDown(context, lx, ly);
+      } else if (phase === "drag") {
+        op.touchDrag(context, lx, ly);
+      } else if (phase === "up") {
+        op.touchUp(context, lx, ly, dx, dy);
+      } else {
+        op.touchUp(context, lx, ly, 0, 0);
+      }
+      return true;
+    }
+    /** Recurse into a non-layout child's operations looking for touch expressions. */
+    dispatchToOps(ops, context, doc, lx, ly, dx, dy, phase) {
+      let handled = false;
+      for (const op of ops) {
+        if (op instanceof TouchExpression) {
+          this.deliverToExpression(op, context, lx, ly, dx, dy, phase);
+          if (phase === "down") doc.appliedTouchOperation(this);
+          handled = true;
+        } else if (typeof op.getList === "function") {
+          if (this.dispatchToOps(
+            op.getList(),
+            context,
+            doc,
+            lx,
+            ly,
+            dx,
+            dy,
+            phase
+          )) {
+            handled = true;
+          }
+        }
+      }
+      return handled;
+    }
+    /** Recursively search operation list for TouchExpression and dispatch touchDown */
+    dispatchTouchDownToOps(ops, context, doc, lx, ly) {
+      let handled = false;
+      for (const op of ops) {
+        if (op instanceof TouchExpression) {
+          op.updateVariables(context);
+          op.touchDown(context, lx, ly);
+          doc.appliedTouchOperation(this);
+          handled = true;
+        } else if (typeof op.getList === "function") {
+          handled = this.dispatchTouchDownToOps(op.getList(), context, doc, lx, ly) || handled;
+        }
+      }
+      return handled;
+    }
+    getLocationInWindow() {
+      let x = this.mX + this.mPaddingLeft;
+      let y = this.mY + this.mPaddingTop;
+      let parent = this.getParent();
+      while (parent) {
+        x += parent.mX;
+        y += parent.mY;
+        if (parent instanceof _LayoutComponent) {
+          x += parent.mPaddingLeft + parent.getScrollX();
+          y += parent.mPaddingTop + parent.getScrollY();
+        }
+        parent = parent.getParent();
+      }
+      return [x, y];
+    }
+  };
+
+  // src/core/operations/layout/measure/Size.ts
+  var Size = class {
+    constructor(width = 0, height = 0) {
+      this.mWidth = width;
+      this.mHeight = height;
+    }
+    getWidth() {
+      return this.mWidth;
+    }
+    setWidth(value) {
+      this.mWidth = value;
+    }
+    getHeight() {
+      return this.mHeight;
+    }
+    setHeight(value) {
+      this.mHeight = value;
+    }
+    clear() {
+      this.mWidth = 0;
+      this.mHeight = 0;
+    }
+  };
+
+  // src/core/operations/layout/managers/LayoutManager.ts
+  var LayoutManager = class extends LayoutComponent {
+    constructor() {
+      super(...arguments);
+      this.mCachedWrapSize = new Size();
+    }
+    /**
+     * Java LayoutManager.measure, with its measure cache (CoreDocument OPTIMIZATION_MEASURE_CACHE
+     * and OPTIMIZATION_CONSTRAINTS_CACHE, both on by default): a component that does not need
+     * measuring, reads no variables in its own list (hasDynamicComputes), has no descendant
+     * with a computed layout, and is asked again with the constraints it was measured with in
+     * this pass (or with its measured size as the fixed size on one axis) keeps its result.
+     * Without it a flow measures each child four times per pass and nested flows multiply.
+     */
+    measure(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
+      const m = measure.get(this);
+      const doc = context.getContext()?.getDocument?.() ?? null;
+      if (doc && doc.isConstraintsCacheEnabled() && doc.isMeasureCacheEnabled() && !this.hasDynamicComputes() && !this.hasChildWithComputedLayout() && !this.hasDirtyModifier() && m.hasCachedConstraints(minWidth, maxWidth, minHeight, maxHeight)) {
+        return;
+      }
+      this.measureUncached(context, minWidth, maxWidth, minHeight, maxHeight, measure);
+      m.setCachedConstraints(minWidth, maxWidth, minHeight, maxHeight);
+    }
+    /**
+     * A modifier of this component waiting to be re-evaluated (its variable changed): the
+     * measure would come out differently. Java re-evaluates them before the layout pass;
+     * here a size bound to an expression its parent re-evaluates in its own measure
+     * (componentWidth() of the parent) is picked up during the pass, by the measure that
+     * finds it dirty, so a cached result from earlier in the pass would be stale.
+     */
+    hasDirtyModifier() {
+      for (const mod of [this.getWidthModifier(), this.getHeightModifier(), this.getWidthInModifier(), this.getHeightInModifier()]) {
+        if (mod && mod.isDirty?.()) return true;
+      }
+      for (const mod of this.mComponentModifiers) if (mod.isDirty?.()) return true;
+      return false;
+    }
+    measureUncached(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
+      this.updatePadding();
+      const selfMeasure = measure.get(this);
+      const padding_w = this.mPaddingLeft + this.mPaddingRight;
+      const padding_h = this.mPaddingTop + this.mPaddingBottom;
+      const wMod = this.getWidthModifier();
+      const hMod = this.getHeightModifier();
+      for (const mod of [wMod, hMod]) {
+        if (mod && mod.isDirty()) {
+          mod.markNotDirty();
+          mod.updateVariables(context.getContext());
+        }
+      }
+      {
+        const wIn = this.getWidthInModifier();
+        if (wIn) {
+          if (wIn.getMin() >= 0) minWidth = Math.max(minWidth, wIn.getMin());
+          if (wIn.getMax() >= 0) maxWidth = Math.min(maxWidth, wIn.getMax());
+        }
+        const hIn = this.getHeightInModifier();
+        if (hIn) {
+          if (hIn.getMin() >= 0) minHeight = Math.max(minHeight, hIn.getMin());
+          if (hIn.getMax() >= 0) maxHeight = Math.min(maxHeight, hIn.getMax());
+        }
+      }
+      const [weightFillW, weightFillH] = this.weightFill();
+      let w;
+      if (weightFillW && wMod?.getType() !== WidthModifier.FILL) {
+        w = maxWidth;
+      } else if (wMod && (wMod.getType() === WidthModifier.EXACT || wMod.getType() === WidthModifier.EXACT_DP)) {
+        w = Math.min(wMod.getValue() + this.mPadBeforeWidth, maxWidth);
+      } else if (wMod && wMod.getType() === WidthModifier.FILL) {
+        w = wMod.hasFraction() ? maxWidth * wMod.getValue() : maxWidth;
+      } else if (wMod && wMod.getType() === WidthModifier.WEIGHT) {
+        w = Math.max(this.mPadBeforeWidth, minWidth);
+      } else {
+        w = maxWidth;
+      }
+      let h;
+      if (weightFillH && hMod?.getType() !== HeightModifier.FILL) {
+        h = maxHeight;
+      } else if (hMod && (hMod.getType() === HeightModifier.EXACT || hMod.getType() === HeightModifier.EXACT_DP)) {
+        h = Math.min(hMod.getValue() + this.mPadBeforeHeight, maxHeight);
+      } else if (hMod && hMod.getType() === HeightModifier.FILL) {
+        h = hMod.hasFraction() ? maxHeight * hMod.getValue() : maxHeight;
+      } else if (hMod && hMod.getType() === HeightModifier.WEIGHT) {
+        h = Math.max(this.mPadBeforeHeight, minHeight);
+      } else {
+        h = maxHeight;
+      }
+      selfMeasure.setW(w);
+      selfMeasure.setH(h);
+      const horizontalWrap = !weightFillW && wMod?.getType() === WidthModifier.WRAP;
+      const verticalWrap = !weightFillH && hMod?.getType() === HeightModifier.WRAP;
+      if (horizontalWrap || verticalWrap) {
+        this.mCachedWrapSize.clear();
+        const weightW = wMod?.getType() === WidthModifier.WEIGHT;
+        const weightH = hMod?.getType() === HeightModifier.WEIGHT;
+        const childMaxW = (horizontalWrap || weightW ? maxWidth : w) - padding_w;
+        const childMaxH = (verticalWrap || weightH ? maxHeight : h) - padding_h;
+        this.computeWrapSize(
+          context,
+          minWidth,
+          childMaxW,
+          minHeight,
+          childMaxH,
+          horizontalWrap,
+          verticalWrap,
+          measure,
+          this.mCachedWrapSize
+        );
+        if (horizontalWrap) {
+          w = this.mCachedWrapSize.getWidth() + padding_w;
+          const wIn = this.getWidthInModifier();
+          if (wIn) {
+            if (wIn.getMin() >= 0) w = Math.max(w, wIn.getMin());
+            if (wIn.getMax() >= 0) w = Math.min(w, wIn.getMax());
+          }
+          w = Math.min(w, maxWidth);
+        }
+        if (verticalWrap) {
+          h = this.mCachedWrapSize.getHeight() + padding_h;
+          const hIn = this.getHeightInModifier();
+          if (hIn) {
+            if (hIn.getMin() >= 0) h = Math.max(h, hIn.getMin());
+            if (hIn.getMax() >= 0) h = Math.min(h, hIn.getMax());
+          }
+          h = Math.min(h, maxHeight);
+        }
+        selfMeasure.setW(w);
+        selfMeasure.setH(h);
+      }
+      const scrollMod = this.getScrollModifier();
+      if (scrollMod) {
+        const isVertical = scrollMod.getDirection() === ScrollModifier.VERTICAL;
+        const hostW = Math.min(w, maxWidth) - padding_w;
+        const hostH = Math.min(h, maxHeight) - padding_h;
+        const unboundW = isVertical ? hostW : 1e9;
+        const unboundH = isVertical ? 1e9 : hostH;
+        this.mCachedWrapSize.clear();
+        this.computeWrapSize(
+          context,
+          0,
+          unboundW,
+          0,
+          unboundH,
+          true,
+          true,
+          measure,
+          this.mCachedWrapSize
+        );
+        if (isVertical) {
+          this.mScrollHostDimension = hostH;
+          this.mScrollContentDimension = this.mCachedWrapSize.getHeight();
+          scrollMod.setVerticalScrollDimension(
+            this.mScrollHostDimension,
+            this.mScrollContentDimension
+          );
+        } else {
+          this.mScrollHostDimension = hostW;
+          this.mScrollContentDimension = this.mCachedWrapSize.getWidth();
+          scrollMod.setHorizontalScrollDimension(
+            this.mScrollHostDimension,
+            this.mScrollContentDimension
+          );
+        }
+        const childMaxW = isVertical ? w - padding_w : Math.max(w - padding_w, this.mScrollContentDimension);
+        const childMaxH = isVertical ? Math.max(h - padding_h, this.mScrollContentDimension) : h - padding_h;
+        this.computeSize(context, 0, childMaxW, 0, childMaxH, measure);
+      }
+      this.updateComponentValues(context.getContext(), w, h);
+      const ctx = context.getContext();
+      for (const op of this.mContentOps) {
+        if (op instanceof PaintOperation) continue;
+        if (op.isDirty() && typeof op.updateVariables === "function") {
+          op.markNotDirty();
+          op.updateVariables(ctx);
+          op.apply(ctx);
+        }
+      }
+      if (!scrollMod && !(horizontalWrap || verticalWrap)) {
+        const childMaxW = Math.max(0, w - padding_w);
+        const childMaxH = Math.max(0, h - padding_h);
+        this.computeSize(context, 0, childMaxW, 0, childMaxH, measure);
+      }
+      w = Math.max(w, minWidth);
+      h = Math.max(h, minHeight);
+      w = Math.min(w, maxWidth);
+      h = Math.min(h, maxHeight);
+      const wReq = this.getWidthInModifier();
+      if (wReq instanceof DimensionConstraintsModifier && wReq.getType() === DimensionConstraintsModifier.REQUIRED_HORIZONTAL) {
+        w = Math.max(wReq.getMin(), Math.min(w, wReq.getMax()));
+      }
+      const hReq = this.getHeightInModifier();
+      if (hReq instanceof DimensionConstraintsModifier && hReq.getType() === DimensionConstraintsModifier.REQUIRED_VERTICAL) {
+        h = Math.max(hReq.getMin(), Math.min(h, hReq.getMax()));
+      }
+      selfMeasure.setW(w);
+      selfMeasure.setH(h);
+      this.internalLayoutMeasure(context, measure);
+    }
+    layout(context, measure) {
+      super.layout(context, measure);
+      const self = measure.get(this);
+      this.layoutModifiers(self.getW(), self.getH());
+      const scrollMod = this.getScrollModifier();
+      if (scrollMod) {
+        const maxScroll = Math.max(0, this.mScrollContentDimension - this.mScrollHostDimension);
+        const maxNan = scrollMod.getMaxNan();
+        const notchNan = scrollMod.getNotchMaxNan();
+        if (isNaNBits(maxNan)) {
+          context.loadFloat(idFromBits(maxNan), maxScroll);
+        }
+        if (isNaNBits(notchNan)) {
+          context.loadFloat(idFromBits(notchNan), this.mScrollContentDimension);
+        }
+      }
+    }
+    /** Whether the children's weights make this fill [horizontally, vertically]. */
+    weightFill() {
+      return [false, false];
+    }
+    // Override in subclasses to compute wrap-content size
+    computeWrapSize(_context, _minWidth, _maxWidth, _minHeight, _maxHeight, _horizontalWrap, _verticalWrap, _measure, _size) {
+    }
+    // Override in subclasses to measure non-wrap children
+    computeSize(_context, _minWidth, _maxWidth, _minHeight, _maxHeight, _measure) {
+    }
+    // Override in subclasses to position children
+    internalLayoutMeasure(_context, _measure) {
+    }
+    /**
+     * `spacedBy` in physical pixels.
+     *
+     * Spacing is authored in dp but only scales when the document declares DENSITY_BEHAVIOR_DP
+     * — note `== DP`, not the `!= PIXELS` the dimension modifiers use. Under the default
+     * LEGACY behaviour the reference does not scale spacing either, so this returns the raw
+     * value for almost every document in the corpus.
+     *
+     * Takes a PaintContext because that is all the layout managers are handed.
+     */
+    spacedByPx(context, spacedBy) {
+      if (context.getDensityBehavior?.() !== RemoteContext.DENSITY_BEHAVIOR_DP) {
+        return spacedBy;
+      }
+      const density = context.getDensity();
+      return density > 0 && !Number.isNaN(density) ? spacedBy * density : spacedBy;
+    }
+  };
+
+  // src/core/operations/layout/managers/BoxLayout.ts
+  var _BoxLayout = class _BoxLayout extends LayoutManager {
+    constructor(componentId, animationId, horizontalPositioning, verticalPositioning) {
+      super(componentId, animationId);
+      this.mAnimationId = animationId;
+      this.mHorizontalPositioning = horizontalPositioning;
+      this.mVerticalPositioning = verticalPositioning;
+    }
+    computeWrapSize(context, minWidth, maxWidth, minHeight, maxHeight, _horizontalWrap, _verticalWrap, measure, size) {
+      const parent = measure.get(this);
+      for (const child of this.mChildrenComponents) {
+        child.measure(context, 0, maxWidth, 0, maxHeight, measure);
+        const m = measure.get(child);
+        if (child.hasComputedLayout()) {
+          if (child.applyComputedLayout(LayoutComputeOperation.TYPE_MEASURE, context, m, parent)) {
+            child.measure(context, m.getW(), m.getW(), m.getH(), m.getH(), measure);
+          }
+        }
+        if (!m.isGone()) {
+          size.setWidth(Math.max(size.getWidth(), m.getW()));
+          size.setHeight(Math.max(size.getHeight(), m.getH()));
+        }
+      }
+    }
+    computeSize(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
+      const parent = measure.get(this);
+      for (const child of this.mChildrenComponents) {
+        child.measure(context, minWidth, maxWidth, minHeight, maxHeight, measure);
+        if (child.hasComputedLayout()) {
+          const m = measure.get(child);
+          if (child.applyComputedLayout(LayoutComputeOperation.TYPE_MEASURE, context, m, parent)) {
+            child.measure(context, m.getW(), m.getW(), m.getH(), m.getH(), measure);
+          }
+        }
+      }
+    }
+    internalLayoutMeasure(_context, measure) {
+      const selfMeasure = measure.get(this);
+      const selfWidth = selfMeasure.getW() - this.mPaddingLeft - this.mPaddingRight;
+      const selfHeight = selfMeasure.getH() - this.mPaddingTop - this.mPaddingBottom;
+      for (const child of this.mChildrenComponents) {
+        const childMeasure = measure.get(child);
+        if (childMeasure.isGone()) continue;
+        let tx = 0;
+        let ty = 0;
+        switch (this.mHorizontalPositioning) {
+          case _BoxLayout.START:
+            tx = 0;
+            break;
+          case _BoxLayout.CENTER:
+            tx = (selfWidth - childMeasure.getW()) / 2;
+            break;
+          case _BoxLayout.END:
+            tx = selfWidth - childMeasure.getW();
+            break;
+        }
+        switch (this.mVerticalPositioning) {
+          case _BoxLayout.TOP:
+            ty = 0;
+            break;
+          case _BoxLayout.CENTER:
+            ty = (selfHeight - childMeasure.getH()) / 2;
+            break;
+          case _BoxLayout.BOTTOM:
+            ty = selfHeight - childMeasure.getH();
+            break;
+        }
+        childMeasure.setX(tx);
+        childMeasure.setY(ty);
+        if (child.hasComputedLayout()) {
+          child.applyComputedLayout(LayoutComputeOperation.TYPE_POSITION, _context, childMeasure, selfMeasure);
+        }
+      }
+    }
+    write(buffer) {
+      buffer.start(_BoxLayout.OP_CODE);
+      buffer.writeInt(this.getComponentId());
+      buffer.writeInt(this.mAnimationId);
+      buffer.writeInt(this.mHorizontalPositioning);
+      buffer.writeInt(this.mVerticalPositioning);
+    }
+    apply(context) {
+      super.apply(context);
+    }
+    deepToString(indent) {
+      return `${indent}BoxLayout(${this.getComponentId()}, h=${this.mHorizontalPositioning}, v=${this.mVerticalPositioning})`;
+    }
+    static read(buffer, operations) {
+      const componentId = buffer.declareId();
+      const animationId = buffer.declareId();
+      const horizontalPositioning = buffer.readInt();
+      const verticalPositioning = buffer.readInt();
+      operations.push(new _BoxLayout(
+        componentId,
+        animationId,
+        horizontalPositioning,
+        verticalPositioning
+      ));
+    }
+  };
+  _BoxLayout.OP_CODE = 202;
+  _BoxLayout.START = 1;
+  _BoxLayout.CENTER = 2;
+  _BoxLayout.END = 3;
+  _BoxLayout.TOP = 4;
+  _BoxLayout.BOTTOM = 5;
+  var BoxLayout = _BoxLayout;
+
+  // src/core/PaintContext.ts
+  var PaintContext = class {
+    constructor(context) {
+      this.mTextInputSupport = null;
+      this.mNeedsRepaint = false;
+      this.mMeasureVersion = 0;
+      this.mContext = context;
+    }
+    /** Installs the host support that edits strings a text input modifier declares editable (null: inert). */
+    setTextInputSupport(support) {
+      this.mTextInputSupport = support;
+    }
+    getTextInputSupport() {
+      return this.mTextInputSupport;
+    }
+    getContext() {
+      return this.mContext;
+    }
+    setContext(context) {
+      this.mContext = context;
+    }
+    doesNeedsRepaint() {
+      return this.mNeedsRepaint;
+    }
+    clearNeedsRepaint() {
+      this.mNeedsRepaint = false;
+    }
+    needsRepaint() {
+      this.mNeedsRepaint = true;
+    }
+    setNeedsRepaint(v) {
+      this.mNeedsRepaint = v;
+    }
+    setMeasureVersion(v) {
+      this.mMeasureVersion = v;
+    }
+    getMeasureVersion() {
+      return this.mMeasureVersion;
+    }
+    save() {
+      this.matrixSave();
+    }
+    restore() {
+      this.matrixRestore();
+    }
+    saveLayer(_x, _y, _w, _h) {
+      this.matrixSave();
+    }
+    /** Display density, from the underlying RemoteContext (mirrors Java's PaintContext). */
+    getDensity() {
+      return this.mContext.getDensity();
+    }
+    /**
+     * The document's density behaviour. Layout managers need this to decide whether their
+     * dp-valued spacing scales; they only ever hold a PaintContext, so it has to be reachable
+     * from here.
+     */
+    getDensityBehavior() {
+      return this.mContext.getDensityBehavior();
+    }
+    getClock() {
+      return this.mContext.getClock();
+    }
+    isDebug() {
+      return this.mContext.isBasicDebug();
+    }
+    isAnimationEnabled() {
+      return this.mContext.isAnimationEnabled();
+    }
+    isVisualDebug() {
+      return this.mContext.isVisualDebug();
+    }
+    supportsVersion(major, minor, patch) {
+      return this.mContext.supportsVersion(major, minor, patch);
+    }
+    log(content) {
+      console.log(`[LOG] ${content}`);
+    }
+    wakeIn(seconds) {
+      this.mContext.mRemoteComposeState.wakeIn(seconds);
+    }
+    // ── 2D vertex meshes ────────────────────────────────────────────────────────────────
+    //
+    // Deliberately not abstract: a backend that has not implemented meshes still compiles and
+    // draws nothing. Geometry arrives already in the layout drawVertices wants. An empty `uv`
+    // or `colors` means the channel is absent.
+    //
+    // drawMesh must leave the paint exactly as it found it.
+    setMesh(_meshId, _layout, _uCount, _vCount, _verts, _uv, _colors, _indices) {
+    }
+    drawMesh(_meshId, _blend, _imageId) {
+    }
+    matrixFromMesh(_meshId, _u, _v, _flags) {
+    }
+  };
+  PaintContext.TEXT_MEASURE_MONOSPACE_WIDTH = 1;
+  PaintContext.TEXT_MEASURE_FONT_HEIGHT = 2;
+  PaintContext.TEXT_MEASURE_SPACES = 4;
+  PaintContext.TEXT_COMPLEX = 8;
+  PaintContext.TEXT_MEASURE_AUTOSIZE = 16;
+
+  // src/core/operations/layout/managers/CoreText.ts
+  var P_INT = 1;
+  var P_FLOAT = 2;
+  var P_SHORT = 3;
+  var P_BYTE = 4;
+  var P_BOOLEAN = 5;
+  var PA_INT = 6;
+  var PA_FLOAT = 7;
+  var PA_STRING = 8;
+  var P_COMPONENT_ID = 1;
+  var P_ANIMATION_ID = 2;
+  var P_COLOR = 3;
+  var P_COLOR_ID = 4;
+  var P_FONT_SIZE = 5;
+  var P_FONT_STYLE = 6;
+  var P_FONT_WEIGHT = 7;
+  var P_FONT_FAMILY = 8;
+  var P_TEXT_ALIGN = 9;
+  var P_OVERFLOW = 10;
+  var P_MAX_LINES = 11;
+  var P_LETTER_SPACING = 12;
+  var P_LINE_HEIGHT_ADD = 13;
+  var P_LINE_HEIGHT_MULTIPLIER = 14;
+  var P_BREAK_STRATEGY = 15;
+  var P_HYPHENATION_FREQUENCY = 16;
+  var P_JUSTIFICATION_MODE = 17;
+  var P_UNDERLINE = 18;
+  var P_STRIKETHROUGH = 19;
+  var P_FONT_AXIS = 20;
+  var P_FONT_AXIS_VALUES = 21;
+  var P_AUTOSIZE = 22;
+  var P_FLAGS = 23;
+  var P_TEXT_STYLE_ID = 24;
+  var P_MIN_FONT_SIZE = 25;
+  var P_MAX_FONT_SIZE = 26;
+  var PARAM_TYPES = {
+    [P_COMPONENT_ID]: P_INT,
+    [P_ANIMATION_ID]: P_INT,
+    [P_COLOR]: P_INT,
+    [P_COLOR_ID]: P_INT,
+    [P_FONT_SIZE]: P_FLOAT,
+    [P_FONT_STYLE]: P_INT,
+    [P_FONT_WEIGHT]: P_FLOAT,
+    [P_FONT_FAMILY]: P_INT,
+    [P_TEXT_ALIGN]: P_INT,
+    [P_OVERFLOW]: P_INT,
+    [P_MAX_LINES]: P_INT,
+    [P_LETTER_SPACING]: P_FLOAT,
+    [P_LINE_HEIGHT_ADD]: P_FLOAT,
+    [P_LINE_HEIGHT_MULTIPLIER]: P_FLOAT,
+    [P_BREAK_STRATEGY]: P_INT,
+    [P_HYPHENATION_FREQUENCY]: P_INT,
+    [P_JUSTIFICATION_MODE]: P_INT,
+    [P_UNDERLINE]: P_BOOLEAN,
+    [P_STRIKETHROUGH]: P_BOOLEAN,
+    [P_FONT_AXIS]: PA_INT,
+    [P_FONT_AXIS_VALUES]: PA_FLOAT,
+    [P_AUTOSIZE]: P_BOOLEAN,
+    [P_FLAGS]: P_INT,
+    [P_TEXT_STYLE_ID]: P_INT,
+    [P_MIN_FONT_SIZE]: P_FLOAT,
+    [P_MAX_FONT_SIZE]: P_FLOAT
+  };
+  var TEXT_ALIGN_LEFT = 1;
+  var TEXT_ALIGN_RIGHT = 2;
+  var TEXT_ALIGN_CENTER = 3;
+  var TEXT_ALIGN_START = 5;
+  var TEXT_ALIGN_END = 6;
+  var OVERFLOW_VISIBLE = 2;
+  var OVERFLOW_ELLIPSIS = 3;
+  var OVERFLOW_START_ELLIPSIS = 4;
+  var OVERFLOW_MIDDLE_ELLIPSIS = 5;
+  function readCommandParams(buffer, count, cb) {
+    for (let i = 0; i < count; i++) {
+      const paramId = buffer.readByte();
+      const type = PARAM_TYPES[paramId];
+      if (type === void 0) {
+        throw new Error(`CoreText: unknown param id ${paramId}`);
+      }
+      switch (type) {
+        case P_INT:
+          cb.intValue(paramId, buffer.readInt());
+          break;
+        case P_FLOAT:
+          cb.floatValue(paramId, buffer.readInt());
+          break;
+        case P_SHORT:
+          buffer.readShort();
+          break;
+        case P_BYTE:
+          buffer.readByte();
+          break;
+        case P_BOOLEAN:
+          cb.boolValue(paramId, buffer.readBoolean());
+          break;
+        case PA_INT: {
+          const len = buffer.readShort();
+          const arr = [];
+          for (let j = 0; j < len; j++) arr.push(buffer.readInt());
+          cb.intArrayValue(paramId, arr);
+          break;
+        }
+        case PA_FLOAT: {
+          const len = buffer.readShort();
+          const arr = [];
+          for (let j = 0; j < len; j++) arr.push(buffer.readInt());
+          cb.floatArrayValue(paramId, arr);
+          break;
+        }
+        case PA_STRING:
+          buffer.readUTF8();
+          break;
+      }
+    }
+  }
+  var _CoreText = class _CoreText extends LayoutManager {
+    constructor(componentId, animationId, textId, color, colorId, fontSize, minFontSize, maxFontSize, fontStyle, fontWeight, fontFamilyId, textAlign, overflow, maxLines, letterSpacing, lineHeightAdd, lineHeightMultiplier, lineBreakStrategy, hyphenationFrequency, justificationMode, underline, strikethrough, fontAxis, fontAxisValues, autosize, flags) {
+      super(componentId, animationId);
+      this.mType = -1;
+      this.mTextX = 0;
+      this.mTextY = 0;
+      this.mTextW = -1;
+      this.mTextH = -1;
+      this.mBaseline = 0;
+      this.mCachedString = null;
+      this.mNewString = null;
+      this.mComputedTextLayout = null;
+      this.mPaint = new PaintBundle();
+      this.mLastMeasurePass = null;
+      this.mLastMaxW = -1;
+      this.mLastMaxH = -1;
+      this.mLastSizeW = 0;
+      this.mLastSizeH = 0;
+      this.mTextId = textId;
+      this.mColor = color;
+      this.mColorId = colorId;
+      this.mIsDynamicColorEnabled = colorId !== -1;
+      this.mColorValue = this.mIsDynamicColorEnabled ? -1 : color;
+      this.mFontSize = fontSize;
+      this.mMinFontSize = minFontSize;
+      this.mMaxFontSize = maxFontSize;
+      this.mFontSizeValue = isNaNBits(fontSize) ? 36 : intBitsToFloat(fontSize);
+      this.mMeasureFontSize = this.mFontSizeValue;
+      this.mFontStyle = fontStyle;
+      this.mFontWeight = fontWeight;
+      this.mFontWeightValue = isNaNBits(fontWeight) ? 0 : intBitsToFloat(fontWeight);
+      this.mFontFamilyId = fontFamilyId;
+      this.mTextAlign = textAlign;
+      this.mTextAlignValue = textAlign & 65535;
+      this.mOverflow = overflow;
+      this.mMaxLines = maxLines;
+      this.mLetterSpacing = letterSpacing;
+      this.mLineHeightAdd = lineHeightAdd;
+      this.mLineHeightMultiplier = lineHeightMultiplier;
+      this.mLineBreakStrategy = lineBreakStrategy;
+      this.mHyphenationFrequency = hyphenationFrequency;
+      this.mJustificationMode = justificationMode;
+      this.mUnderline = underline;
+      this.mStrikethrough = strikethrough;
+      this.mFontAxis = fontAxis;
+      this.mFontAxisValues = fontAxisValues;
+      this.mAutosize = autosize;
+      this.mFlags = flags;
+    }
+    /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
+    isVariableSupportComponent() {
+      return true;
+    }
+    registerListening(context) {
+      if (this.mTextId !== -1) {
+        context.listensTo(this.mTextId, this);
+      }
+      if (isNaNBits(this.mFontSize)) {
+        context.listensTo(idFromBits(this.mFontSize), this);
+      }
+      if (isNaNBits(this.mFontWeight)) {
+        context.listensTo(idFromBits(this.mFontWeight), this);
+      }
+      if (this.mIsDynamicColorEnabled) {
+        context.listensTo(this.mColorId, this);
+      }
+    }
+    updateVariables(context) {
+      this.mFontSizeValue = isNaNBits(this.mFontSize) ? context.getFloat(idFromBits(this.mFontSize)) : intBitsToFloat(this.mFontSize);
+      this.mFontWeightValue = isNaNBits(this.mFontWeight) ? context.getFloat(idFromBits(this.mFontWeight)) : intBitsToFloat(this.mFontWeight);
+      this.mTextAlignValue = this.mTextAlign & 65535;
+      this.mColorValue = this.mIsDynamicColorEnabled ? context.getColor(this.mColorId) : this.mColor;
+      const cachedString = context.getText(this.mTextId);
+      if (cachedString !== null && cachedString === this.mCachedString && this.mType !== -1) {
+        if (this.mMeasureFontSize !== this.mFontSizeValue) {
+          this.invalidateMeasure();
+        }
+        return;
+      }
+      this.mNewString = cachedString;
+      if (this.mType === -1) {
+        if (this.mFontFamilyId !== -1) {
+          const fontFamily = context.getText(this.mFontFamilyId);
+          if (fontFamily !== null) {
+            if (fontFamily.toLowerCase() === "default") this.mType = 0;
+            else if (fontFamily.toLowerCase() === "sans-serif") this.mType = 1;
+            else if (fontFamily.toLowerCase() === "serif") this.mType = 2;
+            else if (fontFamily.toLowerCase() === "monospace") this.mType = 3;
+            else this.mType = this.mFontFamilyId;
+          }
+        } else {
+          this.mType = 0;
+        }
+      }
+      this.invalidateMeasure();
+    }
+    // Java CoreText: the intrinsic size is the last measured text size.
+    minIntrinsicHeight() {
+      return this.mTextH;
+    }
+    minIntrinsicWidth() {
+      return this.mTextW;
+    }
+    computeWrapSize(context, _minWidth, maxWidth, _minHeight, maxHeight, _horizontalWrap, _verticalWrap, measure, size) {
+      if (this.mLastMeasurePass === measure && this.mLastMaxW === maxWidth && this.mLastMaxH === maxHeight && !this.mNeedsMeasure && this.mNewString === null) {
+        size.setWidth(this.mLastSizeW);
+        size.setHeight(this.mLastSizeH);
+        return;
+      }
+      this.mMeasureFontSize = this.mFontSizeValue;
+      context.savePaint();
+      this.mPaint.reset();
+      this.mPaint.setTextSize(this.mMeasureFontSize);
+      this.mPaint.setTextStyle(
+        this.mType === -1 ? 0 : this.mType,
+        Math.round(this.mFontWeightValue),
+        this.mFontStyle === 1
+      );
+      if (this.mFontAxis && this.mFontAxis.length > 0) {
+        const values = this.mFontAxisValues.map((b) => isVariableBits(b) ? context.getContext().getFloat(idFromBits(b)) : intBitsToFloat(b));
+        this.mPaint.setTextAxis(this.mFontAxis, values);
+      }
+      this.mPaint.setColor(this.mColorValue);
+      context.replacePaint(this.mPaint);
+      const bounds = new Float32Array(4);
+      if (this.mNewString !== null && this.mNewString !== this.mCachedString) {
+        this.mCachedString = this.mNewString;
+      }
+      if (this.mCachedString === null) {
+        context.restorePaint();
+        return;
+      }
+      if (this.mAutosize) {
+        const stepSize = 0.5;
+        const minFontSize = this.mMinFontSize <= 0 ? 4 : this.mMinFontSize;
+        const maxFontSize = this.mMaxFontSize <= 0 ? 400 : this.mMaxFontSize;
+        let min = minFontSize;
+        let max = maxFontSize;
+        let current = (min + max) / 2;
+        while (max - min >= stepSize) {
+          this.mPaint.setTextSize(current);
+          context.replacePaint(this.mPaint);
+          this.textLayout(context, maxWidth, maxHeight, bounds, true, true);
+          const h2 = bounds[3] - bounds[1];
+          const w2 = bounds[2] - bounds[0];
+          if (h2 >= maxHeight || w2 > maxWidth) {
+            max = current;
+          } else {
+            min = current;
+          }
+          current = (min + max) / 2;
+        }
+        current = Math.floor((min - minFontSize) / stepSize) * stepSize + minFontSize;
+        if (current + stepSize < maxFontSize) {
+          this.mPaint.setTextSize(current + stepSize);
+          context.replacePaint(this.mPaint);
+          this.textLayout(context, maxWidth, maxHeight, bounds, true, true);
+          const h2 = bounds[3] - bounds[1];
+          const w2 = bounds[2] - bounds[0];
+          if (h2 < maxHeight && w2 <= maxWidth) {
+            current += stepSize;
+          }
+        }
+        this.mFontSizeValue = current;
+        this.mMeasureFontSize = current;
+        this.mPaint.setTextSize(this.mFontSizeValue);
+        context.replacePaint(this.mPaint);
+        this.textLayout(context, maxWidth, maxHeight, bounds, true, false);
+      } else {
+        this.textLayout(context, maxWidth, maxHeight, bounds);
+      }
+      context.restorePaint();
+      const w = bounds[2] - bounds[0];
+      const h = bounds[3] - bounds[1];
+      size.setWidth(Math.min(maxWidth, w));
+      this.mTextX = -bounds[0];
+      size.setHeight(Math.min(maxHeight, h));
+      this.mTextY = -bounds[1];
+      this.mTextW = w;
+      this.mTextH = h;
+      this.mLastMeasurePass = measure;
+      this.mLastMaxW = maxWidth;
+      this.mLastMaxH = maxHeight;
+      this.mLastSizeW = size.getWidth();
+      this.mLastSizeH = size.getHeight();
+    }
+    computeSize(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
+      super.computeSize(context, minWidth, maxWidth, minHeight, maxHeight, measure);
+      const tempSize = this.mCachedWrapSize;
+      tempSize.clear();
+      this.computeWrapSize(
+        context,
+        minWidth,
+        maxWidth,
+        minHeight,
+        maxHeight,
+        true,
+        true,
+        measure,
+        tempSize
+      );
+      const m = measure.get(this);
+      m.setW(tempSize.getWidth());
+      m.setH(tempSize.getHeight());
+    }
+    textLayout(context, maxWidth, maxHeight, bounds, forceComplexParam = false, inAutosize = false) {
+      if (maxWidth < 0 || maxHeight < 0) return;
+      let flags = PaintContext.TEXT_MEASURE_FONT_HEIGHT | PaintContext.TEXT_MEASURE_SPACES;
+      let forceComplex = forceComplexParam;
+      if (this.mOverflow === OVERFLOW_START_ELLIPSIS || this.mOverflow === OVERFLOW_MIDDLE_ELLIPSIS || this.mOverflow === OVERFLOW_ELLIPSIS) {
+        flags |= PaintContext.TEXT_COMPLEX;
+        forceComplex = true;
+      }
+      if (this.mLetterSpacing !== 0 || this.mLineHeightMultiplier !== 1 || this.mLineHeightAdd > 0 || this.mUnderline || this.mStrikethrough || this.mJustificationMode > 0 || this.mLineBreakStrategy > 0 || this.mHyphenationFrequency > 0) {
+        flags |= PaintContext.TEXT_COMPLEX;
+        forceComplex = true;
+      }
+      if (!(flags & PaintContext.TEXT_COMPLEX) && this.mCachedString) {
+        for (let i = 0; i < this.mCachedString.length; i++) {
+          const c = this.mCachedString.charAt(i);
+          if (c === "\n" || c === "	") {
+            flags |= PaintContext.TEXT_COMPLEX;
+            forceComplex = true;
+            break;
+          }
+        }
+      }
+      if (!forceComplex) {
+        context.getTextBounds(this.mTextId, 0, this.mCachedString.length, flags, bounds);
+        this.mBaseline = -bounds[1];
+      }
+      const wantsComplex = forceComplex || bounds[2] - bounds[0] > maxWidth && this.mMaxLines > 1 && maxWidth > 0;
+      if (wantsComplex) {
+        if (inAutosize) {
+          flags |= 1;
+        }
+        let maxLines = this.mMaxLines;
+        let done = false;
+        while (!done) {
+          this.mComputedTextLayout = context.layoutComplexText(
+            this.mTextId,
+            0,
+            this.mCachedString.length,
+            this.mTextAlign,
+            this.mOverflow,
+            maxLines,
+            maxWidth,
+            maxHeight,
+            this.mLetterSpacing,
+            this.mLineHeightAdd,
+            this.mLineHeightMultiplier,
+            this.mLineBreakStrategy,
+            this.mHyphenationFrequency,
+            this.mJustificationMode,
+            this.mUnderline,
+            this.mStrikethrough,
+            flags
+          );
+          const layout = this.mComputedTextLayout;
+          if (layout) {
+            bounds[0] = 0;
+            bounds[1] = 0;
+            bounds[2] = layout.width;
+            bounds[3] = layout.height;
+          }
+          if (layout && !inAutosize && layout.height > maxHeight && this.mOverflow === OVERFLOW_ELLIPSIS && typeof layout.visibleLines === "number") {
+            if (layout.visibleLines !== maxLines) {
+              maxLines = layout.visibleLines;
+            } else {
+              maxLines--;
+            }
+            if (maxLines < 1) done = true;
+          } else {
+            done = true;
+          }
+        }
+      } else if (maxWidth > 0) {
+        this.mComputedTextLayout = null;
+      } else if (this.mComputedTextLayout) {
+        bounds[0] = 0;
+        bounds[1] = 0;
+        bounds[2] = this.mComputedTextLayout.width;
+        bounds[3] = this.mComputedTextLayout.height;
+      }
+    }
+    paintingComponent(paintContext) {
+      const remoteContext = paintContext.getContext();
+      paintContext.save();
+      paintContext.translate(this.mX, this.mY);
+      this.paintModifiers(paintContext);
+      const tx = this.mPaddingLeft;
+      const ty = this.mPaddingTop;
+      paintContext.translate(tx, ty);
+      paintContext.savePaint();
+      this.mPaint.reset();
+      this.mPaint.setStyle(PaintBundle.FILL);
+      this.mPaint.setColor(this.mColorValue);
+      this.mPaint.setTextSize(this.mMeasureFontSize);
+      this.mPaint.setTextStyle(
+        this.mType === -1 ? 0 : this.mType,
+        Math.round(this.mFontWeightValue),
+        this.mFontStyle === 1
+      );
+      if (this.mFontAxis && this.mFontAxis.length > 0) {
+        const values = this.mFontAxisValues.map((b) => isVariableBits(b) ? remoteContext.getFloat(idFromBits(b)) : intBitsToFloat(b));
+        this.mPaint.setTextAxis(this.mFontAxis, values);
+      }
+      paintContext.replacePaint(this.mPaint);
+      if (this.mCachedString === null) {
+        paintContext.restorePaint();
+        paintContext.restore();
+        return;
+      }
+      const length = this.mCachedString.length;
+      const contentW = this.mWidth - this.mPaddingLeft - this.mPaddingRight;
+      const contentH = this.mHeight - this.mPaddingTop - this.mPaddingBottom;
+      if (this.mComputedTextLayout) {
+        if (this.mOverflow !== OVERFLOW_VISIBLE) {
+          paintContext.save();
+          paintContext.clipRect(0, 0, contentW, contentH);
+          paintContext.drawComplexText(this.mComputedTextLayout, contentW);
+          paintContext.restore();
+        } else {
+          paintContext.drawComplexText(this.mComputedTextLayout, contentW);
+        }
+      } else {
+        let px = this.mTextX;
+        switch (this.mTextAlignValue) {
+          case TEXT_ALIGN_CENTER:
+            px = (contentW - this.mTextW) / 2;
+            break;
+          case TEXT_ALIGN_RIGHT:
+          case TEXT_ALIGN_END:
+            px = contentW - this.mTextW;
+            break;
+          case TEXT_ALIGN_LEFT:
+          case TEXT_ALIGN_START:
+          default:
+            break;
+        }
+        if (this.mOverflow !== OVERFLOW_VISIBLE || this.mTextW > contentW) {
+          paintContext.save();
+          paintContext.clipRect(0, 0, contentW, contentH);
+          paintContext.drawTextRun(this.mTextId, 0, length, 0, 0, px, this.mTextY, false);
+          paintContext.restore();
+        } else {
+          paintContext.drawTextRun(this.mTextId, 0, length, 0, 0, px, this.mTextY, false);
+        }
+      }
+      paintContext.restorePaint();
+      paintContext.restore();
+    }
+    // The text's style, for a host editor shown over it and the hint drawn in its place
+    // (Java CoreText getters, read by TextInputLayout).
+    getTextId() {
+      return this.mTextId;
+    }
+    getFontStyle() {
+      return this.mFontStyle;
+    }
+    getFontSizeValue() {
+      return this.mMeasureFontSize;
+    }
+    getColorValue() {
+      return this.mColorValue;
+    }
+    getFontWeightValue() {
+      return this.mFontWeightValue;
+    }
+    getTextAlignValue() {
+      return this.mTextAlignValue;
+    }
+    write(buffer) {
+      buffer.start(_CoreText.OP_CODE);
+      buffer.writeInt(this.mTextId);
+      buffer.writeShort(0);
+    }
+    apply(context) {
+      super.apply(context);
+    }
+    deepToString(indent) {
+      return `${indent}CoreText(${this.getComponentId()}, textId=${this.mTextId})`;
+    }
+    static read(buffer, operations) {
+      const textId = buffer.readId();
+      const paramsLength = buffer.readShort();
+      let componentId = -1, animationId = -1, color = 4278190080 | 0, colorId = -1;
+      let fontStyle = 0, fontFamilyId = -1, textAlign = 1, overflow = 1;
+      let maxLines = 2147483647, lineBreakStrategy = 0, hyphenationFrequency = 0;
+      let justificationMode = 0, flags = 0;
+      let fontSize = floatToRawIntBits(36), minFontSize = -1, maxFontSize = -1;
+      let fontWeight = floatToRawIntBits(400), letterSpacing = 0, lineHeightAdd = 0, lineHeightMultiplier = 1;
+      let underline = false, strikethrough = false, autosize = false;
+      let fontAxis = null;
+      let fontAxisValues = null;
+      const remap = buffer.getRemapContext?.();
+      const rid = (v) => remap ? remap.resolveId(v) : v;
+      const did = (v) => remap ? remap.declareId(v) : v;
+      readCommandParams(buffer, paramsLength, {
+        intValue(id, value) {
+          switch (id) {
+            case P_COMPONENT_ID:
+              componentId = did(value);
+              break;
+            case P_ANIMATION_ID:
+              animationId = did(value);
+              break;
+            case P_COLOR:
+              color = value;
+              break;
+            case P_COLOR_ID:
+              colorId = rid(value);
+              break;
+            case P_FONT_STYLE:
+              fontStyle = value;
+              break;
+            case P_FONT_FAMILY:
+              fontFamilyId = rid(value);
+              break;
+            case P_TEXT_ALIGN:
+              textAlign = value;
+              break;
+            case P_OVERFLOW:
+              overflow = value;
+              break;
+            case P_MAX_LINES:
+              maxLines = value;
+              break;
+            case P_BREAK_STRATEGY:
+              lineBreakStrategy = value;
+              break;
+            case P_HYPHENATION_FREQUENCY:
+              hyphenationFrequency = value;
+              break;
+            case P_JUSTIFICATION_MODE:
+              justificationMode = value;
+              break;
+            case P_FLAGS:
+              flags = value;
+              break;
+            case P_TEXT_STYLE_ID:
+              break;
+          }
+        },
+        floatValue(id, bits) {
+          switch (id) {
+            // Ref-capable: keep raw bits (resolved later).
+            case P_FONT_SIZE:
+              fontSize = bits;
+              break;
+            case P_FONT_WEIGHT:
+              fontWeight = bits;
+              break;
+            // Non-ref: decode literal float now.
+            case P_MIN_FONT_SIZE:
+              minFontSize = intBitsToFloat(bits);
+              break;
+            case P_MAX_FONT_SIZE:
+              maxFontSize = intBitsToFloat(bits);
+              break;
+            case P_LETTER_SPACING:
+              letterSpacing = intBitsToFloat(bits);
+              break;
+            case P_LINE_HEIGHT_ADD:
+              lineHeightAdd = intBitsToFloat(bits);
+              break;
+            case P_LINE_HEIGHT_MULTIPLIER:
+              lineHeightMultiplier = intBitsToFloat(bits);
+              break;
+          }
+        },
+        boolValue(id, value) {
+          switch (id) {
+            case P_UNDERLINE:
+              underline = value;
+              break;
+            case P_STRIKETHROUGH:
+              strikethrough = value;
+              break;
+            case P_AUTOSIZE:
+              autosize = value;
+              break;
+          }
+        },
+        intArrayValue(id, values) {
+          if (id === P_FONT_AXIS) fontAxis = values;
+        },
+        floatArrayValue(id, values) {
+          if (id === P_FONT_AXIS_VALUES) fontAxisValues = values;
+        }
+      });
+      operations.push(new _CoreText(
+        componentId,
+        animationId,
+        textId,
+        color,
+        colorId,
+        fontSize,
+        minFontSize,
+        maxFontSize,
+        fontStyle,
+        fontWeight,
+        fontFamilyId,
+        textAlign,
+        overflow,
+        maxLines,
+        letterSpacing,
+        lineHeightAdd,
+        lineHeightMultiplier,
+        lineBreakStrategy,
+        hyphenationFrequency,
+        justificationMode,
+        underline,
+        strikethrough,
+        fontAxis,
+        fontAxisValues,
+        autosize,
+        flags
+      ));
+    }
+  };
+  // Typed as `number` rather than the literal 239 so TextLayout (208) can
+  // subclass this without a static-side type clash.
+  _CoreText.OP_CODE = 239;
+  var CoreText = _CoreText;
+
+  // src/core/operations/layout/managers/TextLayout.ts
+  var FLAG_IS_DYNAMIC_COLOR = 1;
+  var _TextLayout = class _TextLayout extends CoreText {
+    deepToString(indent) {
+      return `${indent}TEXT_LAYOUT [${this.getComponentId()}]`;
+    }
+    static read(buffer, operations) {
+      const componentId = buffer.declareId();
+      const animationId = buffer.declareId();
+      const textId = buffer.readId();
+      const color = buffer.readInt();
+      const fontSize = buffer.readNanIdBits();
+      const fontStyle = buffer.readInt();
+      const fontWeight = buffer.readNanIdBits();
+      const fontFamilyId = buffer.readId();
+      const textAlign = buffer.readInt();
+      const overflow = buffer.readInt();
+      const maxLines = buffer.readInt();
+      const dynamicColor = (textAlign >>> 16 & FLAG_IS_DYNAMIC_COLOR) > 0;
+      operations.push(new _TextLayout(
+        componentId,
+        animationId,
+        textId,
+        dynamicColor ? 4278190080 | 0 : color,
+        dynamicColor ? color : -1,
+        fontSize,
+        -1,
+        // minFontSize — not carried by this op
+        -1,
+        // maxFontSize
+        fontStyle,
+        fontWeight,
+        fontFamilyId,
+        textAlign,
+        overflow,
+        maxLines,
+        0,
+        // letterSpacing
+        0,
+        // lineHeightAdd
+        1,
+        // lineHeightMultiplier
+        0,
+        // lineBreakStrategy
+        0,
+        // hyphenationFrequency
+        0,
+        // justificationMode
+        false,
+        // underline
+        false,
+        // strikethrough
+        null,
+        // fontAxis
+        null,
+        // fontAxisValues
+        false,
+        // autosize
+        0
+        // flags
+      ));
+    }
+  };
+  _TextLayout.OP_CODE = 208;
+  var TextLayout = _TextLayout;
+
+  // src/core/TextInput.ts
+  var TextInputSession = class {
+    constructor(mContext, mLayout) {
+      this.mContext = mContext;
+      this.mLayout = mLayout;
+      this.mBounds = [0, 0, 0, 0];
+      this.mActive = true;
+      this.mTextComponent = mLayout.getTextComponent();
+      this.updateBounds();
+    }
+    getComponentId() {
+      return this.mLayout.getComponentId();
+    }
+    getComponent() {
+      return this.mLayout;
+    }
+    /** The edited layout: keyboard type, IME action, flags, limits, hint, content type. */
+    getLayout() {
+      return this.mLayout;
+    }
+    /** The text showing the edited string in the layout's content, to style the editor; or null. */
+    getTextComponent() {
+      return this.mTextComponent;
+    }
+    getContext() {
+      return this.mContext;
+    }
+    /**
+     * The bounds the editor covers relative to the document root, [x, y, width, height] in
+     * document pixels: the text component's when there is one, else the layout's.
+     */
+    getBounds() {
+      return this.mBounds;
+    }
+    /** The edited string's current value. */
+    getText() {
+      return this.mContext.getText(this.mLayout.getTextId()) ?? "";
+    }
+    /** Writes a new value of the string: every binding on it updates, and a repaint is asked for. */
+    setText(text) {
+      if (!this.mActive) return;
+      this.mContext.loadText(this.mLayout.getTextId(), text);
+      this.mContext.needsRepaint();
+    }
+    /** The placeholder shown when the text is empty, or null if none was declared. */
+    getHint() {
+      const id = this.mLayout.getHintId();
+      return id !== 0 ? this.mContext.getText(id) : null;
+    }
+    isActive() {
+      return this.mActive;
+    }
+    /** Ends the session (the host dismissed its editor): the content paints its text again. */
+    end() {
+      if (!this.mActive) return;
+      this.mActive = false;
+      this.mLayout.onSessionEnded(this.mContext, this);
+    }
+    /** Recomputes getBounds() from the target's current place; true when they changed. */
+    updateBounds() {
+      const [x, y, w, h] = this.mBounds;
+      const target = this.mTextComponent ?? this.mLayout;
+      const t = target;
+      const loc = target.getLocationInWindow();
+      this.mBounds[0] = loc[0] - (t.mPaddingLeft ?? 0);
+      this.mBounds[1] = loc[1] - (t.mPaddingTop ?? 0);
+      this.mBounds[2] = target.getWidth();
+      this.mBounds[3] = target.getHeight();
+      return x !== this.mBounds[0] || y !== this.mBounds[1] || w !== this.mBounds[2] || h !== this.mBounds[3];
+    }
+  };
+
+  // src/core/operations/layout/managers/TextInputLayout.ts
+  var TEXT_ALIGN_RIGHT2 = 2;
+  var TEXT_ALIGN_CENTER2 = 3;
+  var TEXT_ALIGN_END2 = 6;
+  var _TextInputLayout = class _TextInputLayout extends BoxLayout {
+    constructor(componentId, animationId, mTextId, mKeyboardType, mImeAction, mInputFlags, mMaxLength, mFilter, mHintId, mContentType) {
+      super(componentId, animationId, BoxLayout.START, BoxLayout.TOP);
       this.mTextId = mTextId;
       this.mKeyboardType = mKeyboardType;
       this.mImeAction = mImeAction;
-      this.mFlags = mFlags;
+      this.mInputFlags = mInputFlags;
       this.mMaxLength = mMaxLength;
       this.mFilter = mFilter;
       this.mHintId = mHintId;
+      this.mContentType = mContentType;
+      this.mEditing = false;
       this.mSession = null;
+      this.mTextComponent = null;
+      this.mHintPaint = new PaintBundle();
       this.mHintBounds = new Float32Array(4);
     }
+    isVariableSupportComponent() {
+      return true;
+    }
+    // ── Attributes ──────────────────────────────────────────────────────────────────────────
     getTextId() {
       return this.mTextId;
     }
@@ -6794,11 +9184,11 @@ var RC = (() => {
     getImeAction() {
       return this.mImeAction;
     }
-    getFlags() {
-      return this.mFlags;
+    getInputFlags() {
+      return this.mInputFlags;
     }
-    hasFlag(flag) {
-      return (this.mFlags & flag) !== 0;
+    hasInputFlag(flag) {
+      return (this.mInputFlags & flag) !== 0;
     }
     getMaxLength() {
       return this.mMaxLength;
@@ -6809,134 +9199,285 @@ var RC = (() => {
     getHintId() {
       return this.mHintId;
     }
+    getContentType() {
+      return this.mContentType;
+    }
+    /** True for the keyboards that make the field secure (masked, single line, no suggestions). */
+    isPassword() {
+      return this.mKeyboardType === _TextInputLayout.KEYBOARD_PASSWORD || this.mKeyboardType === _TextInputLayout.KEYBOARD_NUMBER_PASSWORD;
+    }
+    inflate() {
+      super.inflate();
+      this.mTextComponent = _TextInputLayout.findTextComponent(this, this.mTextId);
+    }
+    /**
+     * The text of the content showing the edited string, if any: the first CoreText bound to
+     * textId, depth first, not looking into a nested text input (Java: a TextLayout, a
+     * different class there, never matches). Resolved once at inflation.
+     */
+    getTextComponent() {
+      return this.mTextComponent;
+    }
+    static findTextComponent(layout, textId) {
+      for (const child of layout.mChildrenComponents) {
+        if (child instanceof CoreText && !(child instanceof TextLayout) && child.getTextId() === textId) {
+          return child;
+        }
+        if (child instanceof LayoutComponent && !(child instanceof _TextInputLayout)) {
+          const found = _TextInputLayout.findTextComponent(child, textId);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    // ── Editing lifecycle ───────────────────────────────────────────────────────────────────
+    isEditing() {
+      return this.mEditing;
+    }
     getSession() {
       return this.mSession;
     }
-    static support(context) {
-      return context.getPaintContext()?.getTextInputSupport() ?? null;
-    }
-    /** A click on the component: starts a session when the player supports text input. */
-    onClickComponent(context, component) {
-      const support = _TextInputModifier.support(context);
+    onClick(context, doc, x, y) {
+      if (super.onClick(context, doc, x, y)) return true;
+      if (!this.isVisible()) return false;
+      if (!(x >= this.mX && x <= this.mX + this.mWidth && y >= this.mY && y <= this.mY + this.mHeight)) return false;
+      const support = _TextInputLayout.support(context);
       if (!support) return false;
-      if (this.mSession && this.mSession.isActive()) return true;
-      this.mSession = new TextInputSession(context, component, this);
-      component.setEditing(true);
+      this.startTextInput(context, support);
+      return true;
+    }
+    /** Starts an editing session with the host support, unless one is active already. */
+    startTextInput(context, support) {
+      if (this.mSession && this.mSession.isActive()) return;
+      this.mSession = new TextInputSession(context, this);
+      this.mEditing = true;
       support.startTextInput(this.mSession);
       context.needsRepaint();
-      return true;
     }
     /** Ends the session from the document's side (it is unloaded): the host drops its editor. */
     stopTextInput(context) {
       const session = this.mSession;
       if (!session || !session.isActive()) return;
-      _TextInputModifier.support(context)?.stopTextInput(session);
+      _TextInputLayout.support(context)?.stopTextInput(session);
       session.end();
     }
-    /** Called by the session when it ends: the component draws its text again. */
+    /** Called by TextInputSession.end(): the content paints its text again. */
     onSessionEnded(context, session) {
       if (this.mSession !== session) return;
       this.mSession = null;
-      session.getComponent().setEditing(false);
+      this.mEditing = false;
       context.needsRepaint();
     }
-    /** The text input modifier of a component, or null. */
-    static find(component) {
-      for (const m of component?.mComponentModifiers ?? []) if (m instanceof _TextInputModifier) return m;
-      return null;
+    static support(context) {
+      return context.getPaintContext()?.getTextInputSupport() ?? null;
     }
-    /**
-     * Draws the hint where an empty editable text would be, at 45% of the text's alpha, aligned
-     * as the text is. The paint is the component's text paint, restored after.
-     */
-    paintHint(context, paint, textColor, contentWidth, textAlign) {
-      if (this.mHintId === 0) return false;
-      const hint = context.getContext().getText(this.mHintId);
-      if (!hint) return false;
-      const length = hint.length;
-      context.getTextBounds(this.mHintId, 0, length, 0, this.mHintBounds);
-      const hintWidth = this.mHintBounds[2] - this.mHintBounds[0];
-      const px = textAlign === 3 ? (contentWidth - hintWidth) / 2 : textAlign === 2 || textAlign === 6 ? contentWidth - hintWidth : 0;
-      const alpha = Math.floor((textColor >>> 24) * _TextInputModifier.HINT_ALPHA_PERCENT / 100);
-      paint.setColor(alpha << 24 | textColor & 16777215 | 0);
-      context.replacePaint(paint);
-      context.drawTextRun(this.mHintId, 0, length, 0, 0, px - this.mHintBounds[0], -this.mHintBounds[1], false);
-      paint.setColor(textColor);
-      context.replacePaint(paint);
-      return true;
-    }
-    /** At paint: keeps the host's editor on the component when it moved. */
-    paintModifier(paintContext) {
-      const session = this.mSession;
-      if (!session || !session.isActive()) return;
-      if (session.updateBounds()) _TextInputModifier.support(paintContext.getContext())?.updateTextInputBounds(session);
-    }
+    // ── Variables ───────────────────────────────────────────────────────────────────────────
     registerListening(context) {
       context.listensTo(this.mTextId, this);
       if (this.mHintId !== 0) context.listensTo(this.mHintId, this);
     }
     updateVariables(_context) {
     }
-    write(buffer) {
-      buffer.start(_TextInputModifier.OP_CODE);
-      for (const v of [this.mTextId, this.mKeyboardType, this.mImeAction, this.mFlags, this.mMaxLength, this.mFilter, this.mHintId]) buffer.writeInt(v);
+    // ── Painting ────────────────────────────────────────────────────────────────────────────
+    paintingComponent(paintContext) {
+      const session = this.mSession;
+      if (session && session.isActive() && session.updateBounds()) {
+        _TextInputLayout.support(paintContext.getContext())?.updateTextInputBounds(session);
+      }
+      const text = this.mTextComponent;
+      if (this.mEditing && text) {
+        const parent = text.getParent();
+        const siblings = parent instanceof LayoutComponent ? parent.mChildrenComponents : null;
+        const index = siblings ? siblings.indexOf(text) : -1;
+        if (!siblings || index < 0) {
+          super.paintingComponent(paintContext);
+          return;
+        }
+        siblings.splice(index, 1);
+        try {
+          super.paintingComponent(paintContext);
+        } finally {
+          siblings.splice(index, 0, text);
+        }
+        return;
+      }
+      super.paintingComponent(paintContext);
+      if (!this.mEditing && this.mHintId !== 0) {
+        const value = paintContext.getContext().getText(this.mTextId);
+        if (!value) this.paintHint(paintContext, text);
+      }
     }
-    apply(_context) {
+    /**
+     * Paints the hint in place of the empty text: at the text component's content origin, in its
+     * style at 45% of its alpha, aligned as it is; else at the layout's content origin.
+     */
+    paintHint(paintContext, text) {
+      const hint = paintContext.getContext().getText(this.mHintId);
+      if (!hint) return;
+      const length = hint.length;
+      let x = this.mX + this.mPaddingLeft;
+      let y = this.mY + this.mPaddingTop;
+      let contentW = this.mWidth - this.mPaddingLeft - this.mPaddingRight;
+      let textColor = 4278190080 | 0;
+      let fontSize = _TextInputLayout.DEFAULT_FONT_SIZE;
+      let weight = _TextInputLayout.DEFAULT_FONT_WEIGHT;
+      let italic = false;
+      let align = 0;
+      if (text) {
+        let p = text.getParent();
+        while (p && p !== this) {
+          const lc = p;
+          x += p.mX + (lc.mPaddingLeft ?? 0);
+          y += p.mY + (lc.mPaddingTop ?? 0);
+          p = p.getParent();
+        }
+        x += text.mX + text.mPaddingLeft;
+        y += text.mY + text.mPaddingTop;
+        contentW = text.mWidth - text.mPaddingLeft - text.mPaddingRight;
+        textColor = text.getColorValue();
+        fontSize = text.getFontSizeValue();
+        weight = text.getFontWeightValue();
+        italic = text.getFontStyle() === 1;
+        align = text.getTextAlignValue();
+      }
+      paintContext.save();
+      paintContext.translate(x, y);
+      paintContext.savePaint();
+      const alpha = Math.floor((textColor >>> 24) * _TextInputLayout.HINT_ALPHA_PERCENT / 100);
+      this.mHintPaint.reset();
+      this.mHintPaint.setStyle(PaintBundle.FILL);
+      this.mHintPaint.setColor(alpha << 24 | textColor & 16777215 | 0);
+      this.mHintPaint.setTextSize(fontSize);
+      this.mHintPaint.setTextStyle(0, Math.round(weight), italic);
+      paintContext.replacePaint(this.mHintPaint);
+      paintContext.getTextBounds(this.mHintId, 0, length, 0, this.mHintBounds);
+      const hintWidth = this.mHintBounds[2] - this.mHintBounds[0];
+      const px = align === TEXT_ALIGN_CENTER2 ? (contentW - hintWidth) / 2 : align === TEXT_ALIGN_RIGHT2 || align === TEXT_ALIGN_END2 ? contentW - hintWidth : 0;
+      paintContext.drawTextRun(this.mHintId, 0, length, 0, 0, px - this.mHintBounds[0], -this.mHintBounds[1], false);
+      paintContext.restorePaint();
+      paintContext.restore();
+    }
+    // ── Serialization ───────────────────────────────────────────────────────────────────────
+    write(buffer) {
+      const T2 = _TextInputLayout;
+      buffer.start(T2.OP_CODE);
+      buffer.writeInt(this.getComponentId());
+      buffer.writeInt(this.mAnimationId);
+      buffer.writeInt(this.mTextId);
+      const attrs = [
+        [T2.P_KEYBOARD_TYPE, this.mKeyboardType, T2.KEYBOARD_UNSPECIFIED],
+        [T2.P_IME_ACTION, this.mImeAction, T2.IME_ACTION_NONE],
+        [T2.P_INPUT_FLAGS, this.mInputFlags, 0],
+        [T2.P_MAX_LENGTH, this.mMaxLength, 0],
+        [T2.P_FILTER, this.mFilter, T2.FILTER_NONE],
+        [T2.P_HINT_ID, this.mHintId, 0],
+        [T2.P_CONTENT_TYPE, this.mContentType, T2.CONTENT_TYPE_NONE]
+      ].filter(([, v, d]) => v !== d);
+      buffer.writeShort(attrs.length);
+      for (const [id, v] of attrs) {
+        buffer.writeByte(id);
+        buffer.writeInt(v);
+      }
     }
     deepToString(indent) {
-      return `${indent}TextInputModifier(${this.mTextId})`;
+      return `${indent}TextInputLayout(${this.getComponentId()}, textId=${this.mTextId})`;
     }
     static read(buffer, operations) {
-      operations.push(new _TextInputModifier(
-        buffer.readInt(),
-        buffer.readInt(),
-        buffer.readInt(),
-        buffer.readInt(),
-        buffer.readInt(),
-        buffer.readInt(),
-        buffer.readInt()
+      const T2 = _TextInputLayout;
+      const componentId = buffer.declareId();
+      const animationId = buffer.declareId();
+      const textId = buffer.readId();
+      const count = buffer.readShort();
+      const a = [T2.KEYBOARD_UNSPECIFIED, T2.IME_ACTION_NONE, 0, 0, T2.FILTER_NONE, 0, T2.CONTENT_TYPE_NONE];
+      const remap = buffer.getRemapContext?.();
+      for (let i = 0; i < count; i++) {
+        const id = buffer.readByte();
+        if (id < T2.P_KEYBOARD_TYPE || id > T2.P_CONTENT_TYPE) {
+          throw new Error(`TextInputLayout: unknown attribute id ${id}`);
+        }
+        const value = buffer.readInt();
+        a[id - 1] = id === T2.P_HINT_ID && remap ? remap.resolveId(value) : value;
+      }
+      operations.push(new _TextInputLayout(
+        componentId,
+        animationId,
+        textId,
+        a[0],
+        a[1],
+        a[2],
+        a[3],
+        a[4],
+        a[5],
+        a[6]
       ));
     }
   };
-  _TextInputModifier.OP_CODE = 60;
+  _TextInputLayout.OP_CODE = 60;
   // Keyboard types (Compose KeyboardType's values)
-  _TextInputModifier.KEYBOARD_UNSPECIFIED = 0;
-  _TextInputModifier.KEYBOARD_TEXT = 1;
-  _TextInputModifier.KEYBOARD_ASCII = 2;
-  _TextInputModifier.KEYBOARD_NUMBER = 3;
-  _TextInputModifier.KEYBOARD_PHONE = 4;
-  _TextInputModifier.KEYBOARD_URI = 5;
-  _TextInputModifier.KEYBOARD_EMAIL = 6;
-  _TextInputModifier.KEYBOARD_PASSWORD = 7;
-  _TextInputModifier.KEYBOARD_NUMBER_PASSWORD = 8;
-  _TextInputModifier.KEYBOARD_DECIMAL = 9;
+  _TextInputLayout.KEYBOARD_UNSPECIFIED = 0;
+  _TextInputLayout.KEYBOARD_TEXT = 1;
+  _TextInputLayout.KEYBOARD_ASCII = 2;
+  _TextInputLayout.KEYBOARD_NUMBER = 3;
+  _TextInputLayout.KEYBOARD_PHONE = 4;
+  _TextInputLayout.KEYBOARD_URI = 5;
+  _TextInputLayout.KEYBOARD_EMAIL = 6;
+  _TextInputLayout.KEYBOARD_PASSWORD = 7;
+  _TextInputLayout.KEYBOARD_NUMBER_PASSWORD = 8;
+  _TextInputLayout.KEYBOARD_DECIMAL = 9;
   // IME actions (Compose ImeAction's values)
-  _TextInputModifier.IME_ACTION_NONE = 0;
-  _TextInputModifier.IME_ACTION_DEFAULT = 1;
-  _TextInputModifier.IME_ACTION_GO = 2;
-  _TextInputModifier.IME_ACTION_SEARCH = 3;
-  _TextInputModifier.IME_ACTION_SEND = 4;
-  _TextInputModifier.IME_ACTION_PREVIOUS = 5;
-  _TextInputModifier.IME_ACTION_NEXT = 6;
-  _TextInputModifier.IME_ACTION_DONE = 7;
-  // Flags
-  _TextInputModifier.FLAG_SINGLE_LINE = 1;
-  _TextInputModifier.FLAG_COMMIT_ON_DONE = 1 << 1;
-  _TextInputModifier.FLAG_AUTO_CORRECT = 1 << 2;
-  _TextInputModifier.FLAG_CAPITALIZE_CHARACTERS = 1 << 3;
-  _TextInputModifier.FLAG_CAPITALIZE_WORDS = 1 << 4;
-  _TextInputModifier.FLAG_CAPITALIZE_SENTENCES = 1 << 5;
+  _TextInputLayout.IME_ACTION_NONE = 0;
+  _TextInputLayout.IME_ACTION_DEFAULT = 1;
+  _TextInputLayout.IME_ACTION_GO = 2;
+  _TextInputLayout.IME_ACTION_SEARCH = 3;
+  _TextInputLayout.IME_ACTION_SEND = 4;
+  _TextInputLayout.IME_ACTION_PREVIOUS = 5;
+  _TextInputLayout.IME_ACTION_NEXT = 6;
+  _TextInputLayout.IME_ACTION_DONE = 7;
+  // Input flags
+  _TextInputLayout.FLAG_SINGLE_LINE = 1;
+  _TextInputLayout.FLAG_COMMIT_ON_DONE = 1 << 1;
+  _TextInputLayout.FLAG_AUTO_CORRECT = 1 << 2;
+  _TextInputLayout.FLAG_CAPITALIZE_CHARACTERS = 1 << 3;
+  _TextInputLayout.FLAG_CAPITALIZE_WORDS = 1 << 4;
+  _TextInputLayout.FLAG_CAPITALIZE_SENTENCES = 1 << 5;
   // Input filters, applied by the editor before a keystroke reaches the string
-  _TextInputModifier.FILTER_NONE = 0;
-  _TextInputModifier.FILTER_DIGITS = 1;
-  _TextInputModifier.FILTER_DECIMAL = 2;
-  _TextInputModifier.FILTER_ALPHANUMERIC = 3;
-  _TextInputModifier.FILTER_HEXADECIMAL = 4;
-  _TextInputModifier.HINT_ALPHA_PERCENT = 45;
-  var TextInputModifier = _TextInputModifier;
+  _TextInputLayout.FILTER_NONE = 0;
+  _TextInputLayout.FILTER_DIGITS = 1;
+  _TextInputLayout.FILTER_DECIMAL = 2;
+  _TextInputLayout.FILTER_ALPHANUMERIC = 3;
+  _TextInputLayout.FILTER_HEXADECIMAL = 4;
+  // Content types: what the string holds, for autofill and keyboard suggestions
+  _TextInputLayout.CONTENT_TYPE_NONE = 0;
+  _TextInputLayout.CONTENT_TYPE_PERSON_NAME = 1;
+  _TextInputLayout.CONTENT_TYPE_PERSON_FIRST_NAME = 2;
+  _TextInputLayout.CONTENT_TYPE_PERSON_LAST_NAME = 3;
+  _TextInputLayout.CONTENT_TYPE_EMAIL_ADDRESS = 4;
+  _TextInputLayout.CONTENT_TYPE_PHONE_NUMBER = 5;
+  _TextInputLayout.CONTENT_TYPE_USERNAME = 6;
+  _TextInputLayout.CONTENT_TYPE_PASSWORD = 7;
+  _TextInputLayout.CONTENT_TYPE_NEW_PASSWORD = 8;
+  _TextInputLayout.CONTENT_TYPE_ONE_TIME_CODE = 9;
+  _TextInputLayout.CONTENT_TYPE_POSTAL_ADDRESS = 10;
+  _TextInputLayout.CONTENT_TYPE_POSTAL_CODE = 11;
+  _TextInputLayout.CONTENT_TYPE_CREDIT_CARD_NUMBER = 12;
+  _TextInputLayout.CONTENT_TYPE_CREDIT_CARD_EXPIRATION_DATE = 13;
+  _TextInputLayout.CONTENT_TYPE_CREDIT_CARD_SECURITY_CODE = 14;
+  // Sparse attribute ids (all INT on the wire)
+  _TextInputLayout.P_KEYBOARD_TYPE = 1;
+  _TextInputLayout.P_IME_ACTION = 2;
+  _TextInputLayout.P_INPUT_FLAGS = 3;
+  _TextInputLayout.P_MAX_LENGTH = 4;
+  _TextInputLayout.P_FILTER = 5;
+  _TextInputLayout.P_HINT_ID = 6;
+  _TextInputLayout.P_CONTENT_TYPE = 7;
+  /** Opacity of the hint relative to the text colour, in percent. */
+  _TextInputLayout.HINT_ALPHA_PERCENT = 45;
+  _TextInputLayout.DEFAULT_FONT_SIZE = 36;
+  _TextInputLayout.DEFAULT_FONT_WEIGHT = 400;
+  var TextInputLayout = _TextInputLayout;
 
-  // ../kobento-ts/src/web/TextInput.ts
-  var T = TextInputModifier;
+  // src/web/TextInput.ts
+  var T = TextInputLayout;
   var WebTextInputSupport = class {
     constructor(page) {
       this.page = page;
@@ -6954,8 +9495,8 @@ var RC = (() => {
     startTextInput(session) {
       this.dismiss(true);
       this.session = session;
-      const op = session.getOperation();
-      const single = op.hasFlag(T.FLAG_SINGLE_LINE);
+      const op = session.getLayout();
+      const single = op.hasInputFlag(T.FLAG_SINGLE_LINE) || op.isPassword();
       const editor = document.createElement(single ? "input" : "textarea");
       this.editor = editor;
       configure(editor, op);
@@ -6971,7 +9512,7 @@ var RC = (() => {
           editor.value = clean;
           editor.setSelectionRange(at, at);
         }
-        if (this.session === session && session.isActive() && !op.hasFlag(T.FLAG_COMMIT_ON_DONE)) {
+        if (this.session === session && session.isActive() && !op.hasInputFlag(T.FLAG_COMMIT_ON_DONE)) {
           session.setText(editor.value);
           this.page.repaint();
         }
@@ -7031,7 +9572,7 @@ var RC = (() => {
       window.removeEventListener("resize", this.onViewport);
       editor?.remove();
     }
-    /** The editor over the component's bounds, fixed to the viewport. */
+    /** The editor over the session's bounds (the text, else the layout), fixed to the viewport. */
     place(session) {
       const editor = this.editor;
       if (!editor) return;
@@ -7044,10 +9585,15 @@ var RC = (() => {
         height: `${Math.max(1, height)}px`
       });
     }
-    /** Matches the editor's text to the component's: size, colour, weight, alignment, padding. */
+    /**
+     * Matches the editor's text to the bound text's: size, colour, weight, style, alignment,
+     * padding. Without a bound text the editor covers the layout, inside its padding, in the
+     * default style.
+     */
     style(editor, session) {
       const s = this.page.scale();
-      const c = session.getComponent();
+      const text = session.getTextComponent();
+      const c = text ?? session.getLayout();
       const css = {
         position: "fixed",
         zIndex: "2147483646",
@@ -7062,18 +9608,22 @@ var RC = (() => {
         lineHeight: "normal",
         padding: `${(c.mPaddingTop ?? 0) * s}px ${(c.mPaddingRight ?? 0) * s}px ${(c.mPaddingBottom ?? 0) * s}px ${(c.mPaddingLeft ?? 0) * s}px`
       };
-      if (typeof c.getFontSizeValue === "function") {
-        const size = c.getFontSizeValue();
+      if (text) {
+        const size = text.getFontSizeValue();
         if (size > 0) css.fontSize = `${size * s}px`;
-        const color = c.getColorValue() | 0;
+        const color = text.getColorValue() | 0;
         css.color = argb(color);
         css.caretColor = argb(color);
-        css.fontWeight = String(Math.round(c.getFontWeightValue() || 400));
-        const align = c.getTextAlignValue();
+        css.fontWeight = String(Math.round(text.getFontWeightValue() || 400));
+        if (text.getFontStyle() === 1) css.fontStyle = "italic";
+        const align = text.getTextAlignValue();
         css.textAlign = align === 3 ? "center" : align === 2 || align === 6 ? "right" : "left";
+      } else {
+        css.fontSize = `${36 * s}px`;
+        css.color = "rgb(0, 0, 0)";
       }
       Object.assign(editor.style, css);
-      editor.setAttribute("data-rc-text-input", String(session.getOperation().getTextId()));
+      editor.setAttribute("data-rc-text-input", String(session.getLayout().getTextId()));
     }
   };
   function configure(editor, op) {
@@ -7116,15 +9666,31 @@ var RC = (() => {
       [T.IME_ACTION_PREVIOUS]: "previous",
       [T.IME_ACTION_NEXT]: "next",
       [T.IME_ACTION_DONE]: "done"
-    }[op.getImeAction()] ?? (op.hasFlag(T.FLAG_SINGLE_LINE) ? "done" : "enter");
+    }[op.getImeAction()] ?? (editor instanceof HTMLInputElement ? "done" : "enter");
     editor.setAttribute("enterkeyhint", hint);
-    const correct = op.hasFlag(T.FLAG_AUTO_CORRECT);
+    const correct = op.hasInputFlag(T.FLAG_AUTO_CORRECT) && !op.isPassword();
     editor.setAttribute("autocorrect", correct ? "on" : "off");
     editor.spellcheck = correct;
-    editor.setAttribute("autocapitalize", op.hasFlag(T.FLAG_CAPITALIZE_CHARACTERS) ? "characters" : op.hasFlag(T.FLAG_CAPITALIZE_WORDS) ? "words" : op.hasFlag(T.FLAG_CAPITALIZE_SENTENCES) ? "sentences" : "off");
-    editor.autocomplete = "off";
+    editor.setAttribute("autocapitalize", op.hasInputFlag(T.FLAG_CAPITALIZE_CHARACTERS) ? "characters" : op.hasInputFlag(T.FLAG_CAPITALIZE_WORDS) ? "words" : op.hasInputFlag(T.FLAG_CAPITALIZE_SENTENCES) ? "sentences" : "off");
+    editor.autocomplete = AUTOCOMPLETE[op.getContentType()] ?? "off";
     if (op.getMaxLength() > 0) editor.maxLength = op.getMaxLength();
   }
+  var AUTOCOMPLETE = {
+    [T.CONTENT_TYPE_PERSON_NAME]: "name",
+    [T.CONTENT_TYPE_PERSON_FIRST_NAME]: "given-name",
+    [T.CONTENT_TYPE_PERSON_LAST_NAME]: "family-name",
+    [T.CONTENT_TYPE_EMAIL_ADDRESS]: "email",
+    [T.CONTENT_TYPE_PHONE_NUMBER]: "tel",
+    [T.CONTENT_TYPE_USERNAME]: "username",
+    [T.CONTENT_TYPE_PASSWORD]: "current-password",
+    [T.CONTENT_TYPE_NEW_PASSWORD]: "new-password",
+    [T.CONTENT_TYPE_ONE_TIME_CODE]: "one-time-code",
+    [T.CONTENT_TYPE_POSTAL_ADDRESS]: "street-address",
+    [T.CONTENT_TYPE_POSTAL_CODE]: "postal-code",
+    [T.CONTENT_TYPE_CREDIT_CARD_NUMBER]: "cc-number",
+    [T.CONTENT_TYPE_CREDIT_CARD_EXPIRATION_DATE]: "cc-exp",
+    [T.CONTENT_TYPE_CREDIT_CARD_SECURITY_CODE]: "cc-csc"
+  };
   function filtered(text, op) {
     let out = text;
     switch (op.getFilter()) {
@@ -7141,7 +9707,7 @@ var RC = (() => {
         out = out.replace(/[^\p{L}\p{N}]/gu, "");
         break;
     }
-    if (op.hasFlag(T.FLAG_SINGLE_LINE)) out = out.replace(/[\r\n]+/g, " ");
+    if (op.hasInputFlag(T.FLAG_SINGLE_LINE) || op.isPassword()) out = out.replace(/[\r\n]+/g, " ");
     if (op.getMaxLength() > 0 && out.length > op.getMaxLength()) out = out.slice(0, op.getMaxLength());
     return out;
   }
@@ -7150,7 +9716,7 @@ var RC = (() => {
     return `rgba(${c >>> 16 & 255}, ${c >>> 8 & 255}, ${c & 255}, ${a.toFixed(3)})`;
   }
 
-  // ../kobento-ts/src/core/operations/Header.ts
+  // src/core/operations/Header.ts
   var _Header = class _Header extends Operation {
     constructor(majorVersion, minorVersion, patchVersion, properties = null, width = 256, height = 256, capabilities = 0) {
       super();
@@ -7327,7 +9893,7 @@ var RC = (() => {
   _Header.DATA_TYPE_STRING = 3;
   var Header = _Header;
 
-  // ../kobento-ts/src/core/operations/layout/ContainerEnd.ts
+  // src/core/operations/layout/ContainerEnd.ts
   var _ContainerEnd = class _ContainerEnd extends Operation {
     write(buffer) {
       buffer.start(_ContainerEnd.OP_CODE);
@@ -7344,7 +9910,7 @@ var RC = (() => {
   _ContainerEnd.OP_CODE = 214;
   var ContainerEnd = _ContainerEnd;
 
-  // ../kobento-ts/src/core/operations/layout/measure/MeasurePass.ts
+  // src/core/operations/layout/measure/MeasurePass.ts
   var MeasurePass = class {
     constructor() {
       this.mList = /* @__PURE__ */ new Map();
@@ -7386,12 +9952,13 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/layout/RootLayoutComponent.ts
+  // src/core/operations/layout/RootLayoutComponent.ts
   var _RootLayoutComponent = class _RootLayoutComponent extends Component {
     constructor(componentId = -1) {
       super(componentId);
       this.mCurrentId = -1;
       this.mHasTouchListeners = false;
+      this.mShown = true;
     }
     getHasTouchListeners() {
       return this.mHasTouchListeners;
@@ -7577,7 +10144,7 @@ var RC = (() => {
   _RootLayoutComponent.OP_CODE = 200;
   var RootLayoutComponent = _RootLayoutComponent;
 
-  // ../kobento-ts/src/core/TimeVariables.ts
+  // src/core/TimeVariables.ts
   var TimeVariables = class {
     constructor(clock) {
       this.mLastAnimationTime = -1;
@@ -7614,7 +10181,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/DataOperations.ts
+  // src/core/operations/DataOperations.ts
   var NANMAP_PATH_BASE = 3145728;
   function isPathMarkerBits(b) {
     if (!isNaNBits(b)) return false;
@@ -8021,7 +10588,7 @@ var RC = (() => {
   _RootContentBehavior.LAYOUT_WRAP_CONTENT = 1;
   var RootContentBehavior = _RootContentBehavior;
 
-  // ../kobento-ts/src/core/operations/StubOperations.ts
+  // src/core/operations/StubOperations.ts
   var _ImpulseOperation = class _ImpulseOperation extends PaintOperation {
     constructor(duration, startAt) {
       super();
@@ -8428,7 +10995,7 @@ var RC = (() => {
   _TimeAttribute.TIME_DAY_OF_YEAR = 15;
   var TimeAttribute = _TimeAttribute;
 
-  // ../kobento-ts/src/core/operations/loom/PatternOperations.ts
+  // src/core/operations/loom/PatternOperations.ts
   var _ReferencedOperations = class _ReferencedOperations extends Operation {
     constructor(id) {
       super();
@@ -8776,7 +11343,7 @@ var RC = (() => {
     return new Ctor(loomManager, parent.getDocument(), ctx, blocks, parent.isSafeMode(), depth);
   }
 
-  // ../kobento-ts/src/core/Compression.ts
+  // src/core/Compression.ts
   var COMPRESS = 31;
   var COMPRESSION_NONE = 0;
   var COMPRESSION_DEFLATE = 1;
@@ -9012,7 +11579,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/WireBuffer.ts
+  // src/core/WireBuffer.ts
   var _WireBuffer = class _WireBuffer {
     constructor(size = _WireBuffer.BUFFER_SIZE) {
       this.mIndex = 0;
@@ -9300,7 +11867,7 @@ var RC = (() => {
   _WireBuffer.BUFFER_SIZE = 1024 * 1024;
   var WireBuffer = _WireBuffer;
 
-  // ../kobento-ts/src/core/operations/DrawBase4.ts
+  // src/core/operations/DrawBase4.ts
   var DrawBase4 = class extends PaintOperation {
     // Constructed from the raw int32 bits of each coordinate (see read()).
     constructor(x1Bits, y1Bits, x2Bits, y2Bits) {
@@ -9333,7 +11900,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/DrawRect.ts
+  // src/core/operations/DrawRect.ts
   var _DrawRect = class _DrawRect extends DrawBase4 {
     paintBase4(context, x1, y1, x2, y2) {
       context.drawRect(x1, y1, x2, y2);
@@ -9353,7 +11920,7 @@ var RC = (() => {
   _DrawRect.OP_CODE = 42;
   var DrawRect = _DrawRect;
 
-  // ../kobento-ts/src/core/operations/DrawBase3.ts
+  // src/core/operations/DrawBase3.ts
   var DrawBase3 = class extends PaintOperation {
     constructor(v1Bits, v2Bits, v3Bits) {
       super();
@@ -9381,7 +11948,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/DrawCircle.ts
+  // src/core/operations/DrawCircle.ts
   var _DrawCircle = class _DrawCircle extends DrawBase3 {
     paintBase3(context, v1, v2, v3) {
       context.drawCircle(v1, v2, v3);
@@ -9396,7 +11963,7 @@ var RC = (() => {
   _DrawCircle.OP_CODE = 46;
   var DrawCircle = _DrawCircle;
 
-  // ../kobento-ts/src/core/operations/DrawOval.ts
+  // src/core/operations/DrawOval.ts
   var _DrawOval = class _DrawOval extends DrawBase4 {
     paintBase4(context, x1, y1, x2, y2) {
       context.drawOval(x1, y1, x2, y2);
@@ -9416,7 +11983,7 @@ var RC = (() => {
   _DrawOval.OP_CODE = 56;
   var DrawOval = _DrawOval;
 
-  // ../kobento-ts/src/core/operations/DrawBase6.ts
+  // src/core/operations/DrawBase6.ts
   var DrawBase6 = class extends PaintOperation {
     constructor(v1Bits, v2Bits, v3Bits, v4Bits, v5Bits, v6Bits) {
       super();
@@ -9456,7 +12023,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/DrawRoundRect.ts
+  // src/core/operations/DrawRoundRect.ts
   var _DrawRoundRect = class _DrawRoundRect extends DrawBase6 {
     paintBase6(context, v1, v2, v3, v4, v5, v6) {
       context.drawRoundRect(v1, v2, v3, v4, v5, v6);
@@ -9478,7 +12045,7 @@ var RC = (() => {
   _DrawRoundRect.OP_CODE = 51;
   var DrawRoundRect = _DrawRoundRect;
 
-  // ../kobento-ts/src/core/operations/DrawArc.ts
+  // src/core/operations/DrawArc.ts
   var _DrawArc = class _DrawArc extends DrawBase6 {
     paintBase6(context, v1, v2, v3, v4, v5, v6) {
       context.drawArc(v1, v2, v3, v4, v5, v6);
@@ -9500,7 +12067,7 @@ var RC = (() => {
   _DrawArc.OP_CODE = 152;
   var DrawArc = _DrawArc;
 
-  // ../kobento-ts/src/core/operations/DrawSector.ts
+  // src/core/operations/DrawSector.ts
   var _DrawSector = class _DrawSector extends DrawBase6 {
     paintBase6(context, v1, v2, v3, v4, v5, v6) {
       context.drawSector(v1, v2, v3, v4, v5, v6);
@@ -9522,7 +12089,7 @@ var RC = (() => {
   _DrawSector.OP_CODE = 52;
   var DrawSector = _DrawSector;
 
-  // ../kobento-ts/src/core/operations/Mesh2DGenerator.ts
+  // src/core/operations/Mesh2DGenerator.ts
   var LAYOUT_POLAR = 1;
   var LAYOUT_RING = 2;
   var LAYOUT_FAN = 4;
@@ -9551,6 +12118,7 @@ var RC = (() => {
   var HALF_PI = 1.5707964;
   var DEGENERATE_EPSILON = 1e-6;
   var MAX_MESH_2D_VERTICES = 16384;
+  var MAX_MESH_2D_GRID = 16384;
   function wrapsU(layout) {
     return layout === LAYOUT_POLAR || layout === LAYOUT_RING || layout === LAYOUT_FAN;
   }
@@ -9564,14 +12132,15 @@ var RC = (() => {
     const columns = wrapsU(layout) ? uCount : uCount - 1;
     return columns * (vCount - 1) * 6;
   }
+  var fr = Math.fround;
   function domainU(layout, i, uCount) {
     if (uCount <= 1) return 0;
-    if (wrapsU(layout)) return i / uCount;
-    return i / (uCount - 1);
+    if (wrapsU(layout)) return fr(i / uCount);
+    return fr(i / (uCount - 1));
   }
   function domainV(j, vCount) {
     if (vCount <= 1) return 0;
-    return j / (vCount - 1);
+    return fr(j / (vCount - 1));
   }
   function generateIndices(layout, uCount, vCount) {
     const out = new Int32Array(Math.max(0, indexCount(layout, uCount, vCount)));
@@ -9604,20 +12173,233 @@ var RC = (() => {
     }
     return out;
   }
+  var ANTIALIAS_MAX_MITER = 4;
+  function antialiasLoops(layout, uCount, vCount) {
+    switch (layout) {
+      case LAYOUT_FAN: {
+        if (uCount < 3) return [];
+        const rim = new Int32Array(uCount);
+        for (let i = 0; i < uCount; i++) rim[i] = 1 + i;
+        return [rim];
+      }
+      case LAYOUT_POLAR:
+      case LAYOUT_RING: {
+        if (uCount < 3 || vCount < 2) return [];
+        const first = new Int32Array(uCount);
+        const last = new Int32Array(uCount);
+        const lastRow = (vCount - 1) * uCount;
+        for (let i = 0; i < uCount; i++) {
+          first[i] = (uCount - i) % uCount;
+          last[i] = lastRow + i;
+        }
+        return [first, last];
+      }
+      default: {
+        if (uCount < 2 || vCount < 2) return [];
+        const loop = new Int32Array(2 * (uCount + vCount) - 4);
+        let k = 0;
+        for (let j = 0; j < vCount; j++) loop[k++] = j * uCount;
+        for (let i = 1; i < uCount; i++) loop[k++] = (vCount - 1) * uCount + i;
+        for (let j = vCount - 2; j >= 0; j--) loop[k++] = j * uCount + uCount - 1;
+        for (let i = uCount - 2; i >= 1; i--) loop[k++] = i;
+        return [loop];
+      }
+    }
+  }
+  function antialiasVertexCount(loops) {
+    let count = 0;
+    for (const loop of loops) count += loop.length;
+    return count;
+  }
+  function antialiasIndexCount(loops) {
+    return antialiasVertexCount(loops) * 6;
+  }
+  function appendAntialiasSkirt(layout, uCount, vCount, loops, width, verts, uv, colors, bodyVertexCount) {
+    const reach = width > 0 && width < Infinity ? width : 0;
+    let base = bodyVertexCount;
+    for (const loop of loops) {
+      const n = loop.length;
+      const normals = new Float32Array(2 * n);
+      const side = reach > 0 ? outwardSide(layout, uCount, vCount, loop, verts) : 0;
+      if (side !== 0 && edgeNormals(loop, verts, side, normals)) {
+        skirtPositions(loop, verts, reach, side, normals, base);
+      } else {
+        for (let e = 0; e < n; e++) {
+          verts[(base + e) * 2] = verts[loop[e] * 2];
+          verts[(base + e) * 2 + 1] = verts[loop[e] * 2 + 1];
+        }
+      }
+      for (let e = 0; e < n; e++) {
+        const a = loop[e];
+        const skirtA = base + e;
+        if (uv.length > 0) {
+          uv[skirtA * 2] = uv[a * 2];
+          uv[skirtA * 2 + 1] = uv[a * 2 + 1];
+        }
+        if (colors.length > 0) colors[skirtA] = colors[a] & 16777215;
+      }
+      base += n;
+    }
+  }
+  function antialiasIndices(bodyIndices, loops, bodyVertexCount) {
+    const edgeCount = antialiasVertexCount(loops);
+    const out = new Int32Array(bodyIndices.length + edgeCount * 6);
+    const edges = new Int32Array(edgeCount * 4);
+    const leaving = new Int32Array(bodyVertexCount).fill(-1);
+    let edge = 0;
+    let base = bodyVertexCount;
+    for (const loop of loops) {
+      const n = loop.length;
+      for (let e = 0; e < n; e++) {
+        edges[edge * 4] = loop[e];
+        edges[edge * 4 + 1] = loop[(e + 1) % n];
+        edges[edge * 4 + 2] = base + e;
+        edges[edge * 4 + 3] = base + (e + 1) % n;
+        if (loop[e] >= 0 && loop[e] < bodyVertexCount) leaving[loop[e]] = edge;
+        edge++;
+      }
+      base += n;
+    }
+    const loopEdge = (a, b) => {
+      if (a >= 0 && a < leaving.length) {
+        const e = leaving[a];
+        if (e >= 0 && edges[e * 4 + 1] === b) return e;
+      }
+      if (b >= 0 && b < leaving.length) {
+        const e = leaving[b];
+        if (e >= 0 && edges[e * 4 + 1] === a) return e;
+      }
+      return -1;
+    };
+    let k = 0;
+    const skirtTriangles = (e) => {
+      const a = edges[e * 4], b = edges[e * 4 + 1];
+      const skirtA = edges[e * 4 + 2], skirtB = edges[e * 4 + 3];
+      out[k++] = b;
+      out[k++] = a;
+      out[k++] = skirtA;
+      out[k++] = b;
+      out[k++] = skirtA;
+      out[k++] = skirtB;
+    };
+    const drawn = new Uint8Array(edgeCount);
+    const wholeTriangles = Math.trunc(bodyIndices.length / 3) * 3;
+    for (let t = 0; t < wholeTriangles; t += 3) {
+      out[k++] = bodyIndices[t];
+      out[k++] = bodyIndices[t + 1];
+      out[k++] = bodyIndices[t + 2];
+      for (let s = 0; s < 3; s++) {
+        const e = loopEdge(bodyIndices[t + s], bodyIndices[t + (s + 1) % 3]);
+        if (e >= 0 && !drawn[e]) {
+          drawn[e] = 1;
+          skirtTriangles(e);
+        }
+      }
+    }
+    for (let e = 0; e < edgeCount; e++) if (!drawn[e]) skirtTriangles(e);
+    for (let i = wholeTriangles; i < bodyIndices.length; i++) out[k++] = bodyIndices[i];
+    return out;
+  }
+  function antialiasInward(layout, uCount, vCount, vertex) {
+    if (layout === LAYOUT_FAN) return 0;
+    const i = vertex % uCount;
+    const j = Math.trunc(vertex / uCount);
+    if (layout === LAYOUT_POLAR || layout === LAYOUT_RING) {
+      return (j === 0 ? 1 : vCount - 2) * uCount + i;
+    }
+    const ii = i === 0 ? 1 : i === uCount - 1 ? uCount - 2 : i;
+    const jj = j === 0 ? 1 : j === vCount - 1 ? vCount - 2 : j;
+    return jj * uCount + ii;
+  }
+  function outwardSide(layout, uCount, vCount, loop, verts) {
+    let vote = 0;
+    let magnitude = 0;
+    const n = loop.length;
+    for (let e = 0; e < n; e++) {
+      const a = loop[e];
+      const b = loop[(e + 1) % n];
+      const c = antialiasInward(layout, uCount, vCount, a);
+      const ax = verts[a * 2], ay = verts[a * 2 + 1];
+      const dx = verts[b * 2] - ax, dy = verts[b * 2 + 1] - ay;
+      const cx = verts[c * 2] - ax, cy = verts[c * 2 + 1] - ay;
+      vote += dx * cy - dy * cx;
+      magnitude += Math.hypot(dx, dy) * Math.hypot(cx, cy);
+    }
+    if (!(Math.abs(vote) > 1e-6 * magnitude)) return 0;
+    return vote > 0 ? 1 : -1;
+  }
+  function edgeNormals(loop, verts, side, normals) {
+    const n = loop.length;
+    let any = false;
+    for (let e = 0; e < n; e++) {
+      const a = loop[e];
+      const b = loop[(e + 1) % n];
+      const dx = Math.fround(verts[b * 2] - verts[a * 2]);
+      const dy = Math.fround(verts[b * 2 + 1] - verts[a * 2 + 1]);
+      const length = Math.fround(Math.hypot(dx, dy));
+      if (length > DEGENERATE_EPSILON) {
+        normals[e * 2] = side * dy / length;
+        normals[e * 2 + 1] = -side * dx / length;
+        any = true;
+      } else {
+        normals[e * 2] = 0;
+        normals[e * 2 + 1] = 0;
+      }
+    }
+    return any;
+  }
+  function hasNormal(normals, edge) {
+    return normals[edge * 2] !== 0 || normals[edge * 2 + 1] !== 0;
+  }
+  function skirtPositions(loop, verts, reach, side, normals, base) {
+    const n = loop.length;
+    let next = 0;
+    while (!hasNormal(normals, next)) next++;
+    for (let k = n - 1; k >= 0; k--) {
+      if (hasNormal(normals, k)) next = k;
+      verts[(base + k) * 2] = normals[next * 2];
+      verts[(base + k) * 2 + 1] = normals[next * 2 + 1];
+    }
+    let previous = n - 1;
+    while (!hasNormal(normals, previous)) previous--;
+    const limit = ANTIALIAS_MAX_MITER * ANTIALIAS_MAX_MITER;
+    for (let k = 0; k < n; k++) {
+      if (k > 0 && hasNormal(normals, k - 1)) previous = k - 1;
+      const px = normals[previous * 2];
+      const py = normals[previous * 2 + 1];
+      const mx = px + verts[(base + k) * 2];
+      const my = py + verts[(base + k) * 2 + 1];
+      const lengthSquared = mx * mx + my * my;
+      let offsetX;
+      let offsetY;
+      if (lengthSquared < 1e-12) {
+        offsetX = -side * py * reach;
+        offsetY = side * px * reach;
+      } else {
+        let scale2 = 2 / lengthSquared;
+        if (lengthSquared * limit < 4) scale2 = ANTIALIAS_MAX_MITER / Math.sqrt(lengthSquared);
+        offsetX = mx * scale2 * reach;
+        offsetY = my * scale2 * reach;
+      }
+      const a = loop[k];
+      verts[(base + k) * 2] = verts[a * 2] + offsetX;
+      verts[(base + k) * 2 + 1] = verts[a * 2 + 1] + offsetY;
+    }
+  }
   function defaultPosition(layout, u, v, out) {
     switch (layout) {
       case LAYOUT_POLAR:
       case LAYOUT_FAN: {
-        const angle = u * TWO_PI;
-        out[0] = v * Math.cos(angle);
-        out[1] = v * Math.sin(angle);
+        const angle = fr(u * TWO_PI);
+        out[0] = fr(v * fr(Math.cos(angle)));
+        out[1] = fr(v * fr(Math.sin(angle)));
         break;
       }
       case LAYOUT_RING: {
-        const angle = u * TWO_PI;
-        const radius = DEFAULT_RING_INNER_RADIUS + (1 - DEFAULT_RING_INNER_RADIUS) * v;
-        out[0] = radius * Math.cos(angle);
-        out[1] = radius * Math.sin(angle);
+        const angle = fr(u * TWO_PI);
+        const radius = fr(DEFAULT_RING_INNER_RADIUS + fr((1 - DEFAULT_RING_INNER_RADIUS) * v));
+        out[0] = fr(radius * fr(Math.cos(angle)));
+        out[1] = fr(radius * fr(Math.sin(angle)));
         break;
       }
       default:
@@ -9897,7 +12679,7 @@ var RC = (() => {
       out[1] = 0;
       return;
     }
-    if (layout === LAYOUT_FAN && uCount >= 1 && vc === uCount + 1) {
+    if (layout === LAYOUT_FAN && uCount >= 1 && vc >= uCount + 1) {
       const uNorm = (u % 1 + 1) % 1;
       const fu = uNorm * uCount;
       const i0 = Math.floor(fu) % uCount;
@@ -9910,7 +12692,7 @@ var RC = (() => {
       out[1] = (1 - vClamp) * verts[1] + vClamp * rimY;
       return;
     }
-    if (uCount >= 2 && vCount >= 2 && uCount * vCount === vc) {
+    if (uCount >= 2 && vCount >= 2 && uCount * vCount <= vc) {
       let i0, i1, tu;
       if (wrapsU(layout)) {
         const uNorm = (u % 1 + 1) % 1;
@@ -10023,14 +12805,14 @@ var RC = (() => {
     out[5] = originY;
   }
   function clamp255(f) {
-    const i = Math.trunc(f * 255 + 0.5);
+    const i = Math.trunc(Math.fround(Math.fround(Math.fround(f) * 255) + 0.5));
     return i < 0 ? 0 : i > 255 ? 255 : i;
   }
   function packColor(a, r, g, b) {
     return clamp255(a) << 24 | clamp255(r) << 16 | clamp255(g) << 8 | clamp255(b) | 0;
   }
 
-  // ../kobento-ts/src/core/operations/Mesh2D.ts
+  // src/core/operations/Mesh2D.ts
   var MESH_OP_OFFSET = 3211264;
   var MESH_ID_REGION_MASK = 7340032;
   var MESH_ID_REGION_ARRAY = 2097152;
@@ -10038,7 +12820,7 @@ var RC = (() => {
     return isNaNBits(bits);
   }
   var _AddMesh2D = class _AddMesh2D extends Operation {
-    constructor(mMeshId, mType, mLayout, mUCount, mVCount, mFlags, mAux, mExpressions, mSrcIndices, mSrcVerts, mSrcUv, mSrcColors, mWidths, mWidthPositions) {
+    constructor(mMeshId, mType, mLayout, mUCount, mVCount, mFlags, mAux, mExpressions, mSrcIndices, mSrcVerts, mSrcUv, mSrcColors, mWidths, mWidthPositions, mAntialiasWidth = floatToRawIntBits(_AddMesh2D.DEFAULT_ANTIALIAS_WIDTH)) {
       super();
       this.mMeshId = mMeshId;
       this.mType = mType;
@@ -10054,6 +12836,8 @@ var RC = (() => {
       this.mSrcColors = mSrcColors;
       this.mWidths = mWidths;
       this.mWidthPositions = mWidthPositions;
+      this.mAntialiasWidth = mAntialiasWidth;
+      this.mSkirtIndices = null;
       // expanded geometry, in the layout drawVertices wants
       this.mVerts = new Float32Array(0);
       this.mUv = new Float32Array(0);
@@ -10069,6 +12853,15 @@ var RC = (() => {
       this.mMeshDirty = true;
       this.mScratchPos = new Float32Array(2);
       this.mScratchSample = new Float32Array(4);
+      const uc = Math.max(1, mUCount);
+      const vc = Math.max(1, mVCount);
+      this.mAntialiasLoops = this.isAntialiased && layoutVertexCount(mLayout, uc, vc) <= MAX_MESH_2D_GRID ? antialiasLoops(mLayout, uc, vc) : [];
+      this.mSkirtVertexCount = antialiasVertexCount(this.mAntialiasLoops);
+      this.mSkirtIndexCount = antialiasIndexCount(this.mAntialiasLoops);
+    }
+    /** Never a spline strip, which has no colours to fade. */
+    get isAntialiased() {
+      return (this.mFlags & _AddMesh2D.FLAG_ANTIALIAS) !== 0 && !this.isSplineStrip;
     }
     // Players read documents; they never write them. Stubbed as elsewhere in this tree.
     write(_buffer) {
@@ -10088,6 +12881,9 @@ var RC = (() => {
         for (let i = 0; i < arr.length; i++) {
           if (isNaNBits(arr[i])) context.listensTo(idFromBits(arr[i]), this);
         }
+      }
+      if (this.isAntialiased && isNaNBits(this.mAntialiasWidth)) {
+        context.listensTo(idFromBits(this.mAntialiasWidth), this);
       }
     }
     markDirty() {
@@ -10139,13 +12935,51 @@ var RC = (() => {
       const vertexCount2 = n / 2;
       this.mUv = this.mSrcUv.length === n ? new Float32Array(this.mSrcUv) : new Float32Array(0);
       this.mColors = this.mSrcColors.length === vertexCount2 ? new Int32Array(this.mSrcColors) : new Int32Array(0);
-      this.mIndices = new Int32Array(this.mSrcIndices);
+      const skirt = this.mSkirtVertexCount > 0 && this.mSrcColors.length === vertexCount2 && vertexCount(this.mLayout, this.mUCount, this.mVCount) === vertexCount2;
+      if (!skirt) {
+        this.mIndices = new Int32Array(this.mSrcIndices);
+        return;
+      }
+      this.mVerts = grow(verts, (vertexCount2 + this.mSkirtVertexCount) * 2);
+      if (this.mUv.length > 0) {
+        this.mUv = grow(this.mUv, (vertexCount2 + this.mSkirtVertexCount) * 2);
+      }
+      this.mColors = growInt(this.mColors, vertexCount2 + this.mSkirtVertexCount);
+      this.appendSkirt(context, vertexCount2);
+      this.mIndices = this.skirtIndices(vertexCount2);
+    }
+    appendSkirt(context, bodyVertexCount) {
+      appendAntialiasSkirt(
+        this.mLayout,
+        Math.max(1, this.mUCount),
+        Math.max(1, this.mVCount),
+        this.mAntialiasLoops,
+        this.val(context, this.mAntialiasWidth),
+        this.mVerts,
+        this.mUv,
+        this.mColors,
+        bodyVertexCount
+      );
+    }
+    /** The body's triangles with the skirt's woven in; topology only, so worked out once. */
+    skirtIndices(bodyVertexCount) {
+      if (this.mSkirtIndices === null) {
+        const body = this.mType === TYPE_EXPRESSION || this.isSplineStrip ? generateIndices(
+          this.mLayout,
+          Math.max(1, this.mUCount),
+          Math.max(1, this.mVCount)
+        ) : this.mSrcIndices;
+        this.mSkirtIndices = antialiasIndices(body, this.mAntialiasLoops, bodyVertexCount);
+      }
+      return this.mSkirtIndices;
     }
     roundCapColumns() {
       if (this.mType !== TYPE_SPLINE_ROUND_STRIP) return 0;
-      const cap = this.mFlags;
-      if (cap <= 0) return 0;
-      return Math.max(0, Math.min(cap, Math.trunc((this.mUCount - 2) / 2)));
+      const cap = this.mFlags & _AddMesh2D.CAP_SEGMENTS_MASK;
+      if (cap < 1) return 0;
+      const columns = this.mUCount - 1;
+      if (columns < 3) return 0;
+      return Math.min(cap, Math.trunc((columns - 1) / 2));
     }
     evaluate(context, group, u, v, fallback) {
       const e = this.mExpressions[group];
@@ -10206,8 +13040,6 @@ var RC = (() => {
       const vc = Math.max(1, this.mVCount);
       const total = vertexCount(this.mLayout, uc, vc);
       if (total <= 0 || total > MAX_MESH_2D_VERTICES) return;
-      const verts = new Float32Array(total * 2);
-      const uv = new Float32Array(total * 2);
       const texU = this.mExpressions[EXP_TEX_U];
       const texV = this.mExpressions[EXP_TEX_V];
       const hasTex = (texU ? texU.length : 0) > 0 || (texV ? texV.length : 0) > 0;
@@ -10216,7 +13048,11 @@ var RC = (() => {
       const cg = this.mExpressions[EXP_COLOR_G];
       const cb = this.mExpressions[EXP_COLOR_B];
       const hasColor = (ca ? ca.length : 0) > 0 || (cr ? cr.length : 0) > 0 || (cg ? cg.length : 0) > 0 || (cb ? cb.length : 0) > 0;
-      const colors = hasColor ? new Int32Array(total) : new Int32Array(0);
+      const skirt = this.mSkirtVertexCount > 0 && hasColor;
+      const all = total + (skirt ? this.mSkirtVertexCount : 0);
+      const verts = new Float32Array(all * 2);
+      const uv = new Float32Array(all * 2);
+      const colors = hasColor ? new Int32Array(all) : new Int32Array(0);
       let points = 0;
       if (this.mLayout === LAYOUT_PATH_STRIP) {
         const raw = context.getPathData(this.mAux);
@@ -10279,7 +13115,12 @@ var RC = (() => {
       this.mVerts = verts;
       this.mUv = uv;
       this.mColors = colors;
-      this.mIndices = generateIndices(this.mLayout, uc, vc);
+      if (skirt) {
+        this.appendSkirt(context, total);
+        this.mIndices = this.skirtIndices(total);
+      } else {
+        this.mIndices = generateIndices(this.mLayout, uc, vc);
+      }
     }
     static read(buffer, operations) {
       const meshId = buffer.readId();
@@ -10335,6 +13176,20 @@ var RC = (() => {
         for (let i = 0; i < colorCount; i++) srcColors[i] = buffer.readInt();
         for (let g = 0; g < EXPRESSION_GROUPS; g++) expressions.push(new Int32Array(0));
       }
+      let antialiasWidth = floatToRawIntBits(_AddMesh2D.DEFAULT_ANTIALIAS_WIDTH);
+      if ((flags & _AddMesh2D.FLAG_ANTIALIAS) !== 0) {
+        antialiasWidth = buffer.readNanIdBits();
+        validateAntialias(
+          type,
+          layout,
+          uCount,
+          vCount,
+          expressions,
+          srcVerts.length / 2,
+          srcColors.length,
+          antialiasWidth
+        );
+      }
       operations.push(new _AddMesh2D(
         meshId,
         type,
@@ -10349,12 +13204,62 @@ var RC = (() => {
         srcUv,
         srcColors,
         widths,
-        widthPositions
+        widthPositions,
+        antialiasWidth
       ));
     }
   };
   _AddMesh2D.OP_CODE = 104;
+  /** In `flags`: grow an alpha-fading skirt around the mesh's edges. The payload then ends in
+   * one more float, the skirt's width in the mesh's own units, which may be a variable. */
+  _AddMesh2D.FLAG_ANTIALIAS = 1 << 8;
+  /** The bits of `flags` holding a TYPE_SPLINE_ROUND_STRIP's cap columns. */
+  _AddMesh2D.CAP_SEGMENTS_MASK = 255;
+  _AddMesh2D.DEFAULT_ANTIALIAS_WIDTH = 1;
   var AddMesh2D = _AddMesh2D;
+  function grow(a, n) {
+    const out = new Float32Array(n);
+    out.set(a.subarray(0, Math.min(a.length, n)));
+    return out;
+  }
+  function growInt(a, n) {
+    const out = new Int32Array(n);
+    out.set(a.subarray(0, Math.min(a.length, n)));
+    return out;
+  }
+  function layoutVertexCount(layout, uCount, vCount) {
+    return layout === LAYOUT_FAN ? uCount + 1 : uCount * vCount;
+  }
+  function validateAntialias(type, layout, uCount, vCount, expressions, vertexCount2, colorCount, widthBits) {
+    if (type === TYPE_PATH_SPLINE_STRIP || type === TYPE_SPLINE_ROUND_STRIP) {
+      throw new Error("Mesh2D spline strips have no colours to antialias with");
+    }
+    if (!isNaNBits(widthBits)) {
+      const w = intBitsToFloat(widthBits);
+      if (!(w >= 0 && w < Infinity)) {
+        throw new Error("Mesh2D antialias width must be finite and not negative: " + w);
+      }
+    }
+    if (type === TYPE_EXPRESSION) {
+      let hasColor = false;
+      for (let g = EXP_COLOR_A; g <= EXP_COLOR_B && g < expressions.length; g++) {
+        if (expressions[g].length > 0) hasColor = true;
+      }
+      if (!hasColor) throw new Error("Mesh2D antialiasing needs vertex colours; set a colour channel");
+      const u = Math.max(1, uCount);
+      const v = Math.max(1, vCount);
+      if (layoutVertexCount(layout, u, v) > MAX_MESH_2D_GRID || antialiasLoops(layout, u, v).length === 0) {
+        throw new Error("Mesh2D grid " + uCount + "x" + vCount + " has no edges to antialias");
+      }
+      return;
+    }
+    if (colorCount !== vertexCount2) {
+      throw new Error("Mesh2D antialiasing needs one colour per vertex, got " + colorCount + " for " + vertexCount2 + " vertices");
+    }
+    if (layoutVertexCount(layout, uCount, vCount) !== vertexCount2 || antialiasLoops(layout, uCount, vCount).length === 0) {
+      throw new Error("Mesh2D antialiasing needs a layout that describes every vertex, but " + uCount + "x" + vCount + " does not match " + vertexCount2 + " vertices");
+    }
+  }
   var _DrawMesh2D = class _DrawMesh2D extends PaintOperation {
     constructor(mMeshId, mBlend, mImageId) {
       super();
@@ -10420,7 +13325,54 @@ var RC = (() => {
   _MatrixFromMesh2D.OP_CODE = 106;
   var MatrixFromMesh2D = _MatrixFromMesh2D;
 
-  // ../kobento-ts/src/core/operations/DrawPath.ts
+  // src/core/operations/BinaryData.ts
+  var _BinaryData = class _BinaryData extends Operation {
+    constructor(mId, mType, mFlags, mData) {
+      super();
+      this.mId = mId;
+      this.mType = mType;
+      this.mFlags = mFlags;
+      this.mData = mData;
+    }
+    getId() {
+      return this.mId;
+    }
+    getType() {
+      return this.mType;
+    }
+    getFlags() {
+      return this.mFlags;
+    }
+    getData() {
+      return this.mData;
+    }
+    // Players read documents; they never write them. Stubbed as elsewhere in this tree.
+    write(_buffer) {
+    }
+    apply(context) {
+      context.putObject(this.mId, this);
+    }
+    deepToString(indent) {
+      return indent + "BinaryData id=" + this.mId + " type=" + this.mType + " length=" + this.mData.length;
+    }
+    static read(buffer, operations) {
+      const id = buffer.readId();
+      const type = buffer.readInt();
+      const flags = buffer.readInt();
+      const data = buffer.readBufferMax(_BinaryData.MAX_BINARY_DATA);
+      operations.push(new _BinaryData(id, type, flags, data));
+    }
+  };
+  _BinaryData.OP_CODE = 41;
+  /** Uninterpreted bytes. */
+  _BinaryData.TYPE_RAW = 0;
+  /** A complete RemoteCompose document (header included), playable on its own. */
+  _BinaryData.TYPE_RC_DOC = 1;
+  /** Limits.MAX_BINARY_DATA. */
+  _BinaryData.MAX_BINARY_DATA = 1e5;
+  var BinaryData = _BinaryData;
+
+  // src/core/operations/DrawPath.ts
   var _DrawPath = class _DrawPath extends PaintOperation {
     constructor(pathId, start, end) {
       super();
@@ -10444,7 +13396,7 @@ var RC = (() => {
   _DrawPath.OP_CODE = 124;
   var DrawPath = _DrawPath;
 
-  // ../kobento-ts/src/core/operations/DrawTweenPath.ts
+  // src/core/operations/DrawTweenPath.ts
   var _DrawTweenPath = class _DrawTweenPath extends PaintOperation {
     constructor(path1Id, path2Id, tweenBits, startBits, endBits) {
       super();
@@ -10488,7 +13440,7 @@ var RC = (() => {
   _DrawTweenPath.OP_CODE = 125;
   var DrawTweenPath = _DrawTweenPath;
 
-  // ../kobento-ts/src/core/operations/DrawContent.ts
+  // src/core/operations/DrawContent.ts
   var _DrawContent = class _DrawContent extends PaintOperation {
     constructor() {
       super(...arguments);
@@ -10519,7 +13471,7 @@ var RC = (() => {
   _DrawContent.OP_CODE = 139;
   var DrawContent = _DrawContent;
 
-  // ../kobento-ts/src/core/operations/DrawBitmap.ts
+  // src/core/operations/DrawBitmap.ts
   var _DrawBitmap = class _DrawBitmap extends PaintOperation {
     constructor(imageId, leftBits, topBits, rightBits, bottomBits, cdId) {
       super();
@@ -10573,7 +13525,7 @@ var RC = (() => {
   _DrawBitmap.OP_CODE = 44;
   var DrawBitmap = _DrawBitmap;
 
-  // ../kobento-ts/src/core/operations/DrawBitmapInt.ts
+  // src/core/operations/DrawBitmapInt.ts
   var _DrawBitmapInt = class _DrawBitmapInt extends PaintOperation {
     constructor(imageId, srcL, srcT, srcR, srcB, dstL, dstT, dstR, dstB, cdId) {
       super();
@@ -10625,7 +13577,7 @@ var RC = (() => {
   _DrawBitmapInt.OP_CODE = 66;
   var DrawBitmapInt = _DrawBitmapInt;
 
-  // ../kobento-ts/src/core/operations/utilities/ImageScaling.ts
+  // src/core/operations/utilities/ImageScaling.ts
   var _ImageScaling = class _ImageScaling {
     constructor() {
       this.mFinalDstLeft = 0;
@@ -10737,7 +13689,7 @@ var RC = (() => {
   _ImageScaling.SCALE_FIXED_SCALE = 7;
   var ImageScaling = _ImageScaling;
 
-  // ../kobento-ts/src/core/operations/DrawBitmapScaled.ts
+  // src/core/operations/DrawBitmapScaled.ts
   var _DrawBitmapScaled = class _DrawBitmapScaled extends PaintOperation {
     // Args are raw int32 bits for the float fields (see read()).
     constructor(imageId, srcL, srcT, srcR, srcB, dstL, dstT, dstR, dstB, scaleType, scaleFactor, cdId) {
@@ -10848,7 +13800,7 @@ var RC = (() => {
   _DrawBitmapScaled.OP_CODE = 149;
   var DrawBitmapScaled = _DrawBitmapScaled;
 
-  // ../kobento-ts/src/core/operations/DrawText.ts
+  // src/core/operations/DrawText.ts
   var _DrawText = class _DrawText extends PaintOperation {
     constructor(textId, start, end, contextStart, contextEnd, xBits, yBits, rtl) {
       super();
@@ -10905,7 +13857,7 @@ var RC = (() => {
   _DrawText.OP_CODE = 43;
   var DrawText = _DrawText;
 
-  // ../kobento-ts/src/core/operations/DrawTextOnPath.ts
+  // src/core/operations/DrawTextOnPath.ts
   var _DrawTextOnPath = class _DrawTextOnPath extends PaintOperation {
     constructor(textId, pathId, hOffsetBits, vOffsetBits) {
       super();
@@ -10944,7 +13896,7 @@ var RC = (() => {
   _DrawTextOnPath.OP_CODE = 53;
   var DrawTextOnPath = _DrawTextOnPath;
 
-  // ../kobento-ts/src/core/operations/DrawToBitmap.ts
+  // src/core/operations/DrawToBitmap.ts
   var _DrawToBitmap = class _DrawToBitmap extends PaintOperation {
     constructor(bitmapId, mode, color) {
       super();
@@ -10967,7 +13919,7 @@ var RC = (() => {
   _DrawToBitmap.OP_CODE = 190;
   var DrawToBitmap = _DrawToBitmap;
 
-  // ../kobento-ts/src/core/operations/DrawLine.ts
+  // src/core/operations/DrawLine.ts
   var _DrawLine = class _DrawLine extends DrawBase4 {
     paintBase4(context, x1, y1, x2, y2) {
       context.drawLine(x1, y1, x2, y2);
@@ -10987,108 +13939,7 @@ var RC = (() => {
   _DrawLine.OP_CODE = 47;
   var DrawLine = _DrawLine;
 
-  // ../kobento-ts/src/core/PaintContext.ts
-  var PaintContext = class {
-    constructor(context) {
-      this.mTextInputSupport = null;
-      this.mNeedsRepaint = false;
-      this.mMeasureVersion = 0;
-      this.mContext = context;
-    }
-    /** Installs the host support that edits strings a text input modifier declares editable (null: inert). */
-    setTextInputSupport(support) {
-      this.mTextInputSupport = support;
-    }
-    getTextInputSupport() {
-      return this.mTextInputSupport;
-    }
-    getContext() {
-      return this.mContext;
-    }
-    setContext(context) {
-      this.mContext = context;
-    }
-    doesNeedsRepaint() {
-      return this.mNeedsRepaint;
-    }
-    clearNeedsRepaint() {
-      this.mNeedsRepaint = false;
-    }
-    needsRepaint() {
-      this.mNeedsRepaint = true;
-    }
-    setNeedsRepaint(v) {
-      this.mNeedsRepaint = v;
-    }
-    setMeasureVersion(v) {
-      this.mMeasureVersion = v;
-    }
-    getMeasureVersion() {
-      return this.mMeasureVersion;
-    }
-    save() {
-      this.matrixSave();
-    }
-    restore() {
-      this.matrixRestore();
-    }
-    saveLayer(_x, _y, _w, _h) {
-      this.matrixSave();
-    }
-    /** Display density, from the underlying RemoteContext (mirrors Java's PaintContext). */
-    getDensity() {
-      return this.mContext.getDensity();
-    }
-    /**
-     * The document's density behaviour. Layout managers need this to decide whether their
-     * dp-valued spacing scales; they only ever hold a PaintContext, so it has to be reachable
-     * from here.
-     */
-    getDensityBehavior() {
-      return this.mContext.getDensityBehavior();
-    }
-    getClock() {
-      return this.mContext.getClock();
-    }
-    isDebug() {
-      return this.mContext.isBasicDebug();
-    }
-    isAnimationEnabled() {
-      return this.mContext.isAnimationEnabled();
-    }
-    isVisualDebug() {
-      return this.mContext.isVisualDebug();
-    }
-    supportsVersion(major, minor, patch) {
-      return this.mContext.supportsVersion(major, minor, patch);
-    }
-    log(content) {
-      console.log(`[LOG] ${content}`);
-    }
-    wakeIn(seconds) {
-      this.mContext.mRemoteComposeState.wakeIn(seconds);
-    }
-    // ── 2D vertex meshes ────────────────────────────────────────────────────────────────
-    //
-    // Deliberately not abstract: a backend that has not implemented meshes still compiles and
-    // draws nothing. Geometry arrives already in the layout drawVertices wants. An empty `uv`
-    // or `colors` means the channel is absent.
-    //
-    // drawMesh must leave the paint exactly as it found it.
-    setMesh(_meshId, _layout, _uCount, _vCount, _verts, _uv, _colors, _indices) {
-    }
-    drawMesh(_meshId, _blend, _imageId) {
-    }
-    matrixFromMesh(_meshId, _u, _v, _flags) {
-    }
-  };
-  PaintContext.TEXT_MEASURE_MONOSPACE_WIDTH = 1;
-  PaintContext.TEXT_MEASURE_FONT_HEIGHT = 2;
-  PaintContext.TEXT_MEASURE_SPACES = 4;
-  PaintContext.TEXT_COMPLEX = 8;
-  PaintContext.TEXT_MEASURE_AUTOSIZE = 16;
-
-  // ../kobento-ts/src/core/operations/DrawTextAnchored.ts
+  // src/core/operations/DrawTextAnchored.ts
   var _DrawTextAnchored = class _DrawTextAnchored extends PaintOperation {
     constructor(textId, xBits, yBits, panXBits, panYBits, flags) {
       super();
@@ -11183,7 +14034,7 @@ var RC = (() => {
   _DrawTextAnchored.BASELINE_RELATIVE = 8;
   var DrawTextAnchored = _DrawTextAnchored;
 
-  // ../kobento-ts/src/core/operations/MatrixOperations.ts
+  // src/core/operations/MatrixOperations.ts
   function listenFloat(bits, context, op) {
     if (isNaNBits(bits)) context.listensTo(idFromBits(bits), op);
   }
@@ -11437,7 +14288,7 @@ var RC = (() => {
   _ClipPath.OP_CODE = 38;
   var ClipPath = _ClipPath;
 
-  // ../kobento-ts/src/core/d3/Paint3DContext.ts
+  // src/core/d3/Paint3DContext.ts
   var PROJECTION_PERSPECTIVE = 0;
   var M3_IDENTITY = 0;
   var M3_TRANSLATE = 1;
@@ -11465,7 +14316,7 @@ var RC = (() => {
     return !!ctx && typeof ctx.drawMesh3D === "function";
   }
 
-  // ../kobento-ts/src/core/d3/MonotonicCurveFit.ts
+  // src/core/d3/MonotonicCurveFit.ts
   var MonotonicCurveFit2 = class {
     constructor(time, y) {
       this.mExtrapolate = true;
@@ -11667,7 +14518,7 @@ var RC = (() => {
     return -6 * x2 * y2 + 6 * x * y2 + 6 * x2 * y1 - 6 * x * y1 + 3 * h * t2 * x2 + 3 * h * t1 * x2 - 2 * h * t2 * x - 4 * h * t1 * x + h * t1;
   }
 
-  // ../kobento-ts/src/core/d3/Primitive3D.ts
+  // src/core/d3/Primitive3D.ts
   var SPHERE = 0;
   var CYLINDER = 1;
   var CONE = 2;
@@ -13736,7 +16587,7 @@ var RC = (() => {
     }
   }
 
-  // ../kobento-ts/src/core/operations/d3/Operations3D.ts
+  // src/core/operations/d3/Operations3D.ts
   var MAX_INDICES = 6e5;
   var MAX_VERTS_FLOATS = 3 * 2e5;
   var MAX_LIGHTS = 32;
@@ -14205,7 +17056,7 @@ var RC = (() => {
     return visit(ops);
   }
 
-  // ../kobento-ts/src/core/operations/d3/MeshExpression.ts
+  // src/core/operations/d3/MeshExpression.ts
   var SURFACE_HEIGHT_FIELD = 1;
   var SURFACE_SPHERE = 2;
   var SURFACE_CYLINDER = 3;
@@ -14425,7 +17276,7 @@ var RC = (() => {
     }
     /** Central-difference surface normals from the sampled grid, clamped at the edges. */
     computeFiniteDifferenceNormals(uCount, vCount) {
-      const fr2 = Math.fround;
+      const fr3 = Math.fround;
       const V2 = this.mVerts;
       for (let i = 0; i < uCount; i++) {
         const ip = Math.min(i + 1, uCount - 1);
@@ -14437,21 +17288,21 @@ var RC = (() => {
           const b = (im * vCount + j) * 3;
           const c = (i * vCount + jp) * 3;
           const d = (i * vCount + jm) * 3;
-          const dux = fr2(V2[a] - V2[b]);
-          const duy = fr2(V2[a + 1] - V2[b + 1]);
-          const duz = fr2(V2[a + 2] - V2[b + 2]);
-          const dvx = fr2(V2[c] - V2[d]);
-          const dvy = fr2(V2[c + 1] - V2[d + 1]);
-          const dvz = fr2(V2[c + 2] - V2[d + 2]);
-          const nx = fr2(fr2(duy * dvz) - fr2(duz * dvy));
-          const ny = fr2(fr2(duz * dvx) - fr2(dux * dvz));
-          const nz = fr2(fr2(dux * dvy) - fr2(duy * dvx));
-          const len = fr2(Math.sqrt(fr2(fr2(fr2(nx * nx) + fr2(ny * ny)) + fr2(nz * nz))));
+          const dux = fr3(V2[a] - V2[b]);
+          const duy = fr3(V2[a + 1] - V2[b + 1]);
+          const duz = fr3(V2[a + 2] - V2[b + 2]);
+          const dvx = fr3(V2[c] - V2[d]);
+          const dvy = fr3(V2[c + 1] - V2[d + 1]);
+          const dvz = fr3(V2[c + 2] - V2[d + 2]);
+          const nx = fr3(fr3(duy * dvz) - fr3(duz * dvy));
+          const ny = fr3(fr3(duz * dvx) - fr3(dux * dvz));
+          const nz = fr3(fr3(dux * dvy) - fr3(duy * dvx));
+          const len = fr3(Math.sqrt(fr3(fr3(fr3(nx * nx) + fr3(ny * ny)) + fr3(nz * nz))));
           const n = (i * vCount + j) * 3;
           if (len > 1e-8) {
-            this.mNormalsBuf[n] = fr2(nx / len);
-            this.mNormalsBuf[n + 1] = fr2(ny / len);
-            this.mNormalsBuf[n + 2] = fr2(nz / len);
+            this.mNormalsBuf[n] = fr3(nx / len);
+            this.mNormalsBuf[n + 1] = fr3(ny / len);
+            this.mNormalsBuf[n + 2] = fr3(nz / len);
           } else {
             this.mNormalsBuf[n] = 0;
             this.mNormalsBuf[n + 1] = 1;
@@ -14575,7 +17426,7 @@ var RC = (() => {
     return g;
   }
 
-  // ../kobento-ts/src/core/operations/utilities/VectorRpn.ts
+  // src/core/operations/utilities/VectorRpn.ts
   var fround2 = Math.fround;
   function fm2(a, b) {
     return fround2(a * b);
@@ -14910,7 +17761,7 @@ var RC = (() => {
     return r;
   }
 
-  // ../kobento-ts/src/core/operations/VectorExpression.ts
+  // src/core/operations/VectorExpression.ts
   var ID_REGION_MASK2 = 3 << 20;
   var ID_REGION_ARRAY2 = 2 << 20;
   function isResolvableBits3(bits) {
@@ -15009,7 +17860,7 @@ var RC = (() => {
   _VectorExpression.OP_CODE = 116;
   var VectorExpression = _VectorExpression;
 
-  // ../kobento-ts/src/core/operations/ColorExpression.ts
+  // src/core/operations/ColorExpression.ts
   var _ColorExpression = class _ColorExpression extends Operation {
     constructor(id, param1, param2, param3, param4) {
       super();
@@ -15185,7 +18036,7 @@ var RC = (() => {
   _ColorExpression.IDARGB_MODE = 6;
   var ColorExpression = _ColorExpression;
 
-  // ../kobento-ts/src/core/operations/IntegerExpression.ts
+  // src/core/operations/IntegerExpression.ts
   var _IntegerExpression = class _IntegerExpression extends Operation {
     constructor(id, mask, values) {
       super();
@@ -15395,7 +18246,7 @@ var RC = (() => {
   _IntegerExpression.OFFSET = 65536;
   var IntegerExpression = _IntegerExpression;
 
-  // ../kobento-ts/src/core/operations/IntegerConstant.ts
+  // src/core/operations/IntegerConstant.ts
   var _IntegerConstant = class _IntegerConstant extends Operation {
     constructor(id, value) {
       super();
@@ -15420,7 +18271,7 @@ var RC = (() => {
   _IntegerConstant.OP_CODE = 140;
   var IntegerConstant = _IntegerConstant;
 
-  // ../kobento-ts/src/core/operations/BooleanConstant.ts
+  // src/core/operations/BooleanConstant.ts
   var _BooleanConstant = class _BooleanConstant extends Operation {
     constructor(id, value) {
       super();
@@ -15441,7 +18292,7 @@ var RC = (() => {
   _BooleanConstant.OP_CODE = 143;
   var BooleanConstant = _BooleanConstant;
 
-  // ../kobento-ts/src/core/operations/LongConstant.ts
+  // src/core/operations/LongConstant.ts
   var _LongConstant = class _LongConstant extends Operation {
     constructor(id, value) {
       super();
@@ -15469,7 +18320,7 @@ var RC = (() => {
   _LongConstant.OP_CODE = 148;
   var LongConstant = _LongConstant;
 
-  // ../kobento-ts/src/core/operations/ShaderData.ts
+  // src/core/operations/ShaderData.ts
   var _ShaderData = class _ShaderData extends Operation {
     constructor(shaderId, shaderTextId, floatMap, intMap, bitmapMap) {
       super();
@@ -15605,7 +18456,7 @@ var RC = (() => {
   _ShaderData.OP_CODE = 45;
   var ShaderData = _ShaderData;
 
-  // ../kobento-ts/src/core/operations/utilities/StringUtils.ts
+  // src/core/operations/utilities/StringUtils.ts
   var GROUPING_NONE = 0;
   var GROUPING_BY4 = 2;
   var GROUPING_BY32 = 3;
@@ -15739,7 +18590,7 @@ var RC = (() => {
     return wrap(integerPartString + decSep + fact);
   }
 
-  // ../kobento-ts/src/core/operations/TextFromFloat.ts
+  // src/core/operations/TextFromFloat.ts
   var PAD_AFTER_NONE = 1;
   var PAD_AFTER_ZERO = 3;
   var PAD_PRE_NONE = 4;
@@ -15863,7 +18714,7 @@ var RC = (() => {
   _TextFromFloat.OP_CODE = 135;
   var TextFromFloat = _TextFromFloat;
 
-  // ../kobento-ts/src/core/operations/TextMerge.ts
+  // src/core/operations/TextMerge.ts
   var _TextMerge = class _TextMerge extends Operation {
     constructor(textId, srcId1, srcId2) {
       super();
@@ -15895,99 +18746,7 @@ var RC = (() => {
   _TextMerge.OP_CODE = 136;
   var TextMerge = _TextMerge;
 
-  // ../kobento-ts/src/core/operations/ComponentValue.ts
-  var _ComponentValue = class _ComponentValue extends Operation {
-    constructor(type, componentId, valueId) {
-      super();
-      this.mType = type;
-      this.mComponentId = componentId;
-      this.mValueId = valueId;
-    }
-    getType() {
-      return this.mType;
-    }
-    getComponentId2() {
-      return this.mComponentId;
-    }
-    getValueId() {
-      return this.mValueId;
-    }
-    write(_buffer) {
-    }
-    apply(context) {
-      const doc = context.getDocument();
-      if (!doc) return;
-      const component = doc.getComponent(this.mComponentId);
-      if (!component) {
-        if (this.mType === _ComponentValue.WIDTH) {
-          context.loadFloat(this.mValueId, doc.getWidth());
-        } else if (this.mType === _ComponentValue.HEIGHT) {
-          context.loadFloat(this.mValueId, doc.getHeight());
-        }
-        return;
-      }
-      let lc = component;
-      if (lc.constructor?.OP_CODE === 201) {
-        const parent = lc.getParent?.();
-        if (parent) lc = parent;
-      }
-      if (typeof lc.addComponentValue === "function") lc.addComponentValue(this);
-      switch (this.mType) {
-        case _ComponentValue.WIDTH:
-          context.loadFloat(this.mValueId, lc.getWidth ? lc.getWidth() : doc.getWidth());
-          break;
-        case _ComponentValue.HEIGHT:
-          context.loadFloat(this.mValueId, lc.getHeight ? lc.getHeight() : doc.getHeight());
-          break;
-        case _ComponentValue.POS_X:
-          context.loadFloat(this.mValueId, lc.getX ? lc.getX() : 0);
-          break;
-        case _ComponentValue.POS_Y:
-          context.loadFloat(this.mValueId, lc.getY ? lc.getY() : 0);
-          break;
-        case _ComponentValue.POS_ROOT_X: {
-          const loc = lc.getLocationInWindow ? lc.getLocationInWindow() : [0, 0];
-          context.loadFloat(this.mValueId, loc[0]);
-          break;
-        }
-        case _ComponentValue.POS_ROOT_Y: {
-          const loc = lc.getLocationInWindow ? lc.getLocationInWindow() : [0, 0];
-          context.loadFloat(this.mValueId, loc[1]);
-          break;
-        }
-        case _ComponentValue.CONTENT_WIDTH:
-          context.loadFloat(this.mValueId, lc.getContentWidth ? lc.getContentWidth() : lc.getWidth ? lc.getWidth() : 0);
-          break;
-        case _ComponentValue.CONTENT_HEIGHT:
-          context.loadFloat(this.mValueId, lc.getContentHeight ? lc.getContentHeight() : lc.getHeight ? lc.getHeight() : 0);
-          break;
-        default:
-          context.loadFloat(this.mValueId, 0);
-          break;
-      }
-    }
-    deepToString(indent) {
-      return `${indent}ComponentValue(${this.mType}, ${this.mComponentId}, ${this.mValueId})`;
-    }
-    static read(buffer, operations) {
-      const type = buffer.readInt();
-      const componentId = buffer.readId();
-      const valueId = buffer.readId();
-      operations.push(new _ComponentValue(type, componentId, valueId));
-    }
-  };
-  _ComponentValue.OP_CODE = 150;
-  _ComponentValue.WIDTH = 0;
-  _ComponentValue.HEIGHT = 1;
-  _ComponentValue.POS_X = 2;
-  _ComponentValue.POS_Y = 3;
-  _ComponentValue.POS_ROOT_X = 4;
-  _ComponentValue.POS_ROOT_Y = 5;
-  _ComponentValue.CONTENT_WIDTH = 6;
-  _ComponentValue.CONTENT_HEIGHT = 7;
-  var ComponentValue = _ComponentValue;
-
-  // ../kobento-ts/src/core/operations/DataMapIds.ts
+  // src/core/operations/DataMapIds.ts
   var DataMap = class {
     constructor(names, types, ids) {
       this.mNames = names;
@@ -16029,7 +18788,7 @@ var RC = (() => {
   _DataMapIds.OP_CODE = 145;
   var DataMapIds = _DataMapIds;
 
-  // ../kobento-ts/src/core/operations/DataListIds.ts
+  // src/core/operations/DataListIds.ts
   var _DataListIds = class _DataListIds extends Operation {
     constructor(id, ids) {
       super();
@@ -16066,7 +18825,7 @@ var RC = (() => {
   _DataListIds.OP_CODE = 146;
   var DataListIds = _DataListIds;
 
-  // ../kobento-ts/src/core/operations/DataListFloat.ts
+  // src/core/operations/DataListFloat.ts
   var _DataListFloat = class _DataListFloat extends Operation {
     constructor(id, bits) {
       super();
@@ -16120,1491 +18879,7 @@ var RC = (() => {
   _DataListFloat.OP_CODE = 147;
   var DataListFloat = _DataListFloat;
 
-  // ../kobento-ts/src/core/operations/layout/LayoutComponentContent.ts
-  var _LayoutComponentContent = class _LayoutComponentContent extends Component {
-    constructor(componentId) {
-      super(componentId);
-    }
-    write(buffer) {
-      buffer.start(_LayoutComponentContent.OP_CODE);
-      buffer.writeInt(this.getComponentId());
-    }
-    apply(_context) {
-    }
-    deepToString(indent) {
-      return `${indent}LayoutComponentContent(${this.getComponentId()})`;
-    }
-    static read(buffer, operations) {
-      const componentId = buffer.declareId();
-      operations.push(new _LayoutComponentContent(componentId));
-    }
-  };
-  _LayoutComponentContent.OP_CODE = 201;
-  var LayoutComponentContent = _LayoutComponentContent;
-
-  // ../kobento-ts/src/core/operations/layout/CanvasContent.ts
-  var _CanvasContent = class _CanvasContent extends Component {
-    constructor(componentId) {
-      super(componentId);
-    }
-    write(buffer) {
-      buffer.start(_CanvasContent.OP_CODE);
-      buffer.writeInt(this.getComponentId());
-    }
-    apply(_context) {
-    }
-    deepToString(indent) {
-      return `${indent}CanvasContent(${this.getComponentId()})`;
-    }
-    static read(buffer, operations) {
-      const componentId = buffer.declareId();
-      operations.push(new _CanvasContent(componentId));
-    }
-  };
-  _CanvasContent.OP_CODE = 207;
-  var CanvasContent = _CanvasContent;
-
-  // ../kobento-ts/src/core/operations/DataDynamicListFloat.ts
-  var _DataDynamicListFloat = class _DataDynamicListFloat extends Operation {
-    constructor(id, nbValuesBits) {
-      super();
-      this.isDynamic = true;
-      this.mId = id;
-      const nbValues = isNaNBits(nbValuesBits) ? NaN : intBitsToFloat(nbValuesBits);
-      if (nbValues > _DataDynamicListFloat.MAX_FLOAT_ARRAY) {
-        throw new Error("Array too large");
-      }
-      this.mValues = new Float32Array(Math.floor(nbValues) || 0);
-      this.mArrayLengthBits = nbValuesBits;
-      this.mArrayLengthOut = nbValues;
-    }
-    updateVariables(context) {
-      if (isNaNBits(this.mArrayLengthBits)) {
-        this.mArrayLengthOut = context.getFloat(idFromBits(this.mArrayLengthBits));
-      }
-      if (Math.floor(this.mArrayLengthOut) !== this.mValues.length) {
-        this.mValues = new Float32Array(Math.floor(this.mArrayLengthOut) || 0);
-      }
-    }
-    registerListening(context) {
-      context.addCollection(this.mId, this);
-      if (isNaNBits(this.mArrayLengthBits)) {
-        context.listensTo(idFromBits(this.mArrayLengthBits), this);
-      }
-    }
-    apply(context) {
-      context.addCollection(this.mId, this);
-    }
-    getFloatValue(index) {
-      return this.mValues[index];
-    }
-    getFloats() {
-      return this.mValues;
-    }
-    getLength() {
-      return this.mValues.length;
-    }
-    updateValues(values) {
-      if (values.length !== this.mValues.length) {
-        this.mValues = new Float32Array(values.length);
-      }
-      this.mValues.set(values);
-    }
-    write(buffer) {
-      buffer.start(_DataDynamicListFloat.OP_CODE);
-      buffer.writeInt(this.mId);
-      buffer.writeFloat(this.mValues.length);
-    }
-    deepToString(indent) {
-      return `${indent}DataDynamicListFloat(id=${this.mId}, len=${this.mValues.length})`;
-    }
-    static read(buffer, operations) {
-      const id = buffer.declareId();
-      const lenBits = buffer.readNanIdBits();
-      const len = isNaNBits(lenBits) ? NaN : intBitsToFloat(lenBits);
-      if (len > _DataDynamicListFloat.MAX_FLOAT_ARRAY) {
-        throw new Error(`${len} entries exceeds max = ${_DataDynamicListFloat.MAX_FLOAT_ARRAY}`);
-      }
-      operations.push(new _DataDynamicListFloat(id, lenBits));
-    }
-  };
-  _DataDynamicListFloat.OP_CODE = 197;
-  _DataDynamicListFloat.MAX_FLOAT_ARRAY = 2e3;
-  var DataDynamicListFloat = _DataDynamicListFloat;
-
-  // ../kobento-ts/src/core/operations/layout/modifiers/LayoutComputeOperation.ts
-  var _LayoutComputeOperation = class _LayoutComputeOperation extends Operation {
-    constructor(type, boundsId, animateChanges) {
-      super();
-      this.mList = [];
-      this.mParent = null;
-      this.mBounds = new Float32Array(6);
-      this.mType = type;
-      this.mBoundsId = boundsId;
-      this.mAnimateChanges = animateChanges;
-    }
-    getList() {
-      return this.mList;
-    }
-    getType() {
-      return this.mType;
-    }
-    setParent(parent) {
-      this.mParent = parent;
-    }
-    registerListening(context) {
-      for (const op of this.mList) {
-        if (typeof op.registerListening === "function") {
-          op.registerListening(context);
-        }
-      }
-    }
-    updateVariables(context) {
-      let needsInvalidate = false;
-      for (const op of this.mList) {
-        if (typeof op.updateVariables === "function" && op.isDirty()) {
-          op.updateVariables(context);
-          context.incrementOpCount(op);
-          op.apply(context);
-          op.markNotDirty();
-          needsInvalidate = true;
-        }
-      }
-      if (needsInvalidate && this.mParent && typeof this.mParent.invalidateMeasure === "function") {
-        this.mParent.invalidateMeasure();
-      }
-    }
-    markDirty() {
-    }
-    /**
-     * Java LayoutComputeOperation.evaluateInLayout: the document calls it before measuring, so
-     * a block whose expressions changed (a position following a variable, with nothing else
-     * changing) invalidates its component's measure and is laid out again. Without it only a
-     * change that invalidated the layout some other way -- a size -- moved the component.
-     */
-    evaluateInLayout(context) {
-      this.updateVariables(context);
-      return false;
-    }
-    apply(_context) {
-    }
-    applyToMeasure(context, m, parent) {
-      const collectionsAccess = context.getContext().getCollectionsAccess();
-      if (!collectionsAccess) return false;
-      const array = collectionsAccess.getArray(this.mBoundsId);
-      if (!array) return false;
-      this.mBounds[0] = m.getX();
-      this.mBounds[1] = m.getY();
-      this.mBounds[2] = m.getW();
-      this.mBounds[3] = m.getH();
-      this.mBounds[4] = parent.getW();
-      this.mBounds[5] = parent.getH();
-      if (array instanceof DataDynamicListFloat) {
-        array.updateValues(this.mBounds);
-      }
-      for (const operation of this.mList) {
-        if (typeof operation.updateVariables === "function" && operation.isDirty()) {
-          operation.updateVariables(context.getContext());
-        }
-        operation.apply(context.getContext());
-      }
-      const bounds = array.getFloats?.() ?? null;
-      if (!bounds) return false;
-      switch (this.mType) {
-        case _LayoutComputeOperation.TYPE_MEASURE:
-          m.setW(bounds[2]);
-          m.setH(bounds[3]);
-          break;
-        case _LayoutComputeOperation.TYPE_POSITION:
-          m.setX(bounds[0]);
-          m.setY(bounds[1]);
-          break;
-        default:
-          m.setX(bounds[0]);
-          m.setY(bounds[1]);
-          m.setW(bounds[2]);
-          m.setH(bounds[3]);
-      }
-      m.setAllowsAnimation(this.mAnimateChanges);
-      const positionChanged = bounds[0] !== this.mBounds[0] || bounds[1] !== this.mBounds[1];
-      const dimensionChanged = bounds[2] !== this.mBounds[2] || bounds[3] !== this.mBounds[3];
-      if (this.mType === _LayoutComputeOperation.TYPE_MEASURE && dimensionChanged) return true;
-      if (this.mType === _LayoutComputeOperation.TYPE_POSITION && positionChanged) return true;
-      return dimensionChanged || positionChanged;
-    }
-    write(buffer) {
-      buffer.start(_LayoutComputeOperation.OP_CODE);
-      buffer.writeInt(this.mType);
-      buffer.writeInt(this.mBoundsId);
-      buffer.writeBoolean(this.mAnimateChanges);
-    }
-    deepToString(indent) {
-      return `${indent}LayoutComputeOperation(type=${this.mType}, boundsId=${this.mBoundsId})`;
-    }
-    static read(buffer, operations) {
-      const type = buffer.readInt();
-      const boundsId = buffer.readId();
-      const animateChanges = buffer.readBoolean();
-      operations.push(new _LayoutComputeOperation(type, boundsId, animateChanges));
-    }
-  };
-  _LayoutComputeOperation.OP_CODE = 238;
-  _LayoutComputeOperation.TYPE_MEASURE = 0;
-  _LayoutComputeOperation.TYPE_POSITION = 1;
-  var LayoutComputeOperation = _LayoutComputeOperation;
-
-  // ../kobento-ts/src/core/operations/layout/LayoutComponent.ts
-  var LayoutComponent = class _LayoutComponent extends Component {
-    constructor() {
-      super(...arguments);
-      // Extracted modifiers
-      this.mWidthMod = null;
-      this.mHeightMod = null;
-      // Min/max constraints reach a component two ways: the older WidthIn/HeightIn ops
-      // (231/232) and DimensionConstraints (243), which is what `requiredWidthIn` and
-      // `requiredHeightIn` compile to. Both expose getMin()/getMax(), and the measure
-      // pass only needs that, so store either.
-      this.mWidthInMod = null;
-      this.mHeightInMod = null;
-      this.mZIndexMod = null;
-      this.mGraphicsLayerMod = null;
-      // Padding
-      this.mPaddingLeft = 0;
-      // Padding declared *before* the size modifier, which is the only padding that adds
-      // to an explicit width/height. The reference walks the modifier list and stops at
-      // the size modifier (LayoutComponent.computeModifierDefinedWidth), so
-      // `.width(200).padding(30)` is 200 wide with 140 of content, while
-      // `.padding(30).width(200)` is 260 wide — exactly Compose's modifier-order rule.
-      this.mPadBeforeWidth = 0;
-      this.mHasWidthOp = false;
-      this.mHasHeightOp = false;
-      this.mPadBeforeHeight = 0;
-      this.mPaddingRight = 0;
-      this.mPaddingTop = 0;
-      this.mPaddingBottom = 0;
-      // Children components extracted during inflate
-      this.mChildrenComponents = [];
-      // Draw content operations (DrawContentModifier pattern)
-      this.mDrawContentOperations = null;
-      // Component modifier operations (non-structural modifiers that need paint)
-      this.mComponentModifiers = [];
-      // Content operations (paint ops from LayoutComponentContent/CanvasContent)
-      this.mContentOps = [];
-      // Has CanvasLayout-style content
-      this.mHasCanvasLayoutContent = false;
-      // Computed layout modifiers (LayoutComputeOperation)
-      this.mComputedLayoutModifiers = null;
-      // ComponentValue bindings (Java ComponentData pattern)
-      // Collected during inflate; updated during measure to expose dimensions as float variables
-      // (The base Component's list, typed: public there because a ComponentValue registers itself.)
-      this.mComponentValues = null;
-      // Scroll measurement state
-      this.mScrollModifier = null;
-      this.mScrollContentDimension = 0;
-      this.mScrollHostDimension = 0;
-      /** The operations at the component's own level (not modifiers, not content): Java's ComponentData in mList. */
-      this.mComponentDataOps = [];
-      this.mDynamicMemo = null;
-    }
-    getWidthModifier() {
-      return this.mWidthMod;
-    }
-    getHeightModifier() {
-      return this.mHeightMod;
-    }
-    getWidthInModifier() {
-      return this.mWidthInMod;
-    }
-    getHeightInModifier() {
-      return this.mHeightInMod;
-    }
-    getScrollModifier() {
-      return this.mScrollModifier;
-    }
-    inflate() {
-      this.mChildrenComponents = [];
-      this.mComponentModifiers = [];
-      this.mContentOps = [];
-      this.mComponentDataOps = [];
-      this.mDynamicMemo = null;
-      this.mPaddingLeft = 0;
-      this.mPaddingRight = 0;
-      this.mPaddingTop = 0;
-      this.mPaddingBottom = 0;
-      this.mPadBeforeWidth = 0;
-      this.mPadBeforeHeight = 0;
-      let sawWidth = false;
-      let sawHeight = false;
-      this.mComputedLayoutModifiers = null;
-      for (const op of this.getList()) {
-        if (op instanceof AnimationSpec) {
-          this.mAnimationSpec = op;
-          this.mAnimationId = op.getAnimationId();
-        }
-        if (op instanceof PaddingModifier) {
-          this.mPaddingLeft += op.mLeftValue;
-          this.mPaddingTop += op.mTopValue;
-          this.mPaddingRight += op.mRightValue;
-          this.mPaddingBottom += op.mBottomValue;
-          if (!sawWidth) this.mPadBeforeWidth += op.mLeftValue + op.mRightValue;
-          if (!sawHeight) this.mPadBeforeHeight += op.mTopValue + op.mBottomValue;
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof WidthModifier) {
-          this.mWidthMod = op;
-          sawWidth = true;
-        } else if (op instanceof HeightModifier) {
-          sawHeight = true;
-          this.mHeightMod = op;
-        } else if (op instanceof WidthInModifier) {
-          this.mWidthInMod = op;
-        } else if (op instanceof HeightInModifier) {
-          this.mHeightInMod = op;
-        } else if (op instanceof DimensionConstraintsModifier) {
-          const t = op.getType();
-          if (t === DimensionConstraintsModifier.HORIZONTAL || t === DimensionConstraintsModifier.REQUIRED_HORIZONTAL) {
-            this.mWidthInMod = op;
-          } else if (t === DimensionConstraintsModifier.VERTICAL || t === DimensionConstraintsModifier.REQUIRED_VERTICAL) {
-            this.mHeightInMod = op;
-          }
-        } else if (op instanceof ZIndexModifier) {
-          this.mZIndexMod = op;
-          this.mZIndex = op.mValue ?? 0;
-        } else if (op instanceof GraphicsLayerModifier) {
-          this.mGraphicsLayerMod = op;
-        } else if (op instanceof VisibilityModifier) {
-          op.setParent(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof BackgroundModifier) {
-          op.setComponent(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof BorderModifier) {
-          op.setComponent(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof RoundedClipRectModifier) {
-          op.setComponent(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof ClipRectModifier) {
-          op.setComponent(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof OffsetModifier) {
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof TextInputModifier) {
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof ClickModifier || op instanceof MultiClickModifier) {
-          op.setComponent(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof TouchDownModifier || op instanceof TouchUpModifier || op instanceof TouchCancelModifier) {
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof ScrollModifier) {
-          this.mScrollModifier = op;
-          op.inflate(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof MarqueeModifier) {
-          op.setComponent(this);
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof RippleModifier) {
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof AccessibilitySemantics) {
-          this.mComponentModifiers.push(op);
-        } else if (op instanceof LayoutComputeOperation) {
-          if (this.mComputedLayoutModifiers === null) {
-            this.mComputedLayoutModifiers = [];
-          }
-          op.setParent(this);
-          this.mComputedLayoutModifiers.push(op);
-        } else if (op instanceof DrawContentModifier) {
-          this.mDrawContentOperations = [];
-        } else if (op instanceof LayoutComponentContent || op instanceof CanvasContent) {
-          if (op instanceof LayoutComponentContent) op.setParent(this);
-          for (const contentOp of op.getList()) {
-            if (contentOp instanceof Component) {
-              contentOp.setParent(this);
-              this.mChildrenComponents.push(contentOp);
-              contentOp.inflate();
-              if (contentOp instanceof CanvasContent) {
-                this.mHasCanvasLayoutContent = true;
-              }
-            } else if (contentOp instanceof ComponentValue) {
-              if (this.mComponentValues === null) {
-                this.mComponentValues = [];
-              }
-              this.mComponentValues.push(contentOp);
-            } else {
-              if (typeof contentOp.setComponent === "function") {
-                contentOp.setComponent(this);
-              }
-              this.mContentOps.push(contentOp);
-            }
-          }
-          if (op instanceof CanvasContent) {
-            this.mHasCanvasLayoutContent = true;
-          }
-        } else if (op instanceof Component) {
-          op.setParent(this);
-          this.mChildrenComponents.push(op);
-          op.inflate();
-        } else {
-          this.mComponentDataOps.push(op);
-          if (this.mDrawContentOperations !== null) {
-            this.mDrawContentOperations.push(op);
-          } else {
-            this.mContentOps.push(op);
-          }
-        }
-      }
-      this.mHasWidthOp = sawWidth;
-      this.mHasHeightOp = sawHeight;
-      if (!this.mWidthMod) {
-        this.mWidthMod = new WidthModifier(WidthModifier.WRAP, 0);
-      }
-      if (!this.mHeightMod) {
-        this.mHeightMod = new HeightModifier(HeightModifier.WRAP, 0);
-      }
-      if (this.mAnimationSpec !== AnimationSpec.DEFAULT) {
-        for (const c of this.mChildrenComponents) {
-          if (c.mAnimationSpec === AnimationSpec.DEFAULT) c.mAnimationSpec = this.mAnimationSpec;
-        }
-      }
-      this.mX = 0;
-      this.mY = 0;
-      this.mWidth = this.modifierDefinedWidth(true);
-      this.mHeight = this.modifierDefinedHeight(true);
-    }
-    // --- Layout helpers ---
-    isWidthFill() {
-      return this.mWidthMod?.getType() === WidthModifier.FILL;
-    }
-    isHeightFill() {
-      return this.mHeightMod?.getType() === HeightModifier.FILL;
-    }
-    isWidthWrap() {
-      return this.mWidthMod?.getType() === WidthModifier.WRAP;
-    }
-    isHeightWrap() {
-      return this.mHeightMod?.getType() === HeightModifier.WRAP;
-    }
-    isWidthExact() {
-      const t = this.mWidthMod?.getType();
-      return t === WidthModifier.EXACT || t === WidthModifier.EXACT_DP;
-    }
-    isHeightExact() {
-      const t = this.mHeightMod?.getType();
-      return t === HeightModifier.EXACT || t === HeightModifier.EXACT_DP;
-    }
-    hasWidthWeight() {
-      return this.mWidthMod?.getType() === WidthModifier.WEIGHT;
-    }
-    hasHeightWeight() {
-      return this.mHeightMod?.getType() === HeightModifier.WEIGHT;
-    }
-    getWidthModValue() {
-      return this.mWidthMod?.getValue() ?? 0;
-    }
-    getHeightModValue() {
-      return this.mHeightMod?.getValue() ?? 0;
-    }
-    hasComputedLayout() {
-      return this.mComputedLayoutModifiers !== null;
-    }
-    hasDynamicComputes() {
-      if (this.mDynamicMemo !== null) return this.mDynamicMemo;
-      let dynamic = false;
-      for (const op of this.mComponentDataOps) {
-        if (op instanceof Component) continue;
-        if (op instanceof ComponentValue) continue;
-        if (typeof op.updateVariables === "function") {
-          dynamic = true;
-          break;
-        }
-      }
-      if (!dynamic) for (const c of this.mChildrenComponents) {
-        if (c.isVariableSupportComponent()) {
-          dynamic = true;
-          break;
-        }
-      }
-      this.mDynamicMemo = dynamic;
-      return dynamic;
-    }
-    childComponentsForCache() {
-      return this.mChildrenComponents;
-    }
-    applyComputedLayout(type, context, m, parent) {
-      if (this.mComputedLayoutModifiers !== null) {
-        let needsMeasure = false;
-        for (const modifier of this.mComputedLayoutModifiers) {
-          if (modifier.getType() === type) {
-            needsMeasure = modifier.applyToMeasure(context, m, parent) || needsMeasure;
-          }
-        }
-        return needsMeasure;
-      }
-      return false;
-    }
-    // --- Intrinsic size (matches Java LayoutComponent) ---
-    // Java LayoutManager.minIntrinsicHeight/Width: the modifier-defined size (isMin) or
-    // the largest child, whichever is bigger.
-    minIntrinsicHeight() {
-      let height = this.modifierDefinedHeight(true);
-      for (const c of this.mChildrenComponents) {
-        height = Math.max(height, c.minIntrinsicHeight());
-      }
-      return height;
-    }
-    minIntrinsicWidth() {
-      let width = this.modifierDefinedWidth(true);
-      for (const c of this.mChildrenComponents) {
-        width = Math.max(width, c.minIntrinsicWidth());
-      }
-      return width;
-    }
-    /**
-     * Java LayoutComponent.computeModifierDefinedWidth(context, isMin): the padding met
-     * before the width modifier, plus its exact value (a fill is 0 when isMin, else
-     * unbounded), raised to its widthIn minimum.
-     */
-    modifierDefinedWidth(isMin = false) {
-      let w = 0;
-      const t = this.mWidthMod?.getType();
-      if (this.mWidthMod && this.mHasWidthOp) {
-        if (t === WidthModifier.EXACT || t === WidthModifier.EXACT_DP) {
-          w = this.mWidthMod.getValue();
-        } else if (t === WidthModifier.FILL || t === WidthModifier.FILL_PARENT_MAX_WIDTH) {
-          w = isMin ? 0 : Number.MAX_VALUE;
-        }
-        const wIn = this.mWidthInMod;
-        if (wIn && wIn.getMin() >= 0) w = Math.max(w, wIn.getMin());
-      }
-      return this.mPadBeforeWidth + w;
-    }
-    /** Java LayoutComponent.computeModifierDefinedHeight(context, isMin). */
-    modifierDefinedHeight(isMin = false) {
-      let h = 0;
-      const t = this.mHeightMod?.getType();
-      if (this.mHeightMod && this.mHasHeightOp) {
-        if (t === HeightModifier.EXACT || t === HeightModifier.EXACT_DP) {
-          h = this.mHeightMod.getValue();
-        } else if (t === HeightModifier.FILL || t === HeightModifier.FILL_PARENT_MAX_HEIGHT) {
-          h = isMin ? 0 : Number.MAX_VALUE;
-        }
-        const hIn = this.mHeightInMod;
-        if (hIn && hIn.getMin() >= 0) h = Math.max(h, hIn.getMin());
-      }
-      return this.mPadBeforeHeight + h;
-    }
-    computeModifierDefinedWidth() {
-      if (this.isWidthExact()) return this.getWidthModValue() + this.mPaddingLeft + this.mPaddingRight;
-      return -1;
-    }
-    computeModifierDefinedHeight() {
-      if (this.isHeightExact()) return this.getHeightModValue() + this.mPaddingTop + this.mPaddingBottom;
-      return -1;
-    }
-    // --- ComponentValue (Java ComponentData pattern) ---
-    /** Update bound float variables with this component's dimensions/position.
-     *  Matches Java Component.updateComponentValues — called during both measure
-     *  (for WIDTH/HEIGHT) and layout (for all types including POS_X/POS_Y). */
-    updateComponentValues(context, measuredW, measuredH) {
-      if (this.mComponentValues === null) return;
-      for (const cv of this.mComponentValues) {
-        switch (cv.getType()) {
-          case ComponentValue.WIDTH:
-            context.loadFloat(cv.getValueId(), measuredW);
-            break;
-          case ComponentValue.HEIGHT:
-            context.loadFloat(cv.getValueId(), measuredH);
-            break;
-          case ComponentValue.POS_X:
-            context.loadFloat(cv.getValueId(), this.mX);
-            break;
-          case ComponentValue.POS_Y:
-            context.loadFloat(cv.getValueId(), this.mY);
-            break;
-          case ComponentValue.POS_ROOT_X: {
-            const loc = this.getLocationInWindow();
-            context.loadFloat(cv.getValueId(), loc[0]);
-            break;
-          }
-          case ComponentValue.POS_ROOT_Y: {
-            const loc = this.getLocationInWindow();
-            context.loadFloat(cv.getValueId(), loc[1]);
-            break;
-          }
-          case ComponentValue.CONTENT_WIDTH:
-            context.loadFloat(cv.getValueId(), measuredW - this.mPaddingLeft - this.mPaddingRight);
-            break;
-          case ComponentValue.CONTENT_HEIGHT:
-            context.loadFloat(cv.getValueId(), measuredH - this.mPaddingTop - this.mPaddingBottom);
-            break;
-        }
-      }
-    }
-    // --- Layout ---
-    layout(context, measure) {
-      super.layout(context, measure);
-      this.updateComponentValues(context, this.mWidth, this.mHeight);
-      for (const child of this.mChildrenComponents) {
-        child.layout(context, measure);
-      }
-      this.mNeedsMeasure = false;
-    }
-    animatingBounds(context) {
-      super.animatingBounds(context);
-      this.updateComponentValues(context, this.mWidth, this.mHeight);
-      this.layoutModifiers(this.mWidth, this.mHeight);
-    }
-    /** Walk modifiers reducing dimensions by padding and passing to decorators.
-     *  Matches Java ComponentModifiers.layout(). */
-    layoutModifiers(w, h) {
-      let currentW = w;
-      let currentH = h;
-      for (const mod of this.mComponentModifiers) {
-        if (mod instanceof PaddingModifier) {
-          currentW -= mod.mLeftValue + mod.mRightValue;
-          currentH -= mod.mTopValue + mod.mBottomValue;
-        }
-        if (typeof mod.layoutDecorator === "function") {
-          mod.layoutDecorator(currentW, currentH);
-        }
-      }
-    }
-    // --- Paint ---
-    drawContent(paintContext) {
-      paintContext.matrixSave();
-      paintContext.matrixTranslate(-this.mX, -this.mY);
-      this.paintingComponent(paintContext);
-      paintContext.matrixRestore();
-    }
-    paint(paintContext) {
-      if (this.applyAnimationAsNeeded(paintContext)) {
-        return;
-      }
-      if (Visibility.isGone(this.mVisibility)) return;
-      if (Visibility.isInvisible(this.mVisibility)) return;
-      if (this.mDrawContentOperations !== null && this.mDrawContentOperations.length > 0) {
-        paintContext.matrixSave();
-        paintContext.matrixTranslate(this.mX, this.mY);
-        const context = paintContext.getContext();
-        for (const op of this.mDrawContentOperations) {
-          context.incrementOpCount(op);
-          if (op.isDirty() && typeof op.updateVariables === "function") {
-            op.markNotDirty();
-            op.updateVariables(context);
-          }
-          op.apply(context);
-        }
-        paintContext.matrixRestore();
-      } else {
-        this.paintLayered(paintContext);
-      }
-    }
-    /**
-     * paintingComponent inside the graphicsLayer, if any. Java LayoutComponent / CoreText
-     * paintingComponent: at the component's origin, startGraphicsLayer(w, h), hand it the
-     * non-default attributes (fillInAttributes -> setGraphicsLayer), paint modifiers, content
-     * and children into it, then endGraphicsLayer composites it with alpha, scale, rotation
-     * and translation. Java evaluates the attribute values in the modifier's paint(), after
-     * fillInAttributes, so a variable shows a frame late; evaluating first gives the same
-     * values without that lag. A layout animation (AnimateMeasure.paint) paints through here
-     * too, as Java's does through paintingComponent: it painted without the layer, so a
-     * screen fading in while it slid (translationX) showed in place, see-through (CMP-76).
-     */
-    paintLayered(paintContext) {
-      if (!this.mGraphicsLayerMod) {
-        this.paintingComponent(paintContext);
-        return;
-      }
-      const layer = this.mGraphicsLayerMod;
-      layer.evaluate(paintContext);
-      paintContext.matrixSave();
-      paintContext.matrixTranslate(this.mX, this.mY);
-      paintContext.startGraphicsLayer(Math.trunc(this.getWidth()), Math.trunc(this.getHeight()));
-      const attributes = /* @__PURE__ */ new Map();
-      layer.fillInAttributes(attributes);
-      paintContext.setGraphicsLayer(attributes);
-      paintContext.matrixTranslate(-this.mX, -this.mY);
-      this.paintingComponent(paintContext);
-      paintContext.endGraphicsLayer();
-      paintContext.matrixRestore();
-    }
-    /**
-     * Java ComponentModifiers.paint: paint the modifiers (background, border, clip, ...) at
-     * the component's origin, each padding translating the ones after it; the translations
-     * are backed out at the end. Every component kind runs it from its paintingComponent
-     * (LayoutComponent, CoreText, TextLayout, ImageLayout, Custom in Java).
-     */
-    paintModifiers(paintContext) {
-      const context = paintContext.getContext();
-      let tx = 0;
-      let ty = 0;
-      for (const mod of [this.mWidthMod, this.mHeightMod]) {
-        if (mod && mod.isDirty()) {
-          mod.markNotDirty();
-          mod.updateVariables(context);
-        }
-      }
-      let dw = this.mWidth;
-      let dh = this.mHeight;
-      for (const mod of this.mComponentModifiers) {
-        context.incrementOpCount(mod);
-        if (mod.isDirty() && typeof mod.updateVariables === "function") {
-          mod.markNotDirty();
-          mod.updateVariables(context);
-        }
-        if (mod instanceof PaddingModifier) {
-          paintContext.matrixTranslate(mod.mLeftValue, mod.mTopValue);
-          tx += mod.mLeftValue;
-          ty += mod.mTopValue;
-          dw -= mod.mLeftValue + mod.mRightValue;
-          dh -= mod.mTopValue + mod.mBottomValue;
-        } else if (mod instanceof ClickModifier || mod instanceof MultiClickModifier) {
-          paintContext.matrixTranslate(-tx, -ty);
-          mod.ripple.paint(paintContext, context, this.mWidth, this.mHeight);
-          paintContext.matrixTranslate(tx, ty);
-        } else if (mod instanceof RippleModifier) {
-          mod.ripple.paint(paintContext, context, dw, dh);
-        } else if (mod instanceof TextInputModifier) {
-          mod.paintModifier(paintContext);
-        } else {
-          mod.apply(context);
-        }
-      }
-      paintContext.matrixTranslate(-tx, -ty);
-    }
-    paintingComponent(paintContext) {
-      if (Visibility.isGone(this.mVisibility) && this.mAnimateMeasure === null) return;
-      const context = paintContext.getContext();
-      paintContext.matrixSave();
-      paintContext.matrixTranslate(this.mX, this.mY);
-      this.paintModifiers(paintContext);
-      paintContext.matrixTranslate(this.mPaddingLeft, this.mPaddingTop);
-      for (const op of this.mContentOps) {
-        context.incrementOpCount(op);
-        if (op.isDirty() && typeof op.updateVariables === "function") {
-          op.markNotDirty();
-          op.updateVariables(context);
-        }
-        op.apply(context);
-      }
-      const children = this.mChildrenComponents;
-      const shouldPaintChild = (child) => {
-        return (child.mAnimateMeasure !== null || !Visibility.isGone(child.mVisibility)) && this.isChildVisibleInViewport(child);
-      };
-      const paintChild = (child) => {
-        if (child.isDirty() && typeof child.updateVariables === "function") {
-          child.updateVariables(context);
-          child.markNotDirty();
-        }
-        if (shouldPaintChild(child)) {
-          context.incrementOpCount(child);
-          child.paint(paintContext);
-        }
-      };
-      if (children.length > 1) {
-        let needsSort = false;
-        for (const c of children) {
-          if (c.mZIndex !== 0) {
-            needsSort = true;
-            break;
-          }
-        }
-        if (needsSort) {
-          const sorted = [...children].sort((a, b) => a.mZIndex - b.mZIndex);
-          for (const child of sorted) {
-            paintChild(child);
-          }
-        } else {
-          for (const child of children) {
-            paintChild(child);
-          }
-        }
-      } else {
-        for (const child of children) {
-          paintChild(child);
-        }
-      }
-      paintContext.matrixRestore();
-    }
-    /**
-     * Whether a child of a scrolling component can show at all, to skip painting the rest (an
-     * optimisation of ours: the reference paints every child and lets the clip cut them).
-     * The clip is the component's whole box, and a padding after the scroll modifier belongs
-     * to the scrolled content (room at the end of a list, under a floating button), so the
-     * window counts the whole height, widened by the paddings on both sides: a row partly in
-     * view is painted and clipped. Too wide only paints a little more; too narrow drops rows.
-     */
-    isChildVisibleInViewport(child) {
-      const scrollMod = this.mScrollModifier;
-      if (!scrollMod) return true;
-      const childX = child.getX();
-      const childY = child.getY();
-      const childW = child.getWidth();
-      const childH = child.getHeight();
-      if (childW <= 0 && childH <= 0) return true;
-      if (scrollMod.isVertical()) {
-        if (this.mHeight <= 0) return true;
-        const scrollY = scrollMod.getScrollY();
-        const viewportTop = -scrollY - this.mPaddingTop - this.mPaddingBottom;
-        const viewportBottom = -scrollY + this.mHeight;
-        if (childY + childH < viewportTop || childY > viewportBottom) {
-          return false;
-        }
-      } else {
-        if (this.mWidth <= 0) return true;
-        const scrollX = scrollMod.getScrollX();
-        const viewportLeft = -scrollX - this.mPaddingLeft - this.mPaddingRight;
-        const viewportRight = -scrollX + this.mWidth;
-        if (childX + childW < viewportLeft || childX > viewportRight) {
-          return false;
-        }
-      }
-      return true;
-    }
-    /** Matches Java Component.updateVariables — re-push dimension/position values
-     *  when a component is marked dirty (e.g. by animation or expression change). */
-    updateVariables(context) {
-      if (this.mComponentValues !== null && this.mComponentValues.length > 0) {
-        this.updateComponentValues(context, this.mWidth, this.mHeight);
-      }
-      this.updatePadding();
-    }
-    /**
-     * Java LayoutComponent.updatePadding: re-sum the padding from the modifiers' resolved
-     * values. inflate() sums them once, before the data pass has run the modifiers'
-     * updateVariables, so a padding that resolves later (a variable, or a literal scaled by
-     * DENSITY_BEHAVIOR_DP) was left at its authored value.
-     */
-    updatePadding() {
-      this.mPaddingLeft = 0;
-      this.mPaddingTop = 0;
-      this.mPaddingRight = 0;
-      this.mPaddingBottom = 0;
-      this.mPadBeforeWidth = 0;
-      this.mPadBeforeHeight = 0;
-      let sawWidth = false;
-      let sawHeight = false;
-      for (const op of this.getList()) {
-        if (op instanceof PaddingModifier) {
-          this.mPaddingLeft += op.mLeftValue;
-          this.mPaddingTop += op.mTopValue;
-          this.mPaddingRight += op.mRightValue;
-          this.mPaddingBottom += op.mBottomValue;
-          if (!sawWidth) this.mPadBeforeWidth += op.mLeftValue + op.mRightValue;
-          if (!sawHeight) this.mPadBeforeHeight += op.mTopValue + op.mBottomValue;
-        } else if (op instanceof WidthModifier) {
-          sawWidth = true;
-        } else if (op instanceof HeightModifier) {
-          sawHeight = true;
-        }
-      }
-    }
-    // Inherits apply() from Component → PaintOperation chain.
-    // No override needed — matches Java LayoutComponent which does not override apply().
-    // --- Scroll ---
-    getScrollX() {
-      return this.mScrollModifier ? this.mScrollModifier.getScrollX() : 0;
-    }
-    getScrollY() {
-      return this.mScrollModifier ? this.mScrollModifier.getScrollY() : 0;
-    }
-    onClick(context, doc, x, y) {
-      if (!this.isVisible()) return false;
-      if (!(x >= this.mX && x <= this.mX + this.mWidth && y >= this.mY && y <= this.mY + this.mHeight)) return false;
-      const cx = x - this.mX - this.mPaddingLeft - this.getScrollX();
-      const cy = y - this.mY - this.mPaddingTop - this.getScrollY();
-      for (let i = this.mChildrenComponents.length - 1; i >= 0; i--) {
-        const child = this.mChildrenComponents[i];
-        if (child instanceof Component) {
-          if (child.onClick(context, doc, cx, cy)) return true;
-        }
-      }
-      {
-        let handled = false;
-        for (let i = this.mComponentModifiers.length - 1; i >= 0; i--) {
-          const mod = this.mComponentModifiers[i];
-          if (mod instanceof ClickModifier || mod instanceof MultiClickModifier) {
-            if (mod.onClick(context, doc, x - this.mX, y - this.mY)) handled = true;
-          } else if (mod instanceof TextInputModifier) {
-            if (mod.onClickComponent(context, this)) handled = true;
-          }
-        }
-        return handled;
-      }
-      return false;
-    }
-    /**
-     * Touch dispatch, ported from `Component.onTouchDown` in the reference.
-     *
-     * This class has to override the base implementation because the base walks `mChildren`
-     * — the raw operation list — while a layout component keeps its children in
-     * `mChildrenComponents`. That divergence is what broke drag: `onTouchDown` was
-     * overridden and found the children, `onTouchDrag`/`Up`/`Cancel` were inherited and
-     * walked a list that, for a ColumnLayout with 12 children, holds 6 unrelated ops. Down
-     * worked and nothing after it did.
-     *
-     * Three rules come from the reference and all three matter:
-     *
-     *  - **Children receive window coordinates**, not content-relative ones. The previous
-     *    code subtracted this component's origin before recursing, so every level of
-     *    nesting shifted the hit test further off; only `getLocationInWindow` knows the
-     *    real offset, and `contains` already works in window space.
-     *  - **Iterate backwards and let the first component win.** The top-most component
-     *    under the finger captures the gesture; without this, several overlapping
-     *    components all captured the same press and then all received the drags.
-     *  - **`force` skips the bounds test.** This is what locks a drag to the component the
-     *    press landed in: `CoreDocument` only forwards drag/up to components that captured
-     *    the press, and passes force, so they keep receiving events after the finger has
-     *    moved outside them.
-     */
-    onTouchDown(context, doc, x, y) {
-      if (!this.contains(x, y)) return false;
-      return this.dispatchTouch(context, doc, x, y, 0, 0, true, "down");
-    }
-    onTouchDrag(context, doc, x, y, force) {
-      if (!force && !this.contains(x, y)) return false;
-      return this.dispatchTouch(context, doc, x, y, 0, 0, force, "drag");
-    }
-    onTouchUp(context, doc, x, y, dx, dy, force) {
-      if (!force && !this.contains(x, y)) return false;
-      return this.dispatchTouch(context, doc, x, y, dx, dy, force, "up");
-    }
-    onTouchCancel(context, doc, x, y, force) {
-      if (!force && !this.contains(x, y)) return false;
-      return this.dispatchTouch(context, doc, x, y, 0, 0, force, "cancel");
-    }
-    /**
-     * The shared body of all four, mirroring the reference's single loop.
-     *
-     * The reference keeps components, touch handlers and touch expressions in one list and
-     * switches on type; here they live in three collections, so the loop is unrolled but
-     * the order and the coordinate spaces are the same: children first (window coords),
-     * then this component's own consumers (local coords).
-     */
-    dispatchTouch(context, doc, x, y, dx, dy, force, phase) {
-      const loc = this.getLocationInWindow();
-      const lx = x - loc[0];
-      const ly = y - loc[1];
-      let handled = false;
-      let componentHandled = false;
-      for (let i = this.mChildrenComponents.length - 1; i >= 0; i--) {
-        const child = this.mChildrenComponents[i];
-        if (!(child instanceof _LayoutComponent)) continue;
-        if (componentHandled) continue;
-        const took = phase === "down" ? child.onTouchDown(context, doc, x, y) : phase === "drag" ? child.onTouchDrag(context, doc, x, y, force) : phase === "up" ? child.onTouchUp(context, doc, x, y, dx, dy, force) : child.onTouchCancel(context, doc, x, y, force);
-        if (took) componentHandled = true;
-      }
-      for (const op of this.mContentOps) {
-        if (op instanceof TouchExpression) {
-          if (this.deliverToExpression(op, context, lx, ly, dx, dy, phase)) {
-            if (phase === "down") doc.appliedTouchOperation(this);
-            handled = true;
-          }
-        }
-      }
-      for (const child of this.mChildrenComponents) {
-        if (!(child instanceof _LayoutComponent)) {
-          if (this.dispatchToOps(child.getList(), context, doc, lx, ly, dx, dy, phase)) {
-            handled = true;
-          }
-        }
-      }
-      for (const mod of this.mComponentModifiers) {
-        if (phase === "down" && mod instanceof RippleModifier) {
-          mod.ripple.animate(context, lx, ly);
-          handled = true;
-        } else if (phase === "down" && mod instanceof TouchDownModifier) {
-          mod.onTouchDown(context);
-          handled = true;
-        } else if (phase === "down" && (mod instanceof TouchUpModifier || mod instanceof TouchCancelModifier)) {
-          doc.modifierTouchTarget?.(this);
-          handled = true;
-        } else if (phase === "up" && mod instanceof TouchUpModifier) {
-          mod.onTouchUp(context);
-          doc.touchModifierRan?.(this);
-          handled = true;
-        } else if (phase === "cancel" && mod instanceof TouchCancelModifier) {
-          mod.onTouchCancel(context);
-          doc.touchModifierRan?.(this);
-          handled = true;
-        }
-      }
-      if (this.mScrollModifier) {
-        if (phase === "down") {
-          this.mScrollModifier.onTouchDown(context, lx, ly);
-          doc.appliedTouchOperation(this);
-          handled = true;
-        } else if (phase === "drag") {
-          if (this.mScrollModifier.onTouchDrag(context, lx, ly)) {
-            handled = true;
-          }
-        } else if (phase === "up") {
-          if (this.mScrollModifier.onTouchUp(context, lx, ly, dx, dy)) {
-            handled = true;
-          }
-        } else if (this.mScrollModifier.onTouchCancel(context, lx, ly)) {
-          handled = true;
-        }
-      }
-      return componentHandled || handled;
-    }
-    /** This component's own touch-up / touch-cancel modifier actions (a swipe's release). */
-    runOwnTouchModifiers(context, phase) {
-      for (const mod of this.mComponentModifiers) {
-        if (phase === "up" && mod instanceof TouchUpModifier) mod.onTouchUp(context);
-        else if (phase === "cancel" && mod instanceof TouchCancelModifier) mod.onTouchCancel(context);
-      }
-    }
-    /** One touch phase on a single expression. Only `down` is bounds-checked, as upstream. */
-    deliverToExpression(op, context, lx, ly, dx, dy, phase) {
-      op.updateVariables(context);
-      if (phase === "down") {
-        op.touchDown(context, lx, ly);
-      } else if (phase === "drag") {
-        op.touchDrag(context, lx, ly);
-      } else if (phase === "up") {
-        op.touchUp(context, lx, ly, dx, dy);
-      } else {
-        op.touchUp(context, lx, ly, 0, 0);
-      }
-      return true;
-    }
-    /** Recurse into a non-layout child's operations looking for touch expressions. */
-    dispatchToOps(ops, context, doc, lx, ly, dx, dy, phase) {
-      let handled = false;
-      for (const op of ops) {
-        if (op instanceof TouchExpression) {
-          this.deliverToExpression(op, context, lx, ly, dx, dy, phase);
-          if (phase === "down") doc.appliedTouchOperation(this);
-          handled = true;
-        } else if (typeof op.getList === "function") {
-          if (this.dispatchToOps(
-            op.getList(),
-            context,
-            doc,
-            lx,
-            ly,
-            dx,
-            dy,
-            phase
-          )) {
-            handled = true;
-          }
-        }
-      }
-      return handled;
-    }
-    /** Recursively search operation list for TouchExpression and dispatch touchDown */
-    dispatchTouchDownToOps(ops, context, doc, lx, ly) {
-      let handled = false;
-      for (const op of ops) {
-        if (op instanceof TouchExpression) {
-          op.updateVariables(context);
-          op.touchDown(context, lx, ly);
-          doc.appliedTouchOperation(this);
-          handled = true;
-        } else if (typeof op.getList === "function") {
-          handled = this.dispatchTouchDownToOps(op.getList(), context, doc, lx, ly) || handled;
-        }
-      }
-      return handled;
-    }
-    getLocationInWindow() {
-      let x = this.mX + this.mPaddingLeft;
-      let y = this.mY + this.mPaddingTop;
-      let parent = this.getParent();
-      while (parent) {
-        x += parent.mX;
-        y += parent.mY;
-        if (parent instanceof _LayoutComponent) {
-          x += parent.mPaddingLeft + parent.getScrollX();
-          y += parent.mPaddingTop + parent.getScrollY();
-        }
-        parent = parent.getParent();
-      }
-      return [x, y];
-    }
-  };
-
-  // ../kobento-ts/src/core/operations/layout/measure/Size.ts
-  var Size = class {
-    constructor(width = 0, height = 0) {
-      this.mWidth = width;
-      this.mHeight = height;
-    }
-    getWidth() {
-      return this.mWidth;
-    }
-    setWidth(value) {
-      this.mWidth = value;
-    }
-    getHeight() {
-      return this.mHeight;
-    }
-    setHeight(value) {
-      this.mHeight = value;
-    }
-    clear() {
-      this.mWidth = 0;
-      this.mHeight = 0;
-    }
-  };
-
-  // ../kobento-ts/src/core/operations/layout/managers/LayoutManager.ts
-  var LayoutManager = class extends LayoutComponent {
-    constructor() {
-      super(...arguments);
-      this.mCachedWrapSize = new Size();
-    }
-    /**
-     * Java LayoutManager.measure, with its measure cache (CoreDocument OPTIMIZATION_MEASURE_CACHE
-     * and OPTIMIZATION_CONSTRAINTS_CACHE, both on by default): a component that does not need
-     * measuring, reads no variables in its own list (hasDynamicComputes), has no descendant
-     * with a computed layout, and is asked again with the constraints it was measured with in
-     * this pass (or with its measured size as the fixed size on one axis) keeps its result.
-     * Without it a flow measures each child four times per pass and nested flows multiply.
-     */
-    measure(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
-      const m = measure.get(this);
-      const doc = context.getContext()?.getDocument?.() ?? null;
-      if (doc && doc.isConstraintsCacheEnabled() && doc.isMeasureCacheEnabled() && !this.hasDynamicComputes() && !this.hasChildWithComputedLayout() && !this.hasDirtyModifier() && m.hasCachedConstraints(minWidth, maxWidth, minHeight, maxHeight)) {
-        return;
-      }
-      this.measureUncached(context, minWidth, maxWidth, minHeight, maxHeight, measure);
-      m.setCachedConstraints(minWidth, maxWidth, minHeight, maxHeight);
-    }
-    /**
-     * A modifier of this component waiting to be re-evaluated (its variable changed): the
-     * measure would come out differently. Java re-evaluates them before the layout pass;
-     * here a size bound to an expression its parent re-evaluates in its own measure
-     * (componentWidth() of the parent) is picked up during the pass, by the measure that
-     * finds it dirty, so a cached result from earlier in the pass would be stale.
-     */
-    hasDirtyModifier() {
-      for (const mod of [this.getWidthModifier(), this.getHeightModifier(), this.getWidthInModifier(), this.getHeightInModifier()]) {
-        if (mod && mod.isDirty?.()) return true;
-      }
-      for (const mod of this.mComponentModifiers) if (mod.isDirty?.()) return true;
-      return false;
-    }
-    measureUncached(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
-      this.updatePadding();
-      const selfMeasure = measure.get(this);
-      const padding_w = this.mPaddingLeft + this.mPaddingRight;
-      const padding_h = this.mPaddingTop + this.mPaddingBottom;
-      const wMod = this.getWidthModifier();
-      const hMod = this.getHeightModifier();
-      for (const mod of [wMod, hMod]) {
-        if (mod && mod.isDirty()) {
-          mod.markNotDirty();
-          mod.updateVariables(context.getContext());
-        }
-      }
-      {
-        const wIn = this.getWidthInModifier();
-        if (wIn) {
-          if (wIn.getMin() >= 0) minWidth = Math.max(minWidth, wIn.getMin());
-          if (wIn.getMax() >= 0) maxWidth = Math.min(maxWidth, wIn.getMax());
-        }
-        const hIn = this.getHeightInModifier();
-        if (hIn) {
-          if (hIn.getMin() >= 0) minHeight = Math.max(minHeight, hIn.getMin());
-          if (hIn.getMax() >= 0) maxHeight = Math.min(maxHeight, hIn.getMax());
-        }
-      }
-      const [weightFillW, weightFillH] = this.weightFill();
-      let w;
-      if (weightFillW && wMod?.getType() !== WidthModifier.FILL) {
-        w = maxWidth;
-      } else if (wMod && (wMod.getType() === WidthModifier.EXACT || wMod.getType() === WidthModifier.EXACT_DP)) {
-        w = Math.min(wMod.getValue() + this.mPadBeforeWidth, maxWidth);
-      } else if (wMod && wMod.getType() === WidthModifier.FILL) {
-        w = wMod.hasFraction() ? maxWidth * wMod.getValue() : maxWidth;
-      } else if (wMod && wMod.getType() === WidthModifier.WEIGHT) {
-        w = Math.max(this.mPadBeforeWidth, minWidth);
-      } else {
-        w = maxWidth;
-      }
-      let h;
-      if (weightFillH && hMod?.getType() !== HeightModifier.FILL) {
-        h = maxHeight;
-      } else if (hMod && (hMod.getType() === HeightModifier.EXACT || hMod.getType() === HeightModifier.EXACT_DP)) {
-        h = Math.min(hMod.getValue() + this.mPadBeforeHeight, maxHeight);
-      } else if (hMod && hMod.getType() === HeightModifier.FILL) {
-        h = hMod.hasFraction() ? maxHeight * hMod.getValue() : maxHeight;
-      } else if (hMod && hMod.getType() === HeightModifier.WEIGHT) {
-        h = Math.max(this.mPadBeforeHeight, minHeight);
-      } else {
-        h = maxHeight;
-      }
-      selfMeasure.setW(w);
-      selfMeasure.setH(h);
-      const horizontalWrap = !weightFillW && wMod?.getType() === WidthModifier.WRAP;
-      const verticalWrap = !weightFillH && hMod?.getType() === HeightModifier.WRAP;
-      if (horizontalWrap || verticalWrap) {
-        this.mCachedWrapSize.clear();
-        const weightW = wMod?.getType() === WidthModifier.WEIGHT;
-        const weightH = hMod?.getType() === HeightModifier.WEIGHT;
-        const childMaxW = (horizontalWrap || weightW ? maxWidth : w) - padding_w;
-        const childMaxH = (verticalWrap || weightH ? maxHeight : h) - padding_h;
-        this.computeWrapSize(
-          context,
-          minWidth,
-          childMaxW,
-          minHeight,
-          childMaxH,
-          horizontalWrap,
-          verticalWrap,
-          measure,
-          this.mCachedWrapSize
-        );
-        if (horizontalWrap) {
-          w = this.mCachedWrapSize.getWidth() + padding_w;
-          const wIn = this.getWidthInModifier();
-          if (wIn) {
-            if (wIn.getMin() >= 0) w = Math.max(w, wIn.getMin());
-            if (wIn.getMax() >= 0) w = Math.min(w, wIn.getMax());
-          }
-          w = Math.min(w, maxWidth);
-        }
-        if (verticalWrap) {
-          h = this.mCachedWrapSize.getHeight() + padding_h;
-          const hIn = this.getHeightInModifier();
-          if (hIn) {
-            if (hIn.getMin() >= 0) h = Math.max(h, hIn.getMin());
-            if (hIn.getMax() >= 0) h = Math.min(h, hIn.getMax());
-          }
-          h = Math.min(h, maxHeight);
-        }
-        selfMeasure.setW(w);
-        selfMeasure.setH(h);
-      }
-      const scrollMod = this.getScrollModifier();
-      if (scrollMod) {
-        const isVertical = scrollMod.getDirection() === ScrollModifier.VERTICAL;
-        const hostW = Math.min(w, maxWidth) - padding_w;
-        const hostH = Math.min(h, maxHeight) - padding_h;
-        const unboundW = isVertical ? hostW : 1e9;
-        const unboundH = isVertical ? 1e9 : hostH;
-        this.mCachedWrapSize.clear();
-        this.computeWrapSize(
-          context,
-          0,
-          unboundW,
-          0,
-          unboundH,
-          true,
-          true,
-          measure,
-          this.mCachedWrapSize
-        );
-        if (isVertical) {
-          this.mScrollHostDimension = hostH;
-          this.mScrollContentDimension = this.mCachedWrapSize.getHeight();
-          scrollMod.setVerticalScrollDimension(
-            this.mScrollHostDimension,
-            this.mScrollContentDimension
-          );
-        } else {
-          this.mScrollHostDimension = hostW;
-          this.mScrollContentDimension = this.mCachedWrapSize.getWidth();
-          scrollMod.setHorizontalScrollDimension(
-            this.mScrollHostDimension,
-            this.mScrollContentDimension
-          );
-        }
-        const childMaxW = isVertical ? w - padding_w : Math.max(w - padding_w, this.mScrollContentDimension);
-        const childMaxH = isVertical ? Math.max(h - padding_h, this.mScrollContentDimension) : h - padding_h;
-        this.computeSize(context, 0, childMaxW, 0, childMaxH, measure);
-      }
-      this.updateComponentValues(context.getContext(), w, h);
-      const ctx = context.getContext();
-      for (const op of this.mContentOps) {
-        if (op instanceof PaintOperation) continue;
-        if (op.isDirty() && typeof op.updateVariables === "function") {
-          op.markNotDirty();
-          op.updateVariables(ctx);
-          op.apply(ctx);
-        }
-      }
-      if (!scrollMod && !(horizontalWrap || verticalWrap)) {
-        const childMaxW = Math.max(0, w - padding_w);
-        const childMaxH = Math.max(0, h - padding_h);
-        this.computeSize(context, 0, childMaxW, 0, childMaxH, measure);
-      }
-      w = Math.max(w, minWidth);
-      h = Math.max(h, minHeight);
-      w = Math.min(w, maxWidth);
-      h = Math.min(h, maxHeight);
-      const wReq = this.getWidthInModifier();
-      if (wReq instanceof DimensionConstraintsModifier && wReq.getType() === DimensionConstraintsModifier.REQUIRED_HORIZONTAL) {
-        w = Math.max(wReq.getMin(), Math.min(w, wReq.getMax()));
-      }
-      const hReq = this.getHeightInModifier();
-      if (hReq instanceof DimensionConstraintsModifier && hReq.getType() === DimensionConstraintsModifier.REQUIRED_VERTICAL) {
-        h = Math.max(hReq.getMin(), Math.min(h, hReq.getMax()));
-      }
-      selfMeasure.setW(w);
-      selfMeasure.setH(h);
-      this.internalLayoutMeasure(context, measure);
-    }
-    layout(context, measure) {
-      super.layout(context, measure);
-      const self = measure.get(this);
-      this.layoutModifiers(self.getW(), self.getH());
-      const scrollMod = this.getScrollModifier();
-      if (scrollMod) {
-        const maxScroll = Math.max(0, this.mScrollContentDimension - this.mScrollHostDimension);
-        const maxNan = scrollMod.getMaxNan();
-        const notchNan = scrollMod.getNotchMaxNan();
-        if (isNaNBits(maxNan)) {
-          context.loadFloat(idFromBits(maxNan), maxScroll);
-        }
-        if (isNaNBits(notchNan)) {
-          context.loadFloat(idFromBits(notchNan), this.mScrollContentDimension);
-        }
-      }
-    }
-    /** Whether the children's weights make this fill [horizontally, vertically]. */
-    weightFill() {
-      return [false, false];
-    }
-    // Override in subclasses to compute wrap-content size
-    computeWrapSize(_context, _minWidth, _maxWidth, _minHeight, _maxHeight, _horizontalWrap, _verticalWrap, _measure, _size) {
-    }
-    // Override in subclasses to measure non-wrap children
-    computeSize(_context, _minWidth, _maxWidth, _minHeight, _maxHeight, _measure) {
-    }
-    // Override in subclasses to position children
-    internalLayoutMeasure(_context, _measure) {
-    }
-    /**
-     * `spacedBy` in physical pixels.
-     *
-     * Spacing is authored in dp but only scales when the document declares DENSITY_BEHAVIOR_DP
-     * — note `== DP`, not the `!= PIXELS` the dimension modifiers use. Under the default
-     * LEGACY behaviour the reference does not scale spacing either, so this returns the raw
-     * value for almost every document in the corpus.
-     *
-     * Takes a PaintContext because that is all the layout managers are handed.
-     */
-    spacedByPx(context, spacedBy) {
-      if (context.getDensityBehavior?.() !== RemoteContext.DENSITY_BEHAVIOR_DP) {
-        return spacedBy;
-      }
-      const density = context.getDensity();
-      return density > 0 && !Number.isNaN(density) ? spacedBy * density : spacedBy;
-    }
-  };
-
-  // ../kobento-ts/src/core/operations/layout/managers/BoxLayout.ts
-  var _BoxLayout = class _BoxLayout extends LayoutManager {
-    constructor(componentId, animationId, horizontalPositioning, verticalPositioning) {
-      super(componentId, animationId);
-      this.mAnimationId = animationId;
-      this.mHorizontalPositioning = horizontalPositioning;
-      this.mVerticalPositioning = verticalPositioning;
-    }
-    computeWrapSize(context, minWidth, maxWidth, minHeight, maxHeight, _horizontalWrap, _verticalWrap, measure, size) {
-      const parent = measure.get(this);
-      for (const child of this.mChildrenComponents) {
-        child.measure(context, 0, maxWidth, 0, maxHeight, measure);
-        const m = measure.get(child);
-        if (child.hasComputedLayout()) {
-          if (child.applyComputedLayout(LayoutComputeOperation.TYPE_MEASURE, context, m, parent)) {
-            child.measure(context, m.getW(), m.getW(), m.getH(), m.getH(), measure);
-          }
-        }
-        if (!m.isGone()) {
-          size.setWidth(Math.max(size.getWidth(), m.getW()));
-          size.setHeight(Math.max(size.getHeight(), m.getH()));
-        }
-      }
-    }
-    computeSize(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
-      const parent = measure.get(this);
-      for (const child of this.mChildrenComponents) {
-        child.measure(context, minWidth, maxWidth, minHeight, maxHeight, measure);
-        if (child.hasComputedLayout()) {
-          const m = measure.get(child);
-          if (child.applyComputedLayout(LayoutComputeOperation.TYPE_MEASURE, context, m, parent)) {
-            child.measure(context, m.getW(), m.getW(), m.getH(), m.getH(), measure);
-          }
-        }
-      }
-    }
-    internalLayoutMeasure(_context, measure) {
-      const selfMeasure = measure.get(this);
-      const selfWidth = selfMeasure.getW() - this.mPaddingLeft - this.mPaddingRight;
-      const selfHeight = selfMeasure.getH() - this.mPaddingTop - this.mPaddingBottom;
-      for (const child of this.mChildrenComponents) {
-        const childMeasure = measure.get(child);
-        if (childMeasure.isGone()) continue;
-        let tx = 0;
-        let ty = 0;
-        switch (this.mHorizontalPositioning) {
-          case _BoxLayout.START:
-            tx = 0;
-            break;
-          case _BoxLayout.CENTER:
-            tx = (selfWidth - childMeasure.getW()) / 2;
-            break;
-          case _BoxLayout.END:
-            tx = selfWidth - childMeasure.getW();
-            break;
-        }
-        switch (this.mVerticalPositioning) {
-          case _BoxLayout.TOP:
-            ty = 0;
-            break;
-          case _BoxLayout.CENTER:
-            ty = (selfHeight - childMeasure.getH()) / 2;
-            break;
-          case _BoxLayout.BOTTOM:
-            ty = selfHeight - childMeasure.getH();
-            break;
-        }
-        childMeasure.setX(tx);
-        childMeasure.setY(ty);
-        if (child.hasComputedLayout()) {
-          child.applyComputedLayout(LayoutComputeOperation.TYPE_POSITION, _context, childMeasure, selfMeasure);
-        }
-      }
-    }
-    write(buffer) {
-      buffer.start(_BoxLayout.OP_CODE);
-      buffer.writeInt(this.getComponentId());
-      buffer.writeInt(this.mAnimationId);
-      buffer.writeInt(this.mHorizontalPositioning);
-      buffer.writeInt(this.mVerticalPositioning);
-    }
-    apply(context) {
-      super.apply(context);
-    }
-    deepToString(indent) {
-      return `${indent}BoxLayout(${this.getComponentId()}, h=${this.mHorizontalPositioning}, v=${this.mVerticalPositioning})`;
-    }
-    static read(buffer, operations) {
-      const componentId = buffer.declareId();
-      const animationId = buffer.declareId();
-      const horizontalPositioning = buffer.readInt();
-      const verticalPositioning = buffer.readInt();
-      operations.push(new _BoxLayout(
-        componentId,
-        animationId,
-        horizontalPositioning,
-        verticalPositioning
-      ));
-    }
-  };
-  _BoxLayout.OP_CODE = 202;
-  _BoxLayout.START = 1;
-  _BoxLayout.CENTER = 2;
-  _BoxLayout.END = 3;
-  _BoxLayout.TOP = 4;
-  _BoxLayout.BOTTOM = 5;
-  var BoxLayout = _BoxLayout;
-
-  // ../kobento-ts/src/core/operations/layout/managers/RowLayout.ts
+  // src/core/operations/layout/managers/RowLayout.ts
   var _RowLayout = class _RowLayout extends LayoutManager {
     constructor(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy) {
       super(componentId, animationId);
@@ -17898,7 +19173,7 @@ var RC = (() => {
   _RowLayout.SPACE_AROUND = 8;
   var RowLayout = _RowLayout;
 
-  // ../kobento-ts/src/core/operations/layout/managers/ColumnLayout.ts
+  // src/core/operations/layout/managers/ColumnLayout.ts
   var _ColumnLayout = class _ColumnLayout extends LayoutManager {
     constructor(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy) {
       super(componentId, animationId);
@@ -18171,7 +19446,7 @@ var RC = (() => {
   _ColumnLayout.SPACE_AROUND = 8;
   var ColumnLayout = _ColumnLayout;
 
-  // ../kobento-ts/src/core/operations/layout/managers/CanvasLayout.ts
+  // src/core/operations/layout/managers/CanvasLayout.ts
   var _CanvasLayout = class _CanvasLayout extends BoxLayout {
     constructor(componentId, animationId) {
       super(componentId, animationId, 0, 0);
@@ -18212,7 +19487,7 @@ var RC = (() => {
   _CanvasLayout.OP_CODE = 205;
   var CanvasLayout = _CanvasLayout;
 
-  // ../kobento-ts/src/core/operations/Skip.ts
+  // src/core/operations/Skip.ts
   var sLibraryApiLevel = 7;
   var sProfile = 0;
   var _Skip = class _Skip extends Operation {
@@ -18262,33 +19537,33 @@ var RC = (() => {
   _Skip.SKIP_IF_PROFILE_EXCLUDES = 6;
   var Skip = _Skip;
 
-  // ../kobento-ts/src/core/operations/layout/managers/TextStyle.ts
+  // src/core/operations/layout/managers/TextStyle.ts
   var P_ID = 1;
-  var P_ANIMATION_ID = 2;
-  var P_COLOR = 3;
-  var P_COLOR_ID = 4;
-  var P_FONT_SIZE = 5;
-  var P_FONT_STYLE = 6;
-  var P_FONT_WEIGHT = 7;
-  var P_FONT_FAMILY = 8;
-  var P_TEXT_ALIGN = 9;
-  var P_OVERFLOW = 10;
-  var P_MAX_LINES = 11;
-  var P_LETTER_SPACING = 12;
-  var P_LINE_HEIGHT_ADD = 13;
-  var P_LINE_HEIGHT_MULTIPLIER = 14;
-  var P_BREAK_STRATEGY = 15;
-  var P_HYPHENATION_FREQUENCY = 16;
-  var P_JUSTIFICATION_MODE = 17;
-  var P_UNDERLINE = 18;
-  var P_STRIKETHROUGH = 19;
-  var P_FONT_AXIS = 20;
-  var P_FONT_AXIS_VALUES = 21;
-  var P_AUTOSIZE = 22;
-  var P_FLAGS = 23;
+  var P_ANIMATION_ID2 = 2;
+  var P_COLOR2 = 3;
+  var P_COLOR_ID2 = 4;
+  var P_FONT_SIZE2 = 5;
+  var P_FONT_STYLE2 = 6;
+  var P_FONT_WEIGHT2 = 7;
+  var P_FONT_FAMILY2 = 8;
+  var P_TEXT_ALIGN2 = 9;
+  var P_OVERFLOW2 = 10;
+  var P_MAX_LINES2 = 11;
+  var P_LETTER_SPACING2 = 12;
+  var P_LINE_HEIGHT_ADD2 = 13;
+  var P_LINE_HEIGHT_MULTIPLIER2 = 14;
+  var P_BREAK_STRATEGY2 = 15;
+  var P_HYPHENATION_FREQUENCY2 = 16;
+  var P_JUSTIFICATION_MODE2 = 17;
+  var P_UNDERLINE2 = 18;
+  var P_STRIKETHROUGH2 = 19;
+  var P_FONT_AXIS2 = 20;
+  var P_FONT_AXIS_VALUES2 = 21;
+  var P_AUTOSIZE2 = 22;
+  var P_FLAGS2 = 23;
   var P_PARENT_ID = 24;
-  var P_MIN_FONT_SIZE = 25;
-  var P_MAX_FONT_SIZE = 26;
+  var P_MIN_FONT_SIZE2 = 25;
+  var P_MAX_FONT_SIZE2 = 26;
   var _TextStyle = class _TextStyle extends Operation {
     constructor() {
       super();
@@ -18339,87 +19614,87 @@ var RC = (() => {
           case P_ID:
             style.id = did(buffer.readInt());
             break;
-          case P_ANIMATION_ID:
+          case P_ANIMATION_ID2:
             buffer.readInt();
             break;
-          case P_COLOR:
+          case P_COLOR2:
             style.color = buffer.readInt();
             break;
-          case P_COLOR_ID:
+          case P_COLOR_ID2:
             style.colorId = rid(buffer.readInt());
             break;
-          case P_FONT_SIZE:
+          case P_FONT_SIZE2:
             style.fontSize = buffer.readFloat();
             break;
-          case P_FONT_STYLE:
+          case P_FONT_STYLE2:
             style.fontStyle = buffer.readInt();
             break;
-          case P_FONT_WEIGHT:
+          case P_FONT_WEIGHT2:
             style.fontWeight = buffer.readFloat();
             break;
-          case P_FONT_FAMILY:
+          case P_FONT_FAMILY2:
             style.fontFamilyId = rid(buffer.readInt());
             break;
-          case P_TEXT_ALIGN:
+          case P_TEXT_ALIGN2:
             style.textAlign = buffer.readInt();
             break;
-          case P_OVERFLOW:
+          case P_OVERFLOW2:
             style.overflow = buffer.readInt();
             break;
-          case P_MAX_LINES:
+          case P_MAX_LINES2:
             style.maxLines = buffer.readInt();
             break;
-          case P_LETTER_SPACING:
+          case P_LETTER_SPACING2:
             style.letterSpacing = buffer.readFloat();
             break;
-          case P_LINE_HEIGHT_ADD:
+          case P_LINE_HEIGHT_ADD2:
             style.lineHeightAdd = buffer.readFloat();
             break;
-          case P_LINE_HEIGHT_MULTIPLIER:
+          case P_LINE_HEIGHT_MULTIPLIER2:
             style.lineHeightMultiplier = buffer.readFloat();
             break;
-          case P_BREAK_STRATEGY:
+          case P_BREAK_STRATEGY2:
             style.lineBreakStrategy = buffer.readInt();
             break;
-          case P_HYPHENATION_FREQUENCY:
+          case P_HYPHENATION_FREQUENCY2:
             style.hyphenationFrequency = buffer.readInt();
             break;
-          case P_JUSTIFICATION_MODE:
+          case P_JUSTIFICATION_MODE2:
             style.justificationMode = buffer.readInt();
             break;
-          case P_UNDERLINE:
+          case P_UNDERLINE2:
             style.underline = buffer.readBoolean();
             break;
-          case P_STRIKETHROUGH:
+          case P_STRIKETHROUGH2:
             style.strikethrough = buffer.readBoolean();
             break;
-          case P_FONT_AXIS: {
+          case P_FONT_AXIS2: {
             const len = buffer.readShort();
             const arr = new Array(len);
             for (let k = 0; k < len; k++) arr[k] = buffer.readInt();
             style.fontAxis = arr;
             break;
           }
-          case P_FONT_AXIS_VALUES: {
+          case P_FONT_AXIS_VALUES2: {
             const len = buffer.readShort();
             const arr = new Array(len);
             for (let k = 0; k < len; k++) arr[k] = buffer.readFloat();
             style.fontAxisValues = arr;
             break;
           }
-          case P_AUTOSIZE:
+          case P_AUTOSIZE2:
             style.autosize = buffer.readBoolean();
             break;
-          case P_FLAGS:
+          case P_FLAGS2:
             buffer.readInt();
             break;
           case P_PARENT_ID:
             style.parentId = rid(buffer.readInt());
             break;
-          case P_MIN_FONT_SIZE:
+          case P_MIN_FONT_SIZE2:
             style.minFontSize = buffer.readFloat();
             break;
-          case P_MAX_FONT_SIZE:
+          case P_MAX_FONT_SIZE2:
             style.maxFontSize = buffer.readFloat();
             break;
           default:
@@ -18433,7 +19708,7 @@ var RC = (() => {
   _TextStyle.OP_CODE = 242;
   var TextStyle = _TextStyle;
 
-  // ../kobento-ts/src/core/operations/ConditionalOperations.ts
+  // src/core/operations/ConditionalOperations.ts
   var _ConditionalOperations = class _ConditionalOperations extends PaintOperation {
     constructor(type, aBits, bBits) {
       super();
@@ -18522,7 +19797,7 @@ var RC = (() => {
   _ConditionalOperations.TYPE_GTE = 5;
   var ConditionalOperations = _ConditionalOperations;
 
-  // ../kobento-ts/src/core/operations/PathCreate.ts
+  // src/core/operations/PathCreate.ts
   function isPathMarkerBits2(b) {
     if (!isNaNBits(b)) return false;
     const id = idFromBits(b);
@@ -18574,7 +19849,7 @@ var RC = (() => {
   _PathCreate.MOVE_NAN_BITS = 10 | -8388608 | 0;
   var PathCreate = _PathCreate;
 
-  // ../kobento-ts/src/core/operations/PathAppend.ts
+  // src/core/operations/PathAppend.ts
   function isPathMarkerBits3(b) {
     if (!isNaNBits(b)) return false;
     const id = idFromBits(b);
@@ -18647,14 +19922,14 @@ var RC = (() => {
   _PathAppend.OP_CODE = 160;
   var PathAppend = _PathAppend;
 
-  // ../kobento-ts/src/core/operations/utilities/PathGenerator.ts
+  // src/core/operations/utilities/PathGenerator.ts
   var MOVE_BITS = 10 | -8388608 | 0;
   var CUBIC_BITS = 14 | -8388608 | 0;
   var CLOSE_BITS = 15 | -8388608 | 0;
   var PATH_MONOTONIC = 2;
   var PATH_LINEAR = 4;
   var PATH_MODE_MASK = 6;
-  var fr = Math.fround;
+  var fr2 = Math.fround;
   var PathBuf = class {
     constructor(bufferSize) {
       this.mSize = 0;
@@ -18674,24 +19949,24 @@ var RC = (() => {
     moveTo(x, y) {
       this.ensure(3);
       this.mPath[this.mSize++] = MOVE_BITS;
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(x));
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(y));
-      this.mCx = fr(x);
-      this.mCy = fr(y);
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(x));
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(y));
+      this.mCx = fr2(x);
+      this.mCy = fr2(y);
     }
     cubicTo(x1, y1, x2, y2, x3, y3) {
       this.ensure(9);
       this.mPath[this.mSize++] = CUBIC_BITS;
       this.mPath[this.mSize++] = floatToRawIntBits(this.mCx);
       this.mPath[this.mSize++] = floatToRawIntBits(this.mCy);
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(x1));
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(y1));
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(x2));
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(y2));
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(x3));
-      this.mPath[this.mSize++] = floatToRawIntBits(fr(y3));
-      this.mCx = fr(x3);
-      this.mCy = fr(y3);
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(x1));
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(y1));
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(x2));
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(y2));
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(x3));
+      this.mPath[this.mSize++] = floatToRawIntBits(fr2(y3));
+      this.mCx = fr2(x3);
+      this.mCy = fr2(y3);
     }
     closePath() {
       this.ensure(1);
@@ -18704,13 +19979,13 @@ var RC = (() => {
   function segments(x, y, segs, n, h, dxSeg, dySeg) {
     for (let i0 = 0; i0 < segs; i0++) {
       const i1 = (i0 + 1) % n;
-      const sx = fr(x[i1] - x[i0]);
-      const sy = fr(y[i1] - y[i0]);
-      let dist = fr(Math.hypot(sx, sy));
+      const sx = fr2(x[i1] - x[i0]);
+      const sy = fr2(y[i1] - y[i0]);
+      let dist = fr2(Math.hypot(sx, sy));
       if (dist === 0) dist = 1e-12;
       h[i0] = dist;
-      dxSeg[i0] = fr(sx / dist);
-      dySeg[i0] = fr(sy / dist);
+      dxSeg[i0] = fr2(sx / dist);
+      dySeg[i0] = fr2(sy / dist);
     }
   }
   function monotoneTangents(d, delta, h, loop) {
@@ -18729,9 +20004,9 @@ var RC = (() => {
         if (dp === 0 || dn === 0 || Math.sign(dp) !== Math.sign(dn)) {
           d[i] = 0;
         } else {
-          const w1 = fr(fr(2 * h[next]) + h[prev]);
-          const w2 = fr(h[next] + fr(2 * h[prev]));
-          d[i] = fr(fr(w1 + w2) / fr(fr(w1 / dp) + fr(w2 / dn)));
+          const w1 = fr2(fr2(2 * h[next]) + h[prev]);
+          const w2 = fr2(h[next] + fr2(2 * h[prev]));
+          d[i] = fr2(fr2(w1 + w2) / fr2(fr2(w1 / dp) + fr2(w2 / dn)));
         }
       }
     }
@@ -18740,13 +20015,13 @@ var RC = (() => {
         d[i] = 0;
         d[(i + 1) % n] = 0;
       } else {
-        const a = fr(d[i] / delta[i]);
-        const b = fr(d[(i + 1) % n] / delta[i]);
-        const s = fr(fr(a * a) + fr(b * b));
+        const a = fr2(d[i] / delta[i]);
+        const b = fr2(d[(i + 1) % n] / delta[i]);
+        const s = fr2(fr2(a * a) + fr2(b * b));
         if (s > 9) {
-          const t = fr(3 / fr(Math.sqrt(s)));
-          d[i] = fr(fr(t * a) * delta[i]);
-          d[(i + 1) % n] = fr(fr(t * b) * delta[i]);
+          const t = fr2(3 / fr2(Math.sqrt(s)));
+          d[i] = fr2(fr2(t * a) * delta[i]);
+          d[(i + 1) % n] = fr2(fr2(t * b) * delta[i]);
         }
       }
     }
@@ -18758,7 +20033,7 @@ var RC = (() => {
       for (let i = 0; i < n; i++) {
         const im1 = ((i - 1 + segs) % segs + segs) % segs;
         const ip0 = i % segs;
-        d[i] = fr(fr(fr(h[im1] * delta[ip0]) + fr(h[ip0] * delta[im1])) / fr(h[im1] + h[ip0]));
+        d[i] = fr2(fr2(fr2(h[im1] * delta[ip0]) + fr2(h[ip0] * delta[im1])) / fr2(h[im1] + h[ip0]));
       }
     } else {
       d[0] = delta[0];
@@ -18766,7 +20041,7 @@ var RC = (() => {
       for (let i = 1; i < n - 1; i++) {
         const hm1 = h[i - 1];
         const hi = h[i];
-        d[i] = fr(fr(fr(hm1 * delta[i]) + fr(hi * delta[i - 1])) / fr(hm1 + hi));
+        d[i] = fr2(fr2(fr2(hm1 * delta[i]) + fr2(hi * delta[i - 1])) / fr2(hm1 + hi));
       }
     }
   }
@@ -18865,10 +20140,10 @@ var RC = (() => {
           c2x = x[i1] - sc.dxTan[i1] * hi / 3;
           c2y = y[i1] - sc.dyTan[i1] * hi / 3;
         } else {
-          c1x = fr(x[i0] + fr(fr(sc.dxTan[i0] * hi) / 3));
-          c1y = fr(y[i0] + fr(fr(sc.dyTan[i0] * hi) / 3));
-          c2x = fr(x[i1] - fr(fr(sc.dxTan[i1] * hi) / 3));
-          c2y = fr(y[i1] - fr(fr(sc.dyTan[i1] * hi) / 3));
+          c1x = fr2(x[i0] + fr2(fr2(sc.dxTan[i0] * hi) / 3));
+          c1y = fr2(y[i0] + fr2(fr2(sc.dyTan[i0] * hi) / 3));
+          c2x = fr2(x[i1] - fr2(fr2(sc.dxTan[i1] * hi) / 3));
+          c2y = fr2(y[i1] - fr2(fr2(sc.dyTan[i1] * hi) / 3));
         }
         sc.path.cubicTo(c1x, c1y, c2x, c2y, x[i1], y[i1]);
       }
@@ -18877,7 +20152,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/PathExpression.ts
+  // src/core/operations/PathExpression.ts
   var ARR_SENTINEL3 = 2 ** 42;
   var _PathExpression = class _PathExpression extends Operation {
     constructor(id, flags, minBits, maxBits, countBits, exprX, exprY) {
@@ -19335,7 +20610,7 @@ var RC = (() => {
   _PathExpression.ID_REGION_ARRAY = 2097152;
   var PathExpression = _PathExpression;
 
-  // ../kobento-ts/src/core/operations/utilities/Matrix.ts
+  // src/core/operations/utilities/Matrix.ts
   var _Matrix = class _Matrix {
     constructor(dim0 = 4, dim1 = 4) {
       this.mDim0 = 4;
@@ -19616,7 +20891,7 @@ var RC = (() => {
   _Matrix.sTempInVec = null;
   var Matrix = _Matrix;
 
-  // ../kobento-ts/src/core/operations/utilities/MatrixOperations.ts
+  // src/core/operations/utilities/MatrixOperations.ts
   var OFFSET2 = 3276800;
   function asNan2(v) {
     return intBitsToFloat(v | -8388608);
@@ -19802,7 +21077,7 @@ var RC = (() => {
   _MatrixOperations.OP_PROJECTION = OFFSET2 + 18;
   var MatrixOperations = _MatrixOperations;
 
-  // ../kobento-ts/src/core/operations/MatrixExpression.ts
+  // src/core/operations/MatrixExpression.ts
   var _MatrixExpression = class _MatrixExpression extends Operation {
     constructor(matrixId, type, bits) {
       super();
@@ -19864,7 +21139,7 @@ var RC = (() => {
   _MatrixExpression.OP_CODE = 187;
   var MatrixExpression = _MatrixExpression;
 
-  // ../kobento-ts/src/core/operations/MatrixConstant.ts
+  // src/core/operations/MatrixConstant.ts
   var _MatrixConstant = class _MatrixConstant extends Operation {
     constructor(matrixId, type, values) {
       super();
@@ -19896,7 +21171,7 @@ var RC = (() => {
   _MatrixConstant.OP_CODE = 186;
   var MatrixConstant = _MatrixConstant;
 
-  // ../kobento-ts/src/core/operations/MatrixVectorMath.ts
+  // src/core/operations/MatrixVectorMath.ts
   var _MatrixVectorMath = class _MatrixVectorMath extends Operation {
     constructor(type, outputs, matrixId, inputBits) {
       super();
@@ -19957,7 +21232,7 @@ var RC = (() => {
   _MatrixVectorMath.OP_CODE = 188;
   var MatrixVectorMath = _MatrixVectorMath;
 
-  // ../kobento-ts/src/core/operations/TextTransform.ts
+  // src/core/operations/TextTransform.ts
   var isWs = (c) => /\s/.test(c);
   var _TextTransform = class _TextTransform extends Operation {
     constructor(textId, srcId, startBits, lenBits, operation) {
@@ -20052,7 +21327,7 @@ var RC = (() => {
   _TextTransform.TEXT_UPPERCASE_FIRST_CHAR = 5;
   var TextTransform = _TextTransform;
 
-  // ../kobento-ts/src/core/operations/FloatFunction.ts
+  // src/core/operations/FloatFunction.ts
   var OFFSET3 = 3211264;
   var ID_REGION_MASK3 = 7340032;
   var ID_REGION_ARRAY4 = 2097152;
@@ -20183,7 +21458,7 @@ var RC = (() => {
   _FloatFunctionCall.OP_CODE = 166;
   var FloatFunctionCall = _FloatFunctionCall;
 
-  // ../kobento-ts/src/core/operations/TextLookup.ts
+  // src/core/operations/TextLookup.ts
   var _TextLookup = class _TextLookup extends Operation {
     constructor(textId, dataSetId, indexBits) {
       super();
@@ -20227,7 +21502,7 @@ var RC = (() => {
   _TextLookup.OP_CODE = 151;
   var TextLookup = _TextLookup;
 
-  // ../kobento-ts/src/core/operations/ColorTheme.ts
+  // src/core/operations/ColorTheme.ts
   var _ColorTheme = class _ColorTheme extends Operation {
     constructor(id, colorGroupId, lightModeIndex, darkModeIndex, lightModeFallback, darkModeFallback) {
       super();
@@ -20279,7 +21554,7 @@ var RC = (() => {
   _ColorTheme.THEME_DARK = -2;
   var ColorTheme = _ColorTheme;
 
-  // ../kobento-ts/src/core/operations/ColorAttribute.ts
+  // src/core/operations/ColorAttribute.ts
   var _ColorAttribute = class _ColorAttribute extends Operation {
     constructor(outputId, colorId, type) {
       super();
@@ -20360,7 +21635,7 @@ var RC = (() => {
   _ColorAttribute.COLOR_ALPHA = 6;
   var ColorAttribute = _ColorAttribute;
 
-  // ../kobento-ts/src/core/operations/DataMapLookup.ts
+  // src/core/operations/DataMapLookup.ts
   var TYPE_STRING = 0;
   var TYPE_INT = 1;
   var TYPE_FLOAT = 2;
@@ -20417,7 +21692,7 @@ var RC = (() => {
   _DataMapLookup.OP_CODE = 154;
   var DataMapLookup = _DataMapLookup;
 
-  // ../kobento-ts/src/core/operations/TextMeasure.ts
+  // src/core/operations/TextMeasure.ts
   var MEASURE_WIDTH = 0;
   var MEASURE_HEIGHT = 1;
   var MEASURE_LEFT = 2;
@@ -20471,7 +21746,7 @@ var RC = (() => {
   _TextMeasure.OP_CODE = 155;
   var TextMeasure = _TextMeasure;
 
-  // ../kobento-ts/src/core/operations/TextAttribute.ts
+  // src/core/operations/TextAttribute.ts
   var MEASURE_WIDTH2 = 0;
   var MEASURE_HEIGHT2 = 1;
   var MEASURE_LEFT2 = 2;
@@ -20534,7 +21809,7 @@ var RC = (() => {
   _TextAttribute.OP_CODE = 170;
   var TextAttribute = _TextAttribute;
 
-  // ../kobento-ts/src/core/operations/TextLength.ts
+  // src/core/operations/TextLength.ts
   var _TextLength = class _TextLength extends Operation {
     constructor(lengthId, textId) {
       super();
@@ -20564,7 +21839,7 @@ var RC = (() => {
   _TextLength.OP_CODE = 156;
   var TextLength = _TextLength;
 
-  // ../kobento-ts/src/core/operations/TextSubtext.ts
+  // src/core/operations/TextSubtext.ts
   var _TextSubtext = class _TextSubtext extends Operation {
     constructor(textId, srcId, startBits, lenBits) {
       super();
@@ -20624,7 +21899,7 @@ var RC = (() => {
   _TextSubtext.OP_CODE = 182;
   var TextSubtext = _TextSubtext;
 
-  // ../kobento-ts/src/core/operations/ParticleOperations.ts
+  // src/core/operations/ParticleOperations.ts
   var OFFSET4 = 3211264;
   var ID_REGION_MASK4 = 7340032;
   var ID_REGION_ARRAY5 = 2097152;
@@ -21015,7 +22290,7 @@ var RC = (() => {
   _ParticlesCompareOp.OP_CODE = 194;
   var ParticlesCompareOp = _ParticlesCompareOp;
 
-  // ../kobento-ts/src/core/operations/layout/managers/FlowLayout.ts
+  // src/core/operations/layout/managers/FlowLayout.ts
   var _FlowLayout = class _FlowLayout extends RowLayout {
     constructor(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy) {
       super(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy);
@@ -21174,7 +22449,7 @@ var RC = (() => {
   _FlowLayout.OP_CODE = 240;
   var FlowLayout = _FlowLayout;
 
-  // ../kobento-ts/src/core/operations/layout/LoopOperation.ts
+  // src/core/operations/layout/LoopOperation.ts
   var _LoopOperation = class _LoopOperation extends Operation {
     constructor(indexId, fromBits, stepBits, untilBits) {
       super();
@@ -21252,712 +22527,7 @@ var RC = (() => {
   _LoopOperation.OP_CODE = 215;
   var LoopOperation = _LoopOperation;
 
-  // ../kobento-ts/src/core/operations/layout/managers/CoreText.ts
-  var P_INT = 1;
-  var P_FLOAT = 2;
-  var P_SHORT = 3;
-  var P_BYTE = 4;
-  var P_BOOLEAN = 5;
-  var PA_INT = 6;
-  var PA_FLOAT = 7;
-  var PA_STRING = 8;
-  var P_COMPONENT_ID = 1;
-  var P_ANIMATION_ID2 = 2;
-  var P_COLOR2 = 3;
-  var P_COLOR_ID2 = 4;
-  var P_FONT_SIZE2 = 5;
-  var P_FONT_STYLE2 = 6;
-  var P_FONT_WEIGHT2 = 7;
-  var P_FONT_FAMILY2 = 8;
-  var P_TEXT_ALIGN2 = 9;
-  var P_OVERFLOW2 = 10;
-  var P_MAX_LINES2 = 11;
-  var P_LETTER_SPACING2 = 12;
-  var P_LINE_HEIGHT_ADD2 = 13;
-  var P_LINE_HEIGHT_MULTIPLIER2 = 14;
-  var P_BREAK_STRATEGY2 = 15;
-  var P_HYPHENATION_FREQUENCY2 = 16;
-  var P_JUSTIFICATION_MODE2 = 17;
-  var P_UNDERLINE2 = 18;
-  var P_STRIKETHROUGH2 = 19;
-  var P_FONT_AXIS2 = 20;
-  var P_FONT_AXIS_VALUES2 = 21;
-  var P_AUTOSIZE2 = 22;
-  var P_FLAGS2 = 23;
-  var P_TEXT_STYLE_ID = 24;
-  var P_MIN_FONT_SIZE2 = 25;
-  var P_MAX_FONT_SIZE2 = 26;
-  var PARAM_TYPES = {
-    [P_COMPONENT_ID]: P_INT,
-    [P_ANIMATION_ID2]: P_INT,
-    [P_COLOR2]: P_INT,
-    [P_COLOR_ID2]: P_INT,
-    [P_FONT_SIZE2]: P_FLOAT,
-    [P_FONT_STYLE2]: P_INT,
-    [P_FONT_WEIGHT2]: P_FLOAT,
-    [P_FONT_FAMILY2]: P_INT,
-    [P_TEXT_ALIGN2]: P_INT,
-    [P_OVERFLOW2]: P_INT,
-    [P_MAX_LINES2]: P_INT,
-    [P_LETTER_SPACING2]: P_FLOAT,
-    [P_LINE_HEIGHT_ADD2]: P_FLOAT,
-    [P_LINE_HEIGHT_MULTIPLIER2]: P_FLOAT,
-    [P_BREAK_STRATEGY2]: P_INT,
-    [P_HYPHENATION_FREQUENCY2]: P_INT,
-    [P_JUSTIFICATION_MODE2]: P_INT,
-    [P_UNDERLINE2]: P_BOOLEAN,
-    [P_STRIKETHROUGH2]: P_BOOLEAN,
-    [P_FONT_AXIS2]: PA_INT,
-    [P_FONT_AXIS_VALUES2]: PA_FLOAT,
-    [P_AUTOSIZE2]: P_BOOLEAN,
-    [P_FLAGS2]: P_INT,
-    [P_TEXT_STYLE_ID]: P_INT,
-    [P_MIN_FONT_SIZE2]: P_FLOAT,
-    [P_MAX_FONT_SIZE2]: P_FLOAT
-  };
-  var TEXT_ALIGN_LEFT = 1;
-  var TEXT_ALIGN_RIGHT = 2;
-  var TEXT_ALIGN_CENTER = 3;
-  var TEXT_ALIGN_START = 5;
-  var TEXT_ALIGN_END = 6;
-  var OVERFLOW_VISIBLE = 2;
-  var OVERFLOW_ELLIPSIS = 3;
-  var OVERFLOW_START_ELLIPSIS = 4;
-  var OVERFLOW_MIDDLE_ELLIPSIS = 5;
-  function readCommandParams(buffer, count, cb) {
-    for (let i = 0; i < count; i++) {
-      const paramId = buffer.readByte();
-      const type = PARAM_TYPES[paramId];
-      if (type === void 0) {
-        throw new Error(`CoreText: unknown param id ${paramId}`);
-      }
-      switch (type) {
-        case P_INT:
-          cb.intValue(paramId, buffer.readInt());
-          break;
-        case P_FLOAT:
-          cb.floatValue(paramId, buffer.readInt());
-          break;
-        case P_SHORT:
-          buffer.readShort();
-          break;
-        case P_BYTE:
-          buffer.readByte();
-          break;
-        case P_BOOLEAN:
-          cb.boolValue(paramId, buffer.readBoolean());
-          break;
-        case PA_INT: {
-          const len = buffer.readShort();
-          const arr = [];
-          for (let j = 0; j < len; j++) arr.push(buffer.readInt());
-          cb.intArrayValue(paramId, arr);
-          break;
-        }
-        case PA_FLOAT: {
-          const len = buffer.readShort();
-          const arr = [];
-          for (let j = 0; j < len; j++) arr.push(buffer.readInt());
-          cb.floatArrayValue(paramId, arr);
-          break;
-        }
-        case PA_STRING:
-          buffer.readUTF8();
-          break;
-      }
-    }
-  }
-  var _CoreText = class _CoreText extends LayoutManager {
-    constructor(componentId, animationId, textId, color, colorId, fontSize, minFontSize, maxFontSize, fontStyle, fontWeight, fontFamilyId, textAlign, overflow, maxLines, letterSpacing, lineHeightAdd, lineHeightMultiplier, lineBreakStrategy, hyphenationFrequency, justificationMode, underline, strikethrough, fontAxis, fontAxisValues, autosize, flags) {
-      super(componentId, animationId);
-      this.mType = -1;
-      this.mTextX = 0;
-      this.mTextY = 0;
-      this.mTextW = -1;
-      this.mTextH = -1;
-      this.mBaseline = 0;
-      this.mCachedString = null;
-      this.mNewString = null;
-      this.mComputedTextLayout = null;
-      this.mPaint = new PaintBundle();
-      this.mLastMeasurePass = null;
-      this.mLastMaxW = -1;
-      this.mLastMaxH = -1;
-      this.mLastSizeW = 0;
-      this.mLastSizeH = 0;
-      this.mTextId = textId;
-      this.mColor = color;
-      this.mColorId = colorId;
-      this.mIsDynamicColorEnabled = colorId !== -1;
-      this.mColorValue = this.mIsDynamicColorEnabled ? -1 : color;
-      this.mFontSize = fontSize;
-      this.mMinFontSize = minFontSize;
-      this.mMaxFontSize = maxFontSize;
-      this.mFontSizeValue = isNaNBits(fontSize) ? 36 : intBitsToFloat(fontSize);
-      this.mMeasureFontSize = this.mFontSizeValue;
-      this.mFontStyle = fontStyle;
-      this.mFontWeight = fontWeight;
-      this.mFontWeightValue = isNaNBits(fontWeight) ? 0 : intBitsToFloat(fontWeight);
-      this.mFontFamilyId = fontFamilyId;
-      this.mTextAlign = textAlign;
-      this.mTextAlignValue = textAlign & 65535;
-      this.mOverflow = overflow;
-      this.mMaxLines = maxLines;
-      this.mLetterSpacing = letterSpacing;
-      this.mLineHeightAdd = lineHeightAdd;
-      this.mLineHeightMultiplier = lineHeightMultiplier;
-      this.mLineBreakStrategy = lineBreakStrategy;
-      this.mHyphenationFrequency = hyphenationFrequency;
-      this.mJustificationMode = justificationMode;
-      this.mUnderline = underline;
-      this.mStrikethrough = strikethrough;
-      this.mFontAxis = fontAxis;
-      this.mFontAxisValues = fontAxisValues;
-      this.mAutosize = autosize;
-      this.mFlags = flags;
-    }
-    /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
-    isVariableSupportComponent() {
-      return true;
-    }
-    registerListening(context) {
-      if (this.mTextId !== -1) {
-        context.listensTo(this.mTextId, this);
-      }
-      if (isNaNBits(this.mFontSize)) {
-        context.listensTo(idFromBits(this.mFontSize), this);
-      }
-      if (isNaNBits(this.mFontWeight)) {
-        context.listensTo(idFromBits(this.mFontWeight), this);
-      }
-      if (this.mIsDynamicColorEnabled) {
-        context.listensTo(this.mColorId, this);
-      }
-    }
-    updateVariables(context) {
-      this.mFontSizeValue = isNaNBits(this.mFontSize) ? context.getFloat(idFromBits(this.mFontSize)) : intBitsToFloat(this.mFontSize);
-      this.mFontWeightValue = isNaNBits(this.mFontWeight) ? context.getFloat(idFromBits(this.mFontWeight)) : intBitsToFloat(this.mFontWeight);
-      this.mTextAlignValue = this.mTextAlign & 65535;
-      this.mColorValue = this.mIsDynamicColorEnabled ? context.getColor(this.mColorId) : this.mColor;
-      const cachedString = context.getText(this.mTextId);
-      if (cachedString !== null && cachedString === this.mCachedString && this.mType !== -1) {
-        if (this.mMeasureFontSize !== this.mFontSizeValue) {
-          this.invalidateMeasure();
-        }
-        return;
-      }
-      this.mNewString = cachedString;
-      if (this.mType === -1) {
-        if (this.mFontFamilyId !== -1) {
-          const fontFamily = context.getText(this.mFontFamilyId);
-          if (fontFamily !== null) {
-            if (fontFamily.toLowerCase() === "default") this.mType = 0;
-            else if (fontFamily.toLowerCase() === "sans-serif") this.mType = 1;
-            else if (fontFamily.toLowerCase() === "serif") this.mType = 2;
-            else if (fontFamily.toLowerCase() === "monospace") this.mType = 3;
-            else this.mType = this.mFontFamilyId;
-          }
-        } else {
-          this.mType = 0;
-        }
-      }
-      this.invalidateMeasure();
-    }
-    // Java CoreText: the intrinsic size is the last measured text size.
-    minIntrinsicHeight() {
-      return this.mTextH;
-    }
-    minIntrinsicWidth() {
-      return this.mTextW;
-    }
-    computeWrapSize(context, _minWidth, maxWidth, _minHeight, maxHeight, _horizontalWrap, _verticalWrap, measure, size) {
-      if (this.mLastMeasurePass === measure && this.mLastMaxW === maxWidth && this.mLastMaxH === maxHeight && !this.mNeedsMeasure && this.mNewString === null) {
-        size.setWidth(this.mLastSizeW);
-        size.setHeight(this.mLastSizeH);
-        return;
-      }
-      this.mMeasureFontSize = this.mFontSizeValue;
-      context.savePaint();
-      this.mPaint.reset();
-      this.mPaint.setTextSize(this.mMeasureFontSize);
-      this.mPaint.setTextStyle(
-        this.mType === -1 ? 0 : this.mType,
-        Math.round(this.mFontWeightValue),
-        this.mFontStyle === 1
-      );
-      if (this.mFontAxis && this.mFontAxis.length > 0) {
-        const values = this.mFontAxisValues.map((b) => isVariableBits(b) ? context.getContext().getFloat(idFromBits(b)) : intBitsToFloat(b));
-        this.mPaint.setTextAxis(this.mFontAxis, values);
-      }
-      this.mPaint.setColor(this.mColorValue);
-      context.replacePaint(this.mPaint);
-      const bounds = new Float32Array(4);
-      if (this.mNewString !== null && this.mNewString !== this.mCachedString) {
-        this.mCachedString = this.mNewString;
-      }
-      if (this.mCachedString === null) {
-        context.restorePaint();
-        return;
-      }
-      if (this.mAutosize) {
-        const stepSize = 0.5;
-        const minFontSize = this.mMinFontSize <= 0 ? 4 : this.mMinFontSize;
-        const maxFontSize = this.mMaxFontSize <= 0 ? 400 : this.mMaxFontSize;
-        let min = minFontSize;
-        let max = maxFontSize;
-        let current = (min + max) / 2;
-        while (max - min >= stepSize) {
-          this.mPaint.setTextSize(current);
-          context.replacePaint(this.mPaint);
-          this.textLayout(context, maxWidth, maxHeight, bounds, true, true);
-          const h2 = bounds[3] - bounds[1];
-          const w2 = bounds[2] - bounds[0];
-          if (h2 >= maxHeight || w2 > maxWidth) {
-            max = current;
-          } else {
-            min = current;
-          }
-          current = (min + max) / 2;
-        }
-        current = Math.floor((min - minFontSize) / stepSize) * stepSize + minFontSize;
-        if (current + stepSize < maxFontSize) {
-          this.mPaint.setTextSize(current + stepSize);
-          context.replacePaint(this.mPaint);
-          this.textLayout(context, maxWidth, maxHeight, bounds, true, true);
-          const h2 = bounds[3] - bounds[1];
-          const w2 = bounds[2] - bounds[0];
-          if (h2 < maxHeight && w2 <= maxWidth) {
-            current += stepSize;
-          }
-        }
-        this.mFontSizeValue = current;
-        this.mMeasureFontSize = current;
-        this.mPaint.setTextSize(this.mFontSizeValue);
-        context.replacePaint(this.mPaint);
-        this.textLayout(context, maxWidth, maxHeight, bounds, true, false);
-      } else {
-        this.textLayout(context, maxWidth, maxHeight, bounds);
-      }
-      context.restorePaint();
-      const w = bounds[2] - bounds[0];
-      const h = bounds[3] - bounds[1];
-      size.setWidth(Math.min(maxWidth, w));
-      this.mTextX = -bounds[0];
-      size.setHeight(Math.min(maxHeight, h));
-      this.mTextY = -bounds[1];
-      this.mTextW = w;
-      this.mTextH = h;
-      this.mLastMeasurePass = measure;
-      this.mLastMaxW = maxWidth;
-      this.mLastMaxH = maxHeight;
-      this.mLastSizeW = size.getWidth();
-      this.mLastSizeH = size.getHeight();
-    }
-    computeSize(context, minWidth, maxWidth, minHeight, maxHeight, measure) {
-      super.computeSize(context, minWidth, maxWidth, minHeight, maxHeight, measure);
-      const tempSize = this.mCachedWrapSize;
-      tempSize.clear();
-      this.computeWrapSize(
-        context,
-        minWidth,
-        maxWidth,
-        minHeight,
-        maxHeight,
-        true,
-        true,
-        measure,
-        tempSize
-      );
-      const m = measure.get(this);
-      m.setW(tempSize.getWidth());
-      m.setH(tempSize.getHeight());
-    }
-    textLayout(context, maxWidth, maxHeight, bounds, forceComplexParam = false, inAutosize = false) {
-      if (maxWidth < 0 || maxHeight < 0) return;
-      let flags = PaintContext.TEXT_MEASURE_FONT_HEIGHT | PaintContext.TEXT_MEASURE_SPACES;
-      let forceComplex = forceComplexParam;
-      if (this.mOverflow === OVERFLOW_START_ELLIPSIS || this.mOverflow === OVERFLOW_MIDDLE_ELLIPSIS || this.mOverflow === OVERFLOW_ELLIPSIS) {
-        flags |= PaintContext.TEXT_COMPLEX;
-        forceComplex = true;
-      }
-      if (this.mLetterSpacing !== 0 || this.mLineHeightMultiplier !== 1 || this.mLineHeightAdd > 0 || this.mUnderline || this.mStrikethrough || this.mJustificationMode > 0 || this.mLineBreakStrategy > 0 || this.mHyphenationFrequency > 0) {
-        flags |= PaintContext.TEXT_COMPLEX;
-        forceComplex = true;
-      }
-      if (!(flags & PaintContext.TEXT_COMPLEX) && this.mCachedString) {
-        for (let i = 0; i < this.mCachedString.length; i++) {
-          const c = this.mCachedString.charAt(i);
-          if (c === "\n" || c === "	") {
-            flags |= PaintContext.TEXT_COMPLEX;
-            forceComplex = true;
-            break;
-          }
-        }
-      }
-      if (!forceComplex) {
-        context.getTextBounds(this.mTextId, 0, this.mCachedString.length, flags, bounds);
-        this.mBaseline = -bounds[1];
-      }
-      const wantsComplex = forceComplex || bounds[2] - bounds[0] > maxWidth && this.mMaxLines > 1 && maxWidth > 0;
-      if (wantsComplex) {
-        if (inAutosize) {
-          flags |= 1;
-        }
-        let maxLines = this.mMaxLines;
-        let done = false;
-        while (!done) {
-          this.mComputedTextLayout = context.layoutComplexText(
-            this.mTextId,
-            0,
-            this.mCachedString.length,
-            this.mTextAlign,
-            this.mOverflow,
-            maxLines,
-            maxWidth,
-            maxHeight,
-            this.mLetterSpacing,
-            this.mLineHeightAdd,
-            this.mLineHeightMultiplier,
-            this.mLineBreakStrategy,
-            this.mHyphenationFrequency,
-            this.mJustificationMode,
-            this.mUnderline,
-            this.mStrikethrough,
-            flags
-          );
-          const layout = this.mComputedTextLayout;
-          if (layout) {
-            bounds[0] = 0;
-            bounds[1] = 0;
-            bounds[2] = layout.width;
-            bounds[3] = layout.height;
-          }
-          if (layout && !inAutosize && layout.height > maxHeight && this.mOverflow === OVERFLOW_ELLIPSIS && typeof layout.visibleLines === "number") {
-            if (layout.visibleLines !== maxLines) {
-              maxLines = layout.visibleLines;
-            } else {
-              maxLines--;
-            }
-            if (maxLines < 1) done = true;
-          } else {
-            done = true;
-          }
-        }
-      } else if (maxWidth > 0) {
-        this.mComputedTextLayout = null;
-      } else if (this.mComputedTextLayout) {
-        bounds[0] = 0;
-        bounds[1] = 0;
-        bounds[2] = this.mComputedTextLayout.width;
-        bounds[3] = this.mComputedTextLayout.height;
-      }
-    }
-    paintingComponent(paintContext) {
-      const remoteContext = paintContext.getContext();
-      paintContext.save();
-      paintContext.translate(this.mX, this.mY);
-      this.paintModifiers(paintContext);
-      const tx = this.mPaddingLeft;
-      const ty = this.mPaddingTop;
-      paintContext.translate(tx, ty);
-      paintContext.savePaint();
-      this.mPaint.reset();
-      this.mPaint.setStyle(PaintBundle.FILL);
-      this.mPaint.setColor(this.mColorValue);
-      this.mPaint.setTextSize(this.mMeasureFontSize);
-      this.mPaint.setTextStyle(
-        this.mType === -1 ? 0 : this.mType,
-        Math.round(this.mFontWeightValue),
-        this.mFontStyle === 1
-      );
-      if (this.mFontAxis && this.mFontAxis.length > 0) {
-        const values = this.mFontAxisValues.map((b) => isVariableBits(b) ? remoteContext.getFloat(idFromBits(b)) : intBitsToFloat(b));
-        this.mPaint.setTextAxis(this.mFontAxis, values);
-      }
-      paintContext.replacePaint(this.mPaint);
-      if (this.mCachedString === null) {
-        paintContext.restorePaint();
-        paintContext.restore();
-        return;
-      }
-      const length = this.mCachedString.length;
-      const contentW = this.mWidth - this.mPaddingLeft - this.mPaddingRight;
-      const contentH = this.mHeight - this.mPaddingTop - this.mPaddingBottom;
-      const drawText = !this.isEditing();
-      if (drawText && length === 0) {
-        TextInputModifier.find(this)?.paintHint(paintContext, this.mPaint, this.mColorValue, contentW, this.mTextAlignValue);
-      }
-      if (!drawText) {
-      } else if (this.mComputedTextLayout) {
-        if (this.mOverflow !== OVERFLOW_VISIBLE) {
-          paintContext.save();
-          paintContext.clipRect(0, 0, contentW, contentH);
-          paintContext.drawComplexText(this.mComputedTextLayout, contentW);
-          paintContext.restore();
-        } else {
-          paintContext.drawComplexText(this.mComputedTextLayout, contentW);
-        }
-      } else if (length > 0) {
-        let px = this.mTextX;
-        switch (this.mTextAlignValue) {
-          case TEXT_ALIGN_CENTER:
-            px = (contentW - this.mTextW) / 2;
-            break;
-          case TEXT_ALIGN_RIGHT:
-          case TEXT_ALIGN_END:
-            px = contentW - this.mTextW;
-            break;
-          case TEXT_ALIGN_LEFT:
-          case TEXT_ALIGN_START:
-          default:
-            break;
-        }
-        if (this.mOverflow !== OVERFLOW_VISIBLE || this.mTextW > contentW) {
-          paintContext.save();
-          paintContext.clipRect(0, 0, contentW, contentH);
-          paintContext.drawTextRun(this.mTextId, 0, length, 0, 0, px, this.mTextY, false);
-          paintContext.restore();
-        } else {
-          paintContext.drawTextRun(this.mTextId, 0, length, 0, 0, px, this.mTextY, false);
-        }
-      }
-      paintContext.restorePaint();
-      paintContext.restore();
-    }
-    // The text's style, for a host editor shown over it (Java CoreText getters).
-    getFontSizeValue() {
-      return this.mMeasureFontSize;
-    }
-    getColorValue() {
-      return this.mColorValue;
-    }
-    getFontWeightValue() {
-      return this.mFontWeightValue;
-    }
-    getTextAlignValue() {
-      return this.mTextAlignValue;
-    }
-    write(buffer) {
-      buffer.start(_CoreText.OP_CODE);
-      buffer.writeInt(this.mTextId);
-      buffer.writeShort(0);
-    }
-    apply(context) {
-      super.apply(context);
-    }
-    deepToString(indent) {
-      return `${indent}CoreText(${this.getComponentId()}, textId=${this.mTextId})`;
-    }
-    static read(buffer, operations) {
-      const textId = buffer.readId();
-      const paramsLength = buffer.readShort();
-      let componentId = -1, animationId = -1, color = 4278190080 | 0, colorId = -1;
-      let fontStyle = 0, fontFamilyId = -1, textAlign = 1, overflow = 1;
-      let maxLines = 2147483647, lineBreakStrategy = 0, hyphenationFrequency = 0;
-      let justificationMode = 0, flags = 0;
-      let fontSize = floatToRawIntBits(36), minFontSize = -1, maxFontSize = -1;
-      let fontWeight = floatToRawIntBits(400), letterSpacing = 0, lineHeightAdd = 0, lineHeightMultiplier = 1;
-      let underline = false, strikethrough = false, autosize = false;
-      let fontAxis = null;
-      let fontAxisValues = null;
-      const remap = buffer.getRemapContext?.();
-      const rid = (v) => remap ? remap.resolveId(v) : v;
-      const did = (v) => remap ? remap.declareId(v) : v;
-      readCommandParams(buffer, paramsLength, {
-        intValue(id, value) {
-          switch (id) {
-            case P_COMPONENT_ID:
-              componentId = did(value);
-              break;
-            case P_ANIMATION_ID2:
-              animationId = did(value);
-              break;
-            case P_COLOR2:
-              color = value;
-              break;
-            case P_COLOR_ID2:
-              colorId = rid(value);
-              break;
-            case P_FONT_STYLE2:
-              fontStyle = value;
-              break;
-            case P_FONT_FAMILY2:
-              fontFamilyId = rid(value);
-              break;
-            case P_TEXT_ALIGN2:
-              textAlign = value;
-              break;
-            case P_OVERFLOW2:
-              overflow = value;
-              break;
-            case P_MAX_LINES2:
-              maxLines = value;
-              break;
-            case P_BREAK_STRATEGY2:
-              lineBreakStrategy = value;
-              break;
-            case P_HYPHENATION_FREQUENCY2:
-              hyphenationFrequency = value;
-              break;
-            case P_JUSTIFICATION_MODE2:
-              justificationMode = value;
-              break;
-            case P_FLAGS2:
-              flags = value;
-              break;
-            case P_TEXT_STYLE_ID:
-              break;
-          }
-        },
-        floatValue(id, bits) {
-          switch (id) {
-            // Ref-capable: keep raw bits (resolved later).
-            case P_FONT_SIZE2:
-              fontSize = bits;
-              break;
-            case P_FONT_WEIGHT2:
-              fontWeight = bits;
-              break;
-            // Non-ref: decode literal float now.
-            case P_MIN_FONT_SIZE2:
-              minFontSize = intBitsToFloat(bits);
-              break;
-            case P_MAX_FONT_SIZE2:
-              maxFontSize = intBitsToFloat(bits);
-              break;
-            case P_LETTER_SPACING2:
-              letterSpacing = intBitsToFloat(bits);
-              break;
-            case P_LINE_HEIGHT_ADD2:
-              lineHeightAdd = intBitsToFloat(bits);
-              break;
-            case P_LINE_HEIGHT_MULTIPLIER2:
-              lineHeightMultiplier = intBitsToFloat(bits);
-              break;
-          }
-        },
-        boolValue(id, value) {
-          switch (id) {
-            case P_UNDERLINE2:
-              underline = value;
-              break;
-            case P_STRIKETHROUGH2:
-              strikethrough = value;
-              break;
-            case P_AUTOSIZE2:
-              autosize = value;
-              break;
-          }
-        },
-        intArrayValue(id, values) {
-          if (id === P_FONT_AXIS2) fontAxis = values;
-        },
-        floatArrayValue(id, values) {
-          if (id === P_FONT_AXIS_VALUES2) fontAxisValues = values;
-        }
-      });
-      operations.push(new _CoreText(
-        componentId,
-        animationId,
-        textId,
-        color,
-        colorId,
-        fontSize,
-        minFontSize,
-        maxFontSize,
-        fontStyle,
-        fontWeight,
-        fontFamilyId,
-        textAlign,
-        overflow,
-        maxLines,
-        letterSpacing,
-        lineHeightAdd,
-        lineHeightMultiplier,
-        lineBreakStrategy,
-        hyphenationFrequency,
-        justificationMode,
-        underline,
-        strikethrough,
-        fontAxis,
-        fontAxisValues,
-        autosize,
-        flags
-      ));
-    }
-  };
-  // Typed as `number` rather than the literal 239 so TextLayout (208) can
-  // subclass this without a static-side type clash.
-  _CoreText.OP_CODE = 239;
-  var CoreText = _CoreText;
-
-  // ../kobento-ts/src/core/operations/layout/managers/TextLayout.ts
-  var FLAG_IS_DYNAMIC_COLOR = 1;
-  var _TextLayout = class _TextLayout extends CoreText {
-    deepToString(indent) {
-      return `${indent}TEXT_LAYOUT [${this.getComponentId()}]`;
-    }
-    static read(buffer, operations) {
-      const componentId = buffer.declareId();
-      const animationId = buffer.declareId();
-      const textId = buffer.readId();
-      const color = buffer.readInt();
-      const fontSize = buffer.readNanIdBits();
-      const fontStyle = buffer.readInt();
-      const fontWeight = buffer.readNanIdBits();
-      const fontFamilyId = buffer.readId();
-      const textAlign = buffer.readInt();
-      const overflow = buffer.readInt();
-      const maxLines = buffer.readInt();
-      const dynamicColor = (textAlign >>> 16 & FLAG_IS_DYNAMIC_COLOR) > 0;
-      operations.push(new _TextLayout(
-        componentId,
-        animationId,
-        textId,
-        dynamicColor ? 4278190080 | 0 : color,
-        dynamicColor ? color : -1,
-        fontSize,
-        -1,
-        // minFontSize — not carried by this op
-        -1,
-        // maxFontSize
-        fontStyle,
-        fontWeight,
-        fontFamilyId,
-        textAlign,
-        overflow,
-        maxLines,
-        0,
-        // letterSpacing
-        0,
-        // lineHeightAdd
-        1,
-        // lineHeightMultiplier
-        0,
-        // lineBreakStrategy
-        0,
-        // hyphenationFrequency
-        0,
-        // justificationMode
-        false,
-        // underline
-        false,
-        // strikethrough
-        null,
-        // fontAxis
-        null,
-        // fontAxisValues
-        false,
-        // autosize
-        0
-        // flags
-      ));
-    }
-  };
-  _TextLayout.OP_CODE = 208;
-  var TextLayout = _TextLayout;
-
-  // ../kobento-ts/src/core/operations/layout/managers/FitBoxLayout.ts
+  // src/core/operations/layout/managers/FitBoxLayout.ts
   var _FitBoxLayout = class _FitBoxLayout extends LayoutManager {
     constructor(componentId, animationId, horizontalPositioning, verticalPositioning) {
       super(componentId, animationId);
@@ -22124,7 +22694,7 @@ var RC = (() => {
   _FitBoxLayout.BOTTOM = 5;
   var FitBoxLayout = _FitBoxLayout;
 
-  // ../kobento-ts/src/core/operations/layout/managers/CollapsiblePriority.ts
+  // src/core/operations/layout/managers/CollapsiblePriority.ts
   var FLOAT_MAX = 34028234663852886e22;
   function javaInt(v) {
     if (Number.isNaN(v)) return 0;
@@ -22239,7 +22809,7 @@ var RC = (() => {
     return { preDropCount, preDropMain, preDropCross, kept, keptMain, keptCross };
   }
 
-  // ../kobento-ts/src/core/operations/layout/managers/CollapsibleRowLayout.ts
+  // src/core/operations/layout/managers/CollapsibleRowLayout.ts
   var _CollapsibleRowLayout = class _CollapsibleRowLayout extends RowLayout {
     constructor(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy) {
       super(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy);
@@ -22360,7 +22930,7 @@ var RC = (() => {
   _CollapsibleRowLayout.OP_CODE = 230;
   var CollapsibleRowLayout = _CollapsibleRowLayout;
 
-  // ../kobento-ts/src/core/operations/layout/managers/CollapsibleColumnLayout.ts
+  // src/core/operations/layout/managers/CollapsibleColumnLayout.ts
   var _CollapsibleColumnLayout = class _CollapsibleColumnLayout extends ColumnLayout {
     constructor(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy) {
       super(componentId, animationId, horizontalPositioning, verticalPositioning, spacedBy);
@@ -22481,7 +23051,7 @@ var RC = (() => {
   _CollapsibleColumnLayout.OP_CODE = 233;
   var CollapsibleColumnLayout = _CollapsibleColumnLayout;
 
-  // ../kobento-ts/src/core/operations/IdLookup.ts
+  // src/core/operations/IdLookup.ts
   var _IdLookup = class _IdLookup extends Operation {
     constructor(textId, dataSetId, indexBits) {
       super();
@@ -22523,7 +23093,7 @@ var RC = (() => {
   _IdLookup.OP_CODE = 192;
   var IdLookup = _IdLookup;
 
-  // ../kobento-ts/src/core/operations/UpdateDynamicFloatList.ts
+  // src/core/operations/UpdateDynamicFloatList.ts
   var _UpdateDynamicFloatList = class _UpdateDynamicFloatList extends Operation {
     constructor(arrayId, indexBits, valueBits) {
       super();
@@ -22575,7 +23145,7 @@ var RC = (() => {
   _UpdateDynamicFloatList.OP_CODE = 198;
   var UpdateDynamicFloatList = _UpdateDynamicFloatList;
 
-  // ../kobento-ts/src/core/operations/layout/managers/ImageLayout.ts
+  // src/core/operations/layout/managers/ImageLayout.ts
   var _ImageLayout = class _ImageLayout extends LayoutManager {
     constructor(componentId, animationId, bitmapId, scaleType, alphaBits) {
       super(componentId, animationId);
@@ -22689,7 +23259,7 @@ var RC = (() => {
   _ImageLayout.OP_CODE = 234;
   var ImageLayout = _ImageLayout;
 
-  // ../kobento-ts/src/core/operations/layout/managers/StateLayout.ts
+  // src/core/operations/layout/managers/StateLayout.ts
   var _StateLayout = class _StateLayout extends LayoutManager {
     constructor(componentId, animationId, indexId) {
       super(componentId, animationId);
@@ -22817,7 +23387,7 @@ var RC = (() => {
           const prev = this.statePaintedComponents.get(id)?.[this.previousLayoutIndex] ?? null;
           if (prev && c !== prev) {
             c.mFirstLayout = false;
-            c.mLaidOutVisible = true;
+            c.mShown = true;
             c.setX(prev.getX());
             c.setY(prev.getY());
             c.setWidth(prev.getWidth());
@@ -23022,7 +23592,7 @@ var RC = (() => {
   _StateLayout.OP_CODE = 217;
   var StateLayout = _StateLayout;
 
-  // ../kobento-ts/src/core/operations/layout/modifiers/ActionOperations.ts
+  // src/core/operations/layout/modifiers/ActionOperations.ts
   var _HostActionOperation = class _HostActionOperation extends Operation {
     constructor(actionId) {
       super();
@@ -23187,7 +23757,7 @@ var RC = (() => {
   _ValueFloatChangeAction.OP_CODE = 222;
   var ValueFloatChangeAction = _ValueFloatChangeAction;
 
-  // ../kobento-ts/src/core/operations/utilities/ToneSynthesizer.ts
+  // src/core/operations/utilities/ToneSynthesizer.ts
   var _ToneSynthesizer = class _ToneSynthesizer {
     /**
      * Synthesize raw 16-bit little-endian mono PCM bytes.
@@ -23467,7 +24037,7 @@ var RC = (() => {
     return Number.isFinite(x) ? x : d;
   }
 
-  // ../kobento-ts/src/core/operations/SoundOperations.ts
+  // src/core/operations/SoundOperations.ts
   var _SoundData = class _SoundData extends Operation {
     constructor(soundId, data) {
       super();
@@ -23622,7 +24192,7 @@ var RC = (() => {
   _PlaySound.OP_CODE = 141;
   var PlaySound = _PlaySound;
 
-  // ../kobento-ts/src/core/operations/layout/managers/Custom.ts
+  // src/core/operations/layout/managers/Custom.ts
   var _Custom = class _Custom extends LayoutManager {
     /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
     isVariableSupportComponent() {
@@ -23693,7 +24263,7 @@ var RC = (() => {
   _Custom.OP_CODE = 93;
   var Custom = _Custom;
 
-  // ../kobento-ts/src/core/operations/UnsupportedOperations.ts
+  // src/core/operations/UnsupportedOperations.ts
   var UnsupportedOperation = class extends Operation {
     write(_buffer) {
     }
@@ -23940,7 +24510,7 @@ var RC = (() => {
   _RemStub.OP_CODE = 185;
   var RemStub = _RemStub;
 
-  // ../kobento-ts/src/core/Operations.ts
+  // src/core/Operations.ts
   var _Operations = class _Operations {
     static init() {
       if (_Operations.initialized) return;
@@ -23957,6 +24527,7 @@ var RC = (() => {
       m.set(AddMesh2D.OP_CODE, AddMesh2D.read);
       m.set(DrawMesh2D.OP_CODE, DrawMesh2D.read);
       m.set(MatrixFromMesh2D.OP_CODE, MatrixFromMesh2D.read);
+      m.set(BinaryData.OP_CODE, BinaryData.read);
       m.set(DrawPath.OP_CODE, DrawPath.read);
       m.set(DrawTweenPath.OP_CODE, DrawTweenPath.read);
       m.set(DrawContent.OP_CODE, DrawContent.read);
@@ -24008,6 +24579,7 @@ var RC = (() => {
       m.set(LayoutComponentContent.OP_CODE, LayoutComponentContent.read);
       m.set(CanvasContent.OP_CODE, CanvasContent.read);
       m.set(BoxLayout.OP_CODE, BoxLayout.read);
+      m.set(TextInputLayout.OP_CODE, TextInputLayout.read);
       m.set(RowLayout.OP_CODE, RowLayout.read);
       m.set(ColumnLayout.OP_CODE, ColumnLayout.read);
       m.set(CanvasLayout.OP_CODE, CanvasLayout.read);
@@ -24024,7 +24596,6 @@ var RC = (() => {
       m.set(ClipRectModifier.OP_CODE, ClipRectModifier.read);
       m.set(ClickModifier.OP_CODE, ClickModifier.read);
       m.set(MultiClickModifier.OP_CODE, MultiClickModifier.read);
-      m.set(TextInputModifier.OP_CODE, TextInputModifier.read);
       m.set(DimensionConstraintsModifier.OP_CODE, DimensionConstraintsModifier.read);
       m.set(TouchDownModifier.OP_CODE, TouchDownModifier.read);
       m.set(TouchUpModifier.OP_CODE, TouchUpModifier.read);
@@ -24141,7 +24712,7 @@ var RC = (() => {
   _Operations.initialized = false;
   var Operations = _Operations;
 
-  // ../kobento-ts/src/core/operations/loom/LoomWireBuffer.ts
+  // src/core/operations/loom/LoomWireBuffer.ts
   var LoomWireBuffer = class extends WireBuffer {
     constructor(wrapped, context) {
       super(1);
@@ -24278,7 +24849,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/RemoteComposeBuffer.ts
+  // src/core/RemoteComposeBuffer.ts
   var VARIABLE_PROVIDERS = /* @__PURE__ */ new Set([
     45,
     64,
@@ -24369,7 +24940,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/loom/nestContainers.ts
+  // src/core/operations/loom/nestContainers.ts
   function isContainer2(op) {
     return typeof op.getList === "function" && !(op instanceof ContainerEnd);
   }
@@ -24426,7 +24997,7 @@ var RC = (() => {
     return finalOps;
   }
 
-  // ../kobento-ts/src/core/operations/loom/ExpansionContext.ts
+  // src/core/operations/loom/ExpansionContext.ts
   var MAX_EXPANSION_DEPTH = 64;
   var ExpansionContext = class _ExpansionContext {
     constructor(loomManager, document2, remapContext, blocks, safeMode = false, depth = 0) {
@@ -24526,7 +25097,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/loom/RemapContext.ts
+  // src/core/operations/loom/RemapContext.ts
   var RemapContext = class _RemapContext {
     constructor(a, document2, isInsideMacro) {
       if (a instanceof Map) {
@@ -24653,7 +25224,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/operations/loom/LoomManager.ts
+  // src/core/operations/loom/LoomManager.ts
   var LoomManager = class {
     constructor() {
       this.mMacros = /* @__PURE__ */ new Map();
@@ -24707,7 +25278,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/core/CoreDocument.ts
+  // src/core/CoreDocument.ts
   var Version = class {
     constructor(major, minor, patch) {
       this.mMajorVersion = major;
@@ -25673,7 +26244,7 @@ var RC = (() => {
   _CoreDocument.DOCUMENT_API_LEVEL = 8;
   var CoreDocument = _CoreDocument;
 
-  // ../kobento-ts/src/core/d3/Matrix4.ts
+  // src/core/d3/Matrix4.ts
   var fround3 = Math.fround;
   function fm3(a, b) {
     return fround3(a * b);
@@ -25879,7 +26450,7 @@ var RC = (() => {
     out3[2] = fa3(fa3(fm3(m[2], x), fm3(m[6], y)), fm3(m[10], z));
   }
 
-  // ../kobento-ts/src/core/d3/Rasterizer.ts
+  // src/core/d3/Rasterizer.ts
   var fround4 = Math.fround;
   function f2i(v) {
     if (Number.isNaN(v)) {
@@ -26235,7 +26806,7 @@ var RC = (() => {
     }
   }
 
-  // ../kobento-ts/src/core/d3/SoftwarePaint3DContext.ts
+  // src/core/d3/SoftwarePaint3DContext.ts
   var fround5 = Math.fround;
   function fm4(a, b) {
     return fround5(a * b);
@@ -27114,7 +27685,7 @@ var RC = (() => {
     }
   };
 
-  // ../kobento-ts/src/web/WebGL3DRenderer.ts
+  // src/web/WebGL3DRenderer.ts
   var VERT = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aPos;      // window pixels, y down
@@ -27758,7 +28329,7 @@ void main() {
     }
   };
 
-  // ../kobento-ts/src/core/shader/AgslTokenizer.ts
+  // src/core/shader/AgslTokenizer.ts
   var IDENT_START = /[a-zA-Z_]/;
   var IDENT_CONT = /[a-zA-Z0-9_]/;
   var DIGIT = /[0-9]/;
@@ -27864,7 +28435,7 @@ void main() {
     return tokens;
   }
 
-  // ../kobento-ts/src/core/shader/AgslTranspiler.ts
+  // src/core/shader/AgslTranspiler.ts
   var TYPE_MAP = {
     "half4": "vec4",
     "half3": "vec3",
@@ -28099,7 +28670,7 @@ void main() {
     return tok.value;
   }
 
-  // ../kobento-ts/src/web/shader/WebGLShaderRenderer.ts
+  // src/web/shader/WebGLShaderRenderer.ts
   var VERTEX_SHADER = `#version 300 es
 in vec2 a_position;
 void main() {
@@ -28320,7 +28891,7 @@ void main() {
     }
   };
 
-  // ../kobento-ts/src/web/CanvasPaintContext.ts
+  // src/web/CanvasPaintContext.ts
   function argbToRgba(argb2) {
     const a = (argb2 >>> 24 & 255) / 255;
     const r = argb2 >>> 16 & 255;
@@ -29972,7 +30543,7 @@ void main() {
         return;
       }
       const text = this.textCache.get(textId);
-      if (!text) {
+      if (text === void 0 || text === null) {
         bounds.fill(0);
         return;
       }
@@ -30818,7 +31389,7 @@ void main() {
   _CanvasPaintContext.gpuForSoftware3D = true;
   var CanvasPaintContext = _CanvasPaintContext;
 
-  // ../kobento-ts/src/core/DefaultSystemColors.ts
+  // src/core/DefaultSystemColors.ts
   function C(c) {
     return c | 0;
   }
@@ -31033,7 +31604,7 @@ void main() {
     return DEFAULT_SYSTEM_COLORS[name];
   }
 
-  // ../kobento-ts/src/web/WebRemoteContext.ts
+  // src/web/WebRemoteContext.ts
   var WebRemoteContext = class extends RemoteContext {
     constructor(paintContext, clock = SYSTEM_CLOCK) {
       super(clock);
@@ -31336,7 +31907,7 @@ void main() {
     }
   };
 
-  // ../kobento-ts/src/web/CustomHosts.ts
+  // src/web/CustomHosts.ts
   function parseEmbedConfig(config, defaultFit = "fit") {
     const out = {
       kind: "",
@@ -31857,7 +32428,7 @@ void main() {
     }
   };
 
-  // ../kobento-ts/src/web/RcPlayerElement.ts
+  // src/web/RcPlayerElement.ts
   function base64ToArrayBuffer(base64) {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
@@ -31989,7 +32560,7 @@ void main() {
   };
   RcPlayerElement.observedAttributes = ["src", "data", "width", "height", "theme", "background"];
 
-  // ../kobento-ts/src/core/ClockPin.ts
+  // src/core/ClockPin.ts
   var PIN_EPOCH = new Date(2026, 0, 1, 0, 0, 0, 0).getTime();
   function pinClock(player, seconds, elapsed = seconds) {
     const doc = player && player.document;
@@ -32011,7 +32582,7 @@ void main() {
     return pinned;
   }
 
-  // ../kobento-ts/src/web/HostApi.ts
+  // src/web/HostApi.ts
   var TYPES = ["string", "float", "color", "image", "int", "long", "float_array"];
   var hex = (argb2) => "#" + (argb2 >>> 0).toString(16).toUpperCase().padStart(8, "0");
   function parseColor(v) {
@@ -32180,7 +32751,7 @@ void main() {
     };
   }
 
-  // ../kobento-ts/src/web/main.ts
+  // src/web/main.ts
   var TOUCH_SLOP = 8;
   var _RcdPlayer = class _RcdPlayer {
     constructor(canvas) {
@@ -32235,9 +32806,9 @@ void main() {
        */
       this.viewport = null;
       /**
-       * Text input (MODIFIER_TEXT_INPUT): an editor over a component whose string is editable,
+       * Text input (LAYOUT_TEXT_INPUT): an editor over a text input layout's string,
        * on a real page only (not headless, where nothing can type). setTextInputEnabled(false)
-       * leaves the modifier inert, the text shown as is.
+       * leaves the layout a plain box, the text shown as is.
        */
       this.textInput = typeof HTMLInputElement !== "undefined" && typeof document !== "undefined" && !!document.body ? new WebTextInputSupport({
         rect: (x, y, w, h) => {

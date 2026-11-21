@@ -1101,49 +1101,6 @@ class Parser {
             out.push((w) => w.animationSpec(id, md, me, vd, ve, enterPacked, exitPacked, enterFn, exitFn));
             return true;
         }
-        if (k === "textinput") {
-            // MODIFIER_TEXT_INPUT (60, androidx CL 4451608): the string the component shows is
-            // editable. {"text": "@name", "keyboard": "email", "imeAction": "done", "singleLine":
-            // true, "commitOnDone": false, "autoCorrect": false, "capitalize": "words",
-            // "maxLength": 40, "filter": "digits", "hint": "Your email" | "@hintText"}.
-            // Players with text input open an editor over the component on a tap; others show
-            // the text. A json2rc extension: the reference JSON parser has no such key.
-            const o = (value && typeof value === "object" && !Array.isArray(value) ? value : { text: value });
-            if (o.text === undefined || o.text === null)
-                throw new NotImplementedComponent('textInput needs "text": the "@name" of the string it edits');
-            const textId = this.resolveTextId(o.text);
-            const pick = (v, names, what, d) => {
-                if (v === undefined || v === null)
-                    return d;
-                if (typeof v === "number")
-                    return v;
-                const i = names.indexOf(String(v).toLowerCase().replace(/[\s_-]/g, ""));
-                if (i < 0)
-                    throw new NotImplementedComponent(`textInput ${what} '${v}': one of ${names.filter(Boolean).join(", ")}`);
-                return i;
-            };
-            const keyboard = pick(o.keyboard ?? o.keyboardType, ["unspecified", "text", "ascii", "number", "phone", "uri", "email", "password", "numberpassword", "decimal"], "keyboard", 0);
-            const ime = pick(o.imeAction, ["none", "default", "go", "search", "send", "previous", "next", "done"], "imeAction", 1);
-            const filter = pick(o.filter, ["none", "digits", "decimal", "alphanumeric", "hexadecimal"], "filter", 0);
-            // (A component passes its params as written or folded: true/false, 1/0, "true"/"false".)
-            const bool = (v, d) => (v === undefined || v === null || v === "" ? d
-                : !(v === false || v === 0 || String(v).toLowerCase() === "false" || String(v) === "0"));
-            const cap = o.capitalize === undefined || o.capitalize === null || o.capitalize === false ? 0
-                : { none: 0, off: 0, characters: 8, words: 16, sentences: 32 }[String(o.capitalize).toLowerCase()];
-            if (cap === undefined)
-                throw new NotImplementedComponent(`textInput capitalize '${o.capitalize}': none, characters, words or sentences`);
-            const flags = (bool(o.singleLine, true) ? 1 : 0) | (bool(o.commitOnDone, false) ? 2 : 0) | (bool(o.autoCorrect, false) ? 4 : 0) | cap;
-            const maxLength = Math.max(0, Math.trunc(num(o.maxLength, 0)));
-            const hint = o.hint;
-            const hintRef = typeof hint === "string" && (hint.startsWith("@") || hint.startsWith("$")) ? this.resolveTextId(hint) : null;
-            out.push((w) => {
-                const hintId = hint === undefined || hint === null || hint === "" ? 0 : hintRef ?? w.addText(String(hint));
-                w.buffer.start(60);
-                for (const v of [textId, keyboard, ime, flags, maxLength, filter, hintId])
-                    w.buffer.writeInt(v);
-            });
-            return true;
-        }
         if (k === "zindex") {
             const z = this.fbits(value);
             out.push((w) => { w.buffer.start(223); w.buffer.writeInt(z); });
@@ -1426,6 +1383,30 @@ class Parser {
     }
     parseComponentAt(component) {
         const ctype = String(component.type).toLowerCase();
+        // A json2rc extension kept from the modifier form of text input: {"textInput": {...}}
+        // among a component's modifiers wraps it in a textInput layout.
+        const wrapped = this.textInputModifierAsLayout(component);
+        if (wrapped) {
+            this.parseComponentAt(wrapped);
+            return;
+        }
+        if (ctype === "textinput") {
+            // TextInputLayout with explicit content (RemoteComposeJsonParser "textInput"):
+            // {"type": "textInput", "text": "@name", "keyboardType": "email", ..., "children": [...]}
+            const textId = this.resolveTextId(component.text);
+            const options = this.parseTextInputOptions(component);
+            this.writer.startTextInput(textId, options, this.parseModifiers(component.modifiers));
+            for (const k of (component.children ?? []).map(normalizeComponent))
+                this.parseComponent(k);
+            this.writer.endContainer();
+            return;
+        }
+        if (ctype === "editabletext") {
+            // A text bound to the string it edits, in a textInput layout carrying the
+            // component's modifiers (RemoteComposeJsonParser.parseText(editable)).
+            this.parseText(component, this.parseModifiers(component.modifiers), true);
+            return;
+        }
         const mods = this.parseModifiers(component.modifiers);
         const kids = (component.children ?? []).map(normalizeComponent);
         if (ctype === "column" || ctype === "row" || ctype === "box") {
@@ -3963,7 +3944,76 @@ class Parser {
             }
         }
     }
-    parseText(component, mods) {
+    /**
+     * The options of a text input (RemoteComposeJsonParser.parseTextInputOptions): keyboardType,
+     * imeAction, filter and contentType as names or ints; singleLine (default true),
+     * commitOnDone, autoCorrect; capitalization; maxLength; hint (a string or a reference).
+     * The names of json2rc's former textInput modifier are read too: keyboard, capitalize.
+     * Returns [keyboardType, imeAction, inputFlags, maxLength, filter, hintId, contentType].
+     */
+    parseTextInputOptions(o) {
+        const pick = (v, names, what, d, values) => {
+            if (v === undefined || v === null)
+                return d;
+            if (typeof v === "number")
+                return Math.trunc(v);
+            const i = names.indexOf(String(v).toLowerCase().replace(/[\s_-]/g, ""));
+            if (i < 0)
+                throw new NotImplementedComponent(`textInput ${what} '${v}': one of ${names.join(", ")}`);
+            return values ? values[i] : i;
+        };
+        // (A component passes its params as written or folded: true/false, 1/0, "true"/"false".)
+        const bool = (v, d) => (v === undefined || v === null || v === "" ? d
+            : !(v === false || v === 0 || String(v).toLowerCase() === "false" || String(v) === "0"));
+        const keyboard = pick(o.keyboardType ?? o.keyboard, ["unspecified", "text", "ascii", "number", "phone", "uri", "email", "password", "numberpassword", "decimal"], "keyboardType", 1);
+        const ime = pick(o.imeAction, ["none", "default", "go", "search", "send", "previous", "next", "done"], "imeAction", 1);
+        const filter = pick(o.filter, ["none", "digits", "decimal", "alphanumeric", "hexadecimal"], "filter", 0);
+        const content = pick(o.contentType, ["none", "personname", "personfirstname", "personlastname", "emailaddress", "phonenumber",
+            "username", "password", "newpassword", "onetimecode", "postaladdress", "postalcode",
+            "creditcardnumber", "creditcardexpirationdate", "creditcardsecuritycode"], "contentType", 0);
+        const capRaw = o.capitalization ?? o.capitalize;
+        const cap = capRaw === false ? 0 : pick(capRaw, ["none", "characters", "words", "sentences", "off"], "capitalization", 0, [0, 8, 16, 32, 0]);
+        const flags = (bool(o.singleLine, true) ? 1 : 0) | (bool(o.commitOnDone, false) ? 2 : 0)
+            | (bool(o.autoCorrect, false) ? 4 : 0) | cap;
+        const ml = typeof o.maxLength === "number" ? o.maxLength : Number(o.maxLength ?? 0);
+        const maxLength = Number.isFinite(ml) ? Math.max(0, Math.trunc(ml)) : 0;
+        const hint = o.hint;
+        const hintId = hint === undefined || hint === null || hint === "" ? 0 : this.resolveTextId(hint);
+        return [keyboard, ime, flags, maxLength, filter, hintId, content];
+    }
+    /**
+     * A component whose modifiers hold {"textInput": {"text": "@name", ...options}} (json2rc's
+     * former modifier form, MODIFIER_TEXT_INPUT) as a textInput layout around it: the layout
+     * takes the component's other modifiers (size, weight, background, padding, semantics...),
+     * so it sits where the component did and is the box tapped; the component fills the
+     * layout's size on the axes it had one. Null when there is no such modifier.
+     */
+    textInputModifierAsLayout(component) {
+        const raw = component.modifiers;
+        if (!Array.isArray(raw))
+            return null;
+        const at = raw.findIndex((m) => m && typeof m === "object" && !Array.isArray(m)
+            && Object.keys(m).some((k) => k.toLowerCase() === "textinput"));
+        if (at < 0)
+            return null;
+        const entry = raw[at];
+        const key = Object.keys(entry).find((k) => k.toLowerCase() === "textinput");
+        const v = entry[key];
+        const o = (v && typeof v === "object" && !Array.isArray(v) ? v : { text: v });
+        if (o.text === undefined || o.text === null)
+            throw new NotImplementedComponent('textInput needs "text": the "@name" of the string it edits');
+        const rest = raw.filter((_, i) => i !== at);
+        const keys = rest.flatMap((m) => (typeof m === "string" ? [m] : Object.keys(m ?? {}))).map((k) => k.toLowerCase());
+        // The axis a weight is on is the parent's: a row's width, a column's height.
+        const parent = this.pathStack.length >= 2 ? this.pathStack[this.pathStack.length - 2].replace(/\[.*$/, "") : "";
+        const weightW = keys.includes("weight") && parent !== "column";
+        const weightH = keys.includes("weight") && parent === "column";
+        const hasW = weightW || keys.some((k) => ["fillmaxsize", "fillmaxwidth", "width", "size", "widthin", "requiredwidthin"].includes(k));
+        const hasH = weightH || keys.some((k) => ["fillmaxsize", "fillmaxheight", "height", "size", "heightin", "requiredheightin"].includes(k));
+        const inner = { ...component, modifiers: [...(hasW ? ["fillMaxWidth"] : []), ...(hasH ? ["fillMaxHeight"] : [])] };
+        return { ...o, type: "textInput", modifiers: rest, children: [inner] };
+    }
+    parseText(component, mods, editable = false) {
         if (!this.profiles) {
             // Without a profiles tag the reference falls back to the TextLayout op, which has
             // a different field layout; refusing beats emitting a plausible wrong document.
@@ -4053,14 +4103,25 @@ class Parser {
                 throw new NotImplementedComponent("fontAxis and fontAxisValues must be the same length");
             }
         }
+        const textAlign = parseTextAlign(String(component.textAlign ?? "start"));
+        let maxLines = component.maxLines !== undefined ? optInt(component.maxLines, INT_MAX) : INT_MAX;
+        if (editable) {
+            // The layout takes the modifiers; the text fills its width (and is one line when
+            // the field is).
+            const options = this.parseTextInputOptions(component);
+            if (options[2] & 1)
+                maxLines = 1;
+            this.writer.startTextInput(textId, options, mods);
+            mods = this.parseModifiers(["fillMaxWidth"]);
+        }
         this.writer.textComponent(textId, {
             color,
             colorId,
             fontSizeBits,
             fontWeightBits,
-            textAlign: parseTextAlign(String(component.textAlign ?? "start")),
+            textAlign,
             overflow,
-            maxLines: component.maxLines !== undefined ? optInt(component.maxLines, INT_MAX) : INT_MAX,
+            maxLines,
             minFontSizeBits, maxFontSizeBits, fontStyle, fontFamily,
             letterSpacingBits, lineHeightAddBits, lineHeightMultiplierBits,
             lineBreakStrategy: optInt(component.lineBreakStrategy, 0),
@@ -4072,6 +4133,8 @@ class Parser {
             textStyleId, fontAxis, fontAxisValues,
             modifiers: mods,
         });
+        if (editable)
+            this.writer.endContainer();
     }
 }
 exports.Parser = Parser;
