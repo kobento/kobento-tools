@@ -30590,7 +30590,7 @@ void main() {
     }
     layoutComplexText(textId, start, end, alignment, overflow, maxLines, maxWidth, maxHeight, _letterSpacing, _lineHeightAdd, lineHeightMultiplier, _lineBreakStrategy, _hyphenationFrequency, _justificationMode, _useUnderline, _strikethrough, _flags) {
       const str = this.textCache.get(textId);
-      if (!str) return null;
+      if (str === void 0 || str === null) return null;
       if (_CanvasPaintContext.mockTextMetrics) {
         return {
           lines: [str],
