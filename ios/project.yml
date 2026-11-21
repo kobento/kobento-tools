@@ -33,6 +33,8 @@ targets:
           UIColorName: ""
         # Full speed on ProMotion screens (120 Hz), not iOS's default 60 for apps.
         CADisableMinimumFrameDurationOnPhone: YES
+        # Only HTTPS (exempt): no export-compliance question on each upload.
+        ITSAppUsesNonExemptEncryption: NO
         # The server to sign in to (-server <url> at launch names another, for tests).
         KobentoServer: $(KOBENTO_SERVER)
         # Plain HTTP to localhost only: a local test server.

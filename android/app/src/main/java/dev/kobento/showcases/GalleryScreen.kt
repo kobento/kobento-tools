@@ -34,6 +34,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +61,11 @@ data class AccountUi(
     val onSignOut: () -> Unit,
     val onRefresh: () -> Unit,
     val onOpenPage: (PublishedPage) -> Unit,
+    /** The authors this account blocked in the stream, and showing one again. */
+    val loadBlocked: suspend () -> List<BlockedAuthor>,
+    val unblock: suspend (authorId: Long) -> Unit,
+    /** Deletes the account on the server (asked first), then signs out. */
+    val deleteAccount: suspend () -> Unit,
 )
 
 /** The gallery's two tabs: the bundled showcases, and the signed-in account's own pages. */
@@ -214,6 +222,17 @@ private fun AccountRow(account: AccountUi) {
             }
         }
         account.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        if (account.email != null) {
+            var dialog by remember { mutableStateOf<String?>(null) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { dialog = "blocked" }) { Text("People you blocked") }
+                TextButton(onClick = { dialog = "delete" }) { Text("Delete account", color = MaterialTheme.colorScheme.error) }
+            }
+            when (dialog) {
+                "blocked" -> BlockedDialog(account.loadBlocked, account.unblock, onDismiss = { dialog = null })
+                "delete" -> DeleteAccountDialog(account.email, account.deleteAccount, onDismiss = { dialog = null })
+            }
+        }
     }
 }
 

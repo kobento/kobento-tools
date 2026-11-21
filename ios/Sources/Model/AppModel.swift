@@ -112,6 +112,50 @@ final class AppModel {
         }
     }
 
+    // MARK: Reporting and blocking (store rules for shared content)
+
+    /// A note to show once (after a report or a block).
+    var notice: String?
+
+    /// Reports an item: it leaves this list at once; the server keeps it out of the next loads.
+    func report(_ item: StreamItem, reason: String, note: String) async {
+        do {
+            try await account.report(item.id, reason: reason, note: note)
+            streamItems = streamItems?.filter { $0.id != item.id }
+            notice = "Thanks. \u{201C}\(item.title)\u{201D} is hidden for you, and we will review it."
+        } catch {
+            streamError = error.localizedDescription
+        }
+    }
+
+    /// Blocks an item's author: their items leave this list, and the next loads.
+    func block(_ item: StreamItem) {
+        guard let author = item.authorId else { return }
+        guard account.email != nil else { signIn(); return }
+        Task {
+            do {
+                try await account.block(author)
+                streamItems = streamItems?.filter { $0.authorId != author }
+                notice = "Blocked \(item.author). You no longer see their items. Unblock them from Your pages."
+            } catch {
+                streamError = error.localizedDescription
+            }
+        }
+    }
+
+    func unblock(_ id: Int) async throws {
+        try await account.unblock(id)
+        streamLoadedFor = nil
+    }
+
+    /// Deletes the account on the server for good (the person confirmed), then signs out.
+    func deleteAccount() async throws {
+        try await account.deleteAccount()
+        pages = nil
+        name = nil
+        streamLoadedFor = nil
+    }
+
     // MARK: Sharing your pages
 
     func share(_ page: PublishedPage, title: String, tags: String, name: String?) async throws {

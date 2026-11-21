@@ -42,6 +42,9 @@ class Account(context: Context) {
     var email by mutableStateOf(prefs.getString(K_EMAIL, null)?.takeIf { prefs.contains(K_REFRESH) })
         private set
 
+    /** The signed-in account's id (its items' author_id in the stream), once pages.json said it. */
+    val accountId: Long? get() = prefs.getLong(K_ID, -1).takeIf { it >= 0 && email != null }
+
     init { forgetOtherServer() }
 
     /** Another server for this launch only (tests against a local one); the next plain launch is back on the default. */
@@ -106,6 +109,7 @@ class Account(context: Context) {
         val body = JSONObject(authorizedGet("$server/deploy/pages.json"))
         val list = body.getJSONArray("pages")
         val account = body.getJSONObject("account")
+        if (account.has("id")) prefs.edit { putLong(K_ID, account.getLong("id")) }
         return MyPages(account.getString("email"), account.optString("name").takeIf { it.isNotBlank() && it != "null" },
             (0 until list.length()).map { i ->
                 val p = list.getJSONObject(i)
@@ -143,7 +147,7 @@ class Account(context: Context) {
                 val doc = it.optJSONObject("document")
                 StreamItem(
                     pageId = it.getString("page_id"), title = it.optString("title").ifBlank { "Untitled" },
-                    author = it.optString("author"), tags = it.optJSONArray("tags").strings(),
+                    author = it.optString("author"), authorId = if (it.isNull("author_id")) null else it.optLong("author_id"), tags = it.optJSONArray("tags").strings(),
                     score = it.optInt("score"), ups = it.optInt("ups"), downs = it.optInt("downs"),
                     myVote = if (it.isNull("my_vote")) null else it.optInt("my_vote"), showcase = it.optBoolean("showcase"),
                     page = PublishedPage(
@@ -190,6 +194,34 @@ class Account(context: Context) {
         authorizedPost("$server/examples/stream/$pageId/remove", emptyMap())
     }
 
+    /** Reports someone else's stream item ([REPORT_REASONS]'s key, an optional note): it leaves this account's stream. */
+    suspend fun report(pageId: String, reason: String, note: String) {
+        authorizedPost("$server/examples/stream/$pageId/report", mapOf("reason" to reason, "note" to note))
+    }
+
+    /** Hides an author's stream items from this account ([unblock] shows them again). */
+    suspend fun block(authorId: Long) { authorizedPost("$server/examples/stream/authors/$authorId/block", emptyMap()) }
+
+    suspend fun unblock(authorId: Long) { authorizedPost("$server/examples/stream/authors/$authorId/unblock", emptyMap()) }
+
+    /** The authors this account blocked. */
+    suspend fun blocked(): List<BlockedAuthor> {
+        val a = JSONObject(authorizedGet("$server/examples/stream/blocked.json")).getJSONArray("blocked")
+        return (0 until a.length()).map { i ->
+            val b = a.getJSONObject(i)
+            BlockedAuthor(b.getLong("id"), b.optString("name").takeIf { it.isNotBlank() && it != "null" } ?: "Someone")
+        }
+    }
+
+    /**
+     * Deletes the account on the server, for good: its pages, Stream items, libraries, uploads and
+     * tokens (the person confirmed first). Then the app forgets it.
+     */
+    suspend fun deleteAccount() {
+        authorizedPost("$server/account/me/delete", mapOf("confirm" to "delete"))
+        clear()
+    }
+
     private suspend fun authorizedPost(url: String, form: Map<String, String>): String {
         val body = form.entries.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
         return try {
@@ -210,7 +242,7 @@ class Account(context: Context) {
     }
 
     private fun clear() {
-        prefs.edit { remove(K_ACCESS); remove(K_REFRESH); remove(K_EXPIRES); remove(K_EMAIL) }
+        prefs.edit { remove(K_ACCESS); remove(K_REFRESH); remove(K_EXPIRES); remove(K_EMAIL); remove(K_ID) }
         email = null
     }
 
@@ -311,6 +343,13 @@ class Account(context: Context) {
         private const val K_REFRESH = "refresh"
         private const val K_EXPIRES = "expires"
         private const val K_EMAIL = "email"
+        private const val K_ID = "account_id"
+
+        /** Why an item is reported: the server's REPORT_REASONS (lib/accounts.mjs), in its order. */
+        val REPORT_REASONS = listOf(
+            "offensive" to "Offensive or hateful", "sexual" to "Sexual content", "violent" to "Violent or dangerous",
+            "spam" to "Spam or misleading", "illegal" to "Illegal, or someone else's work", "other" to "Something else",
+        )
         private const val K_VERIFIER = "verifier"
         private const val K_STATE = "state"
 
@@ -350,6 +389,8 @@ data class StreamItem(
     val pageId: String,
     val title: String,
     val author: String,
+    /** The poster's account id (to block them), or null from an older server. */
+    val authorId: Long?,
     val tags: List<String>,
     val score: Int,
     val ups: Int,
@@ -359,6 +400,9 @@ data class StreamItem(
     val showcase: Boolean,
     val page: PublishedPage,
 )
+
+/** An author this account blocked in the stream. */
+data class BlockedAuthor(val id: Long, val name: String)
 
 /** An item's tally after a vote. */
 data class Vote(val score: Int, val ups: Int, val downs: Int, val myVote: Int)

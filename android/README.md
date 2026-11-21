@@ -11,10 +11,12 @@ Three tabs:
 - Looks: Auto (follows the system's light or dark), Light, Dark, and the mono light and mono dark
   documents.
 - **Stream**: the documents people shared on mcp.kobento.dev, newest or top first, filtered by
-  tag or searched (titles, people, tags). Tap one to play it; signed in, vote it up or down.
+  tag or searched (titles, people, tags). Tap one to play it; signed in, vote it up or down,
+  or (its ⋮ menu) report it or block its author.
 - **Your pages**: sign in to a Kobento account to play the pages you published, and share one
   to the stream (its share button: a name and tags; the first time, your public name too), or
-  rename, retag or take it out again.
+  rename, retag or take it out again. Under the sign-in row: **People you blocked** (Unblock) and
+  **Delete account**, which deletes the account and everything in it on the server, for good.
 
 ## Build
 
@@ -26,6 +28,31 @@ git clone https://github.com/camaelon/kobento-mcp ../../kobento-mcp   # if not t
 ./gradlew installDebug          # build and install on a connected device or emulator
 ./gradlew assembleRelease       # app/build/outputs/apk/release/ (signed with the debug key)
 ```
+
+### For Google Play
+
+Play takes an app bundle signed with your upload key (Play App Signing keeps the real signing
+key). Make the key once, in `android/`, and keep it and its passwords out of git:
+
+```sh
+keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Then `android/keystore.properties`:
+
+```properties
+storeFile=upload.jks
+storePassword=...
+keyAlias=upload
+keyPassword=...
+```
+
+```sh
+./gradlew bundleRelease -PversionCode=2   # app/build/outputs/bundle/release/app-release.aab
+```
+
+`keystore.properties`, `*.jks` and `*.keystore` are ignored. Each upload needs a higher
+`versionCode` (`-PversionName=1.1` sets the shown version).
 
 To open one showcase directly:
 `adb shell am start -n dev.kobento.showcases/.MainActivity --es showcase SHW-23`
@@ -46,7 +73,10 @@ grant on the server. You can also disconnect the app under Connected apps on the
 Your pages come from `GET <server>/deploy/pages.json` with the access token; the stream from
 `GET <server>/examples/stream/items.json` (public; with the token it adds your votes), and a
 vote is `POST <server>/examples/stream/<page id>/vote` with the token, and sharing is
-`POST .../stream/<page id>/post` (or `/remove`).
+`POST .../stream/<page id>/post` (or `/remove`). Reporting is `POST .../stream/<page id>/report`
+(reason, note), blocking `POST .../stream/authors/<author_id>/block` (or `/unblock`, and
+`GET .../stream/blocked.json`), and deleting the account `POST <server>/account/me/delete` with
+`confirm=delete`.
 
 The server is `https://mcp.kobento.dev`, or `-PkobentoServer=...` at build time. To test against
 a local server (kobento-mcp's examples and deploy servers behind one origin), forward the port

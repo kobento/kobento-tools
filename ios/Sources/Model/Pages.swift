@@ -54,6 +54,8 @@ struct StreamItem: Identifiable, Hashable {
     var id: String { page.id }
     let title: String
     let author: String
+    /// The poster's account id (to block them), or nil from an older server.
+    let authorId: Int?
     let tags: [String]
     var score: Int
     var ups: Int
@@ -66,6 +68,7 @@ struct StreamItem: Identifiable, Hashable {
     init(json j: [String: Any]) {
         title = (j["title"] as? String).nonEmpty ?? "Untitled"
         author = j["author"] as? String ?? ""
+        authorId = j["author_id"] as? Int
         tags = j["tags"] as? [String] ?? []
         score = j["score"] as? Int ?? 0
         ups = j["ups"] as? Int ?? 0
@@ -74,6 +77,12 @@ struct StreamItem: Identifiable, Hashable {
         showcase = j["showcase"] as? Bool ?? false
         page = PublishedPage(json: j)
     }
+}
+
+/// An author this account blocked in the stream.
+struct BlockedAuthor: Identifiable, Hashable {
+    let id: Int
+    let name: String
 }
 
 /// An item's tally after a vote.

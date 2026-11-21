@@ -22,6 +22,8 @@ final class Account {
     let server: String
     /// The signed-in account's email, or nil.
     private(set) var email: String?
+    /// The signed-in account's id (its items' author_id in the stream), once pages.json said it.
+    private(set) var accountId: Int?
 
     private let defaults = UserDefaults.standard
     private var access: String?
@@ -41,6 +43,7 @@ final class Account {
             defaults.set(server, forKey: K.server)
         }
         email = Keychain.read(K.refresh) == nil ? nil : defaults.string(forKey: K.email)
+        accountId = email == nil ? nil : defaults.object(forKey: K.id) as? Int
     }
 
     // MARK: Signing in and out
@@ -105,6 +108,8 @@ final class Account {
     private func clear() {
         Keychain.delete(K.refresh)
         defaults.removeObject(forKey: K.email)
+        defaults.removeObject(forKey: K.id)
+        accountId = nil
         access = nil
         accessExpires = .distantPast
         email = nil
@@ -116,6 +121,7 @@ final class Account {
     func pages() async throws -> MyPages {
         let body = try JSON.object(try await authorized("GET", "\(server)/deploy/pages.json"))
         let account = body["account"] as? [String: Any] ?? [:]
+        if let id = account["id"] as? Int { defaults.set(id, forKey: K.id); accountId = id }
         let list = body["pages"] as? [[String: Any]] ?? []
         return MyPages(email: account["email"] as? String ?? "", name: (account["name"] as? String).nonEmpty,
                        pages: list.map { p in
@@ -163,6 +169,43 @@ final class Account {
     /// Takes one of the account's pages out of the stream (its votes go too).
     func removeFromStream(_ pageId: String) async throws {
         _ = try await authorized("POST", "\(server)/examples/stream/\(pageId)/remove", form: [:])
+    }
+
+    // MARK: Reporting, blocking, deleting the account
+
+    /// Why an item is reported: the server's REPORT_REASONS (lib/accounts.mjs), in its order.
+    static let reportReasons: [(key: String, label: String)] = [
+        ("offensive", "Offensive or hateful"), ("sexual", "Sexual content"), ("violent", "Violent or dangerous"),
+        ("spam", "Spam or misleading"), ("illegal", "Illegal, or someone else's work"), ("other", "Something else"),
+    ]
+
+    /// Reports someone else's stream item (a `reportReasons` key, an optional note): it leaves this account's stream.
+    func report(_ pageId: String, reason: String, note: String) async throws {
+        _ = try await authorized("POST", "\(server)/examples/stream/\(pageId)/report", form: ["reason": reason, "note": note])
+    }
+
+    /// Hides an author's stream items from this account (`unblock` shows them again).
+    func block(_ authorId: Int) async throws {
+        _ = try await authorized("POST", "\(server)/examples/stream/authors/\(authorId)/block", form: [:])
+    }
+
+    func unblock(_ authorId: Int) async throws {
+        _ = try await authorized("POST", "\(server)/examples/stream/authors/\(authorId)/unblock", form: [:])
+    }
+
+    /// The authors this account blocked.
+    func blocked() async throws -> [BlockedAuthor] {
+        let j = try JSON.object(try await authorized("GET", "\(server)/examples/stream/blocked.json"))
+        return (j["blocked"] as? [[String: Any]] ?? []).compactMap { b in
+            (b["id"] as? Int).map { BlockedAuthor(id: $0, name: (b["name"] as? String).nonEmpty ?? "Someone") }
+        }
+    }
+
+    /// Deletes the account on the server, for good: its pages, stream items, libraries, uploads
+    /// and tokens (the person confirmed first). Then the app forgets it.
+    func deleteAccount() async throws {
+        _ = try await authorized("POST", "\(server)/account/me/delete", form: ["confirm": "delete"])
+        clear()
     }
 
     // MARK: Tokens
@@ -261,6 +304,7 @@ final class Account {
         static let client = "client_id"
         static let clientFor = "client_server"
         static let email = "email"
+        static let id = "account_id"
         static let refresh = "refresh"
     }
 

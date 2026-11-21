@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -56,19 +58,32 @@ android {
         applicationId = "dev.kobento.showcases"
         minSdk = 26   // the RemoteCompose player's
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        // Each upload to Play needs a higher versionCode: -PversionCode=2 (or edit it here).
+        versionCode = providers.gradleProperty("versionCode").getOrElse("1").toInt()
+        versionName = providers.gradleProperty("versionName").getOrElse("1.0")
         // The server to sign in to: -PkobentoServer=... (a launch can name another: `--es server`).
         val server = providers.gradleProperty("kobentoServer").getOrElse("https://mcp.kobento.dev")
         buildConfigField("String", "KOBENTO_SERVER", "\"$server\"")
     }
 
+    // The upload key for Google Play (Play App Signing keeps the real one): android/keystore.properties,
+    // never committed, with storeFile, storePassword, keyAlias, keyPassword (see README). Without it
+    // the release build is signed with the debug key: installable, not uploadable.
+    val keystoreProps = rootProject.file("keystore.properties").takeIf { it.isFile }
+        ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    signingConfigs {
+        if (keystoreProps != null) create("upload") {
+            storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+            storePassword = keystoreProps.getProperty("storePassword")
+            keyAlias = keystoreProps.getProperty("keyAlias")
+            keyPassword = keystoreProps.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so `assembleRelease` gives an installable APK; sign it
-            // with your own key to distribute it.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

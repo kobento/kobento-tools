@@ -11,10 +11,12 @@ Three tabs:
   and mono dark documents. The details panel has the size, operations, design size, form, how it
   repaints, what it shows off and its summary.
 - **Stream**: the documents people shared on mcp.kobento.dev, newest or top first, filtered by tag
-  or searched (titles, people, tags). Tap one to play it; signed in, vote it up or down.
+  or searched (titles, people, tags). Tap one to play it; signed in, vote it up or down, or (its ⋯
+  menu) report it or block its author.
 - **Your pages**: sign in to a Kobento account to play the pages you published, and share one to
   the stream (its share button: a name and tags; the first time, your public name too), or rename,
-  retag or take it out again.
+  retag or take it out again. Under the sign-in row: **People you blocked** (Unblock) and **Delete
+  account**, which deletes the account and everything in it on the server, for good.
 
 ## Build
 
@@ -31,6 +33,25 @@ open KobentoShowcases.xcodeproj # pick a device or a Simulator, set a signing te
 
 `DEST='generic/platform=iOS' ./build.sh` builds for a device. The libraries are arm64 only (a device,
 or the Simulator on an Apple silicon Mac).
+
+### For the App Store
+
+Bump `CURRENT_PROJECT_VERSION` in project.yml for each upload (and `MARKETING_VERSION` for a new
+version), build the device libraries, then archive with your team and upload from Xcode's
+Organizer (Distribute App, App Store Connect):
+
+```sh
+(cd ../../kobento-ios/ios && ./build.sh)
+xcodegen generate
+xcodebuild -project KobentoShowcases.xcodeproj -scheme KobentoShowcases -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath build/KobentoShowcases.xcarchive \
+  DEVELOPMENT_TEAM=<your team id> CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates archive
+open build/KobentoShowcases.xcarchive
+```
+
+`Sources/PrivacyInfo.xcprivacy` is the privacy manifest (no tracking; the email and what you post,
+for the app to work); the App Store's privacy answers should match it. `ITSAppUsesNonExemptEncryption`
+is NO (HTTPS only).
 
 To open one showcase, a tab or a look at launch (tests, screenshots):
 
@@ -81,7 +102,10 @@ Plain HTTP is allowed to localhost only. The Simulator reaches the Mac's localho
 `UITests/AccountFlowTests.swift` drives the account flow against a local server (kobento-mcp's
 examples and deploy servers behind one origin, `http://localhost:8899`): sign in through the
 server's page (with a test account's token), share a page (setting the public name), vote on it in
-the stream, take it out. It needs a test account with a published page and no public name yet:
+the stream, take it out. It needs a test account with a published page and no public name yet.
+`testReportBlockAndDelete` reports another account's item, blocks and unblocks its author, and
+deletes the account it signed in with: give it a throwaway account's token as
+`TEST_RUNNER_KOBENTO_DELETE_TOKEN`, with another account's two items in the stream.
 
 ```sh
 TEST_RUNNER_KOBENTO_TOKEN=rc_... TEST_RUNNER_KOBENTO_SERVER=http://localhost:8899 \

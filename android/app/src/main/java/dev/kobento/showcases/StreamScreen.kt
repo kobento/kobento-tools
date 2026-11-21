@@ -14,19 +14,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +50,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -70,6 +78,10 @@ class StreamUi(
     val signedInAs: String?,
     val load: suspend (sort: String, tag: String?, query: String) -> StreamPage,
     val vote: suspend (pageId: String, value: Int) -> Vote,
+    /** The signed-in account's id: its own items offer no Report or Block. */
+    val accountId: Long?,
+    val report: suspend (pageId: String, reason: String, note: String) -> Unit,
+    val block: suspend (authorId: Long) -> Unit,
     val onSignIn: () -> Unit,
     val onOpen: (StreamItem) -> Unit,
 )
@@ -103,6 +115,41 @@ internal fun StreamTab(ui: StreamUi, insets: PaddingValues) {
                 st.error = e.message ?: e.toString()
             }
         }
+    }
+    // Report and Block (store rules for shared content): a reported item, or a blocked author's
+    // items, leave this list at once; the server keeps them out of the next loads.
+    var reporting by remember { mutableStateOf<StreamItem?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    fun block(item: StreamItem) {
+        val author = item.authorId ?: return
+        if (ui.signedInAs == null) { ui.onSignIn(); return }
+        scope.launch {
+            try {
+                ui.block(author)
+                st.items = st.items?.filter { it.authorId != author }
+                notice = "Blocked ${item.author}. You no longer see their items. Unblock them from the Showcases tab."
+            } catch (e: Exception) {
+                st.error = e.message ?: e.toString()
+            }
+        }
+    }
+    reporting?.let { item ->
+        ReportDialog(item, onDismiss = { reporting = null }) { reason, note ->
+            reporting = null
+            scope.launch {
+                try {
+                    ui.report(item.pageId, reason, note)
+                    st.items = st.items?.filter { it.pageId != item.pageId }
+                    notice = "Thanks. \"${item.title}\" is hidden for you, and we will review it."
+                } catch (e: Exception) {
+                    st.error = e.message ?: e.toString()
+                }
+            }
+        }
+    }
+    notice?.let { n ->
+        AlertDialog(onDismissRequest = { notice = null }, text = { Text(n) },
+            confirmButton = { TextButton(onClick = { notice = null }) { Text("OK") } })
     }
     val focus = LocalFocusManager.current
     CardGrid(insets) {
@@ -151,13 +198,16 @@ internal fun StreamTab(ui: StreamUi, insets: PaddingValues) {
             Hint(if (st.query.isNotBlank() || st.tag != null) "Nothing matches." else "Nothing in the stream yet.")
         }
         if (items != null) items(items, key = { it.pageId }) { item ->
-            StreamCard(item, onClick = { ui.onOpen(item) }, onVote = { vote(item, it) })
+            val others = ui.accountId == null || item.authorId != ui.accountId
+            StreamCard(item, onClick = { ui.onOpen(item) }, onVote = { vote(item, it) },
+                onReport = if (others) { { if (ui.signedInAs == null) ui.onSignIn() else reporting = item } } else null,
+                onBlock = if (others && item.authorId != null) { { block(item) } } else null)
         }
     }
 }
 
 @Composable
-private fun StreamCard(item: StreamItem, onClick: () -> Unit, onVote: (Int) -> Unit) {
+private fun StreamCard(item: StreamItem, onClick: () -> Unit, onVote: (Int) -> Unit, onReport: (() -> Unit)?, onBlock: (() -> Unit)?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -193,7 +243,18 @@ private fun StreamCard(item: StreamItem, onClick: () -> Unit, onVote: (Int) -> U
             Text("${item.score}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             VoteButton(R.drawable.ic_vote_down, "Vote down", item.myVote == -1, Color(0xFFD0453A)) { onVote(-1) }
             Text("+${item.ups} / −${item.downs}", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, modifier = Modifier.weight(1f))
+            if (onReport != null || onBlock != null) Box {
+                var menu by remember { mutableStateOf(false) }
+                IconButton(onClick = { menu = true }) {
+                    Icon(painterResource(R.drawable.ic_more), contentDescription = "Report or block",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    onReport?.let { DropdownMenuItem(text = { Text("Report…") }, onClick = { menu = false; it() }) }
+                    onBlock?.let { DropdownMenuItem(text = { Text("Block ${item.author}") }, onClick = { menu = false; it() }) }
+                }
+            }
         }
     }
 }
@@ -206,4 +267,34 @@ private fun VoteButton(icon: Int, label: String, on: Boolean, color: Color, onCl
     ) {
         Icon(painterResource(icon), contentDescription = if (on) "$label (taken back if tapped again)" else label)
     }
+}
+
+/** Why the item is reported (the server's reasons), and an optional note. */
+@Composable
+private fun ReportDialog(item: StreamItem, onDismiss: () -> Unit, onSend: (reason: String, note: String) -> Unit) {
+    var reason by remember { mutableStateOf<String?>(null) }
+    var note by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Report \"${item.title}\"") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                Text("It disappears from your stream now. After several reports it is hidden for everyone until we review it.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for ((key, label) in Account.REPORT_REASONS) {
+                    Row(
+                        Modifier.fillMaxWidth().selectable(selected = reason == key, onClick = { reason = key }, role = Role.RadioButton),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = reason == key, onClick = null)
+                        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp, top = 10.dp, bottom = 10.dp))
+                    }
+                }
+                OutlinedTextField(value = note, onValueChange = { note = it.take(500) }, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Anything to add (optional)") }, maxLines = 3)
+            }
+        },
+        confirmButton = { TextButton(enabled = reason != null, onClick = { reason?.let { onSend(it, note.trim()) } }) { Text("Report") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
