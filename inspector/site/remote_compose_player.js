@@ -9351,7 +9351,7 @@ var RC = (() => {
       this.mHintPaint.setTextSize(fontSize);
       this.mHintPaint.setTextStyle(0, Math.round(weight), italic);
       paintContext.replacePaint(this.mHintPaint);
-      paintContext.getTextBounds(this.mHintId, 0, length, 0, this.mHintBounds);
+      paintContext.getTextBounds(this.mHintId, 0, length, PaintContext.TEXT_MEASURE_FONT_HEIGHT, this.mHintBounds);
       const hintWidth = this.mHintBounds[2] - this.mHintBounds[0];
       const px = align === TEXT_ALIGN_CENTER2 ? (contentW - hintWidth) / 2 : align === TEXT_ALIGN_RIGHT2 || align === TEXT_ALIGN_END2 ? contentW - hintWidth : 0;
       paintContext.drawTextRun(this.mHintId, 0, length, 0, 0, px - this.mHintBounds[0], -this.mHintBounds[1], false);
@@ -9609,9 +9609,14 @@ var RC = (() => {
         lineHeight: "normal",
         padding: `${(c.mPaddingTop ?? 0) * s}px ${(c.mPaddingRight ?? 0) * s}px ${(c.mPaddingBottom ?? 0) * s}px ${(c.mPaddingLeft ?? 0) * s}px`
       };
+      ensurePlaceholderStyle();
       if (text) {
         const size = text.getFontSizeValue();
         if (size > 0) css.fontSize = `${size * s}px`;
+        if (editor instanceof HTMLTextAreaElement && size > 0) {
+          const mult = text.mLineHeightMultiplier;
+          css.lineHeight = `${size * (mult > 0 && mult !== 1 ? mult : 1.2) * s}px`;
+        }
         const color = text.getColorValue() | 0;
         css.color = argb(color);
         css.caretColor = argb(color);
@@ -9627,6 +9632,13 @@ var RC = (() => {
       editor.setAttribute("data-rc-text-input", String(session.getLayout().getTextId()));
     }
   };
+  function ensurePlaceholderStyle() {
+    if (typeof document === "undefined" || document.getElementById("rc-text-input-style")) return;
+    const style = document.createElement("style");
+    style.id = "rc-text-input-style";
+    style.textContent = "[data-rc-text-input]::placeholder { color: currentColor; opacity: 0.45; }";
+    (document.head ?? document.body).appendChild(style);
+  }
   function configure(editor, op) {
     const input = editor instanceof HTMLInputElement ? editor : null;
     let inputMode = "";
