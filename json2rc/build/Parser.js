@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Parser = exports.DeferredVariables = exports.NotImplementedComponent = void 0;
+exports.isCompressedDocument = exports.compressDocument = exports.Parser = exports.DeferredVariables = exports.NotImplementedComponent = void 0;
 exports.parseColor = parseColor;
 exports.parseHAlign = parseHAlign;
 exports.parseVAlign = parseVAlign;
@@ -4229,3 +4229,6 @@ function convertWithSymbols(json, options = {}) {
     const bytes = parser.parse(unwrap(doc));
     return { bytes, symbols: parser.symbols() };
 }
+var Compress_1 = require("./Compress");
+Object.defineProperty(exports, "compressDocument", { enumerable: true, get: function () { return Compress_1.compressDocument; } });
+Object.defineProperty(exports, "isCompressedDocument", { enumerable: true, get: function () { return Compress_1.isCompressedDocument; } });

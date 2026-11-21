@@ -3940,3 +3940,5 @@ export function convertWithSymbols(json: string | J, options: ConvertOptions = {
     const bytes = parser.parse(unwrap(doc));
     return { bytes, symbols: parser.symbols() };
 }
+
+export { compressDocument, isCompressedDocument } from "./Compress";

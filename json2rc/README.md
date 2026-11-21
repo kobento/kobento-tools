@@ -12,9 +12,16 @@ document in the browser with no toolchain at all.
 ```sh
 src/json2rc/build.sh                                   # -> build-json2rc/
 node build-json2rc/cli.js in.json out.rc
+node build-json2rc/cli.js --compress in.json out.rc     # compressed (Header.COMPRESS, zlib after the header)
 node build-json2rc/compare-rcj.js <list> <rcj-out-dir> # the whole corpus against rcj
 node src/json2rc/tests/check-paths.cjs                 # the path/loop cases the corpus misses
 ```
+
+A compressed document (`--compress`, or `compressDocument(bytes, deflate)` from `Parser`) is
+written as androidx's `Header.compressDocument` writes it: the header unchanged plus a
+`COMPRESS` (31) = 1 property, everything after it one zlib stream. It is typically a third of
+the size; androidx with `Header.COMPRESS`, the TypeScript and the C++ players load it as the
+plain document (`tests/check-compress.cjs`).
 
 ## Where it stands
 
