@@ -5,7 +5,7 @@
  * Java `RemoteComposeJsonParser`. So correctness here means: the same JSON in, the same bytes
  * out, and `tools/compare_rcj.py` checks exactly that against the corpus.
  */
-import { Writer, Emit, hostAction, TYPE_EXACT, TYPE_FILL, modBorder, modGraphicsLayer, modDimensionConstraints, modScroll, modClipRect, modVisibility, modClipRoundedRect, TYPE_WEIGHT, modWidthIn, modHeightIn, modWidth, modHeight, modPadding, modOffset, modBackground, modBackgroundId, modSemantics, modClick, SEMANTICS_MODE_SET, hostNamedAction,
+import { Writer, Emit, hostAction, TYPE_EXACT, TYPE_FILL, modBorder, modGraphicsLayer, modDimensionConstraints, modScroll, ScrollStop, modClipRect, modVisibility, modClipRoundedRect, TYPE_WEIGHT, modWidthIn, modHeightIn, modWidth, modHeight, modPadding, modOffset, modBackground, modBackgroundId, modSemantics, modClick, SEMANTICS_MODE_SET, hostNamedAction,
     HOST_ACTION_STRING_TYPE, valueFloatExpressionChange, valueFloatChange,
     valueIntegerChange, valueStringChange, valueIntegerExpressionChange, OP,
     BITMAP_TYPE_RAW8888, BITMAP_ENCODING_EMPTY, BITMAP_TYPE_PNG, BITMAP_ENCODING_URL }
@@ -830,14 +830,13 @@ export class Parser {
                     // outside its container, and the reference adds it in the same call.
                     const direction = k === "verticalscroll" ? 0 : 1;
                     let position: J = value;
+                    let stop: ScrollStop | undefined;
                     if (value && typeof value === "object" && !Array.isArray(value)) {
                         const spec = value as Record<string, J>;
-                        if (Math.trunc(Number(spec.notches ?? 0)) > 0) {
-                            throw new NotImplementedComponent("scroll notches TBD");
-                        }
                         position = spec.position ?? 0;
+                        stop = this.scrollStop(spec);
                     }
-                    out.push(modClipRect(), modScroll(direction, this.fbits(position)));
+                    out.push(modClipRect(), modScroll(direction, this.fbits(position), stop));
                 } else if (k === "visibility") {
                     // A variable id, not a boolean: the document flips the variable and
                     // everything bound to it appears or disappears.
@@ -1241,6 +1240,49 @@ export class Parser {
         }
         const v = this.fbits(value);
         return [v, v, v, v];
+    }
+
+    /**
+     * How a `{"verticalScroll": {...}}` comes to rest. `notches: N` is the reference form
+     * (DefaultModifierParsers: evenly spaced notches, the content size divided by N, so N
+     * equal items stop one per notch). rcj extensions: `stopMode` (a TouchExpression stop
+     * mode name; `notchesSingleEven` moves at most one notch per swipe, like a pager), a
+     * `notches` that is an expression or variable (even modes only), and `stops` for
+     * `notchesPercents` (fractions of the scroll extent) and `notchesAbsolute` (positions in
+     * dp; Java reads these two lists as constants). No stop mode and no notches: a free
+     * scroll, as before.
+     */
+    private scrollStop(spec: Record<string, J>): ScrollStop | undefined {
+        const raw = spec.stopMode;
+        let mode: number | undefined;
+        if (raw !== undefined) {
+            const key = String(raw).toLowerCase().replace(/_/g, "");
+            mode = typeof raw === "number" ? Math.trunc(raw) : TOUCH_STOP[key];
+            if (mode === undefined) {
+                throw new NotImplementedComponent(`scroll stopMode '${raw}' (expected one of ${
+                    Object.keys(TOUCH_STOP).sort().join(", ")})`);
+            }
+        }
+        const hasNotches = spec.notches !== undefined
+            && !(typeof spec.notches === "number" && Math.trunc(spec.notches) <= 0);
+        if (mode === undefined) {
+            if (!hasNotches) return undefined;
+            mode = TOUCH_STOP.notcheseven;
+        }
+        if (mode === TOUCH_STOP.notcheseven || mode === TOUCH_STOP.notchessingleeven) {
+            if (!hasNotches) {
+                throw new NotImplementedComponent(`scroll stopMode '${raw}' needs notches (a count)`);
+            }
+            const n = spec.notches;
+            return { mode, notchesBits: typeof n === "number" ? floatToRawIntBits(Math.trunc(n)) : this.fbits(n) };
+        }
+        if (mode === TOUCH_STOP.notchespercents || mode === TOUCH_STOP.notchesabsolute) {
+            if (!Array.isArray(spec.stops) || spec.stops.length === 0) {
+                throw new NotImplementedComponent(`scroll stopMode '${raw}' needs stops (a list)`);
+            }
+            return { mode, stopsBits: (spec.stops as J[]).map((v) => floatToRawIntBits(Number(v))) };
+        }
+        return { mode };
     }
 
     // Where each component id came from, as a path of types with sibling indexes

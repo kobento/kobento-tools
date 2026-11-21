@@ -694,7 +694,7 @@ export class Writer {
      * knows the content size. Reserving them is still required, because their ids are baked
      * into the modifier and everything allocated afterwards depends on the count.
      */
-    addModifierScroll(direction: number, positionBits: number): void {
+    addModifierScroll(direction: number, positionBits: number, stop?: ScrollStop): void {
         const maxBits = asNanBits(this.allocDataId());
         const notchMaxBits = asNanBits(this.allocDataId());
         this.buffer.start(OP.MODIFIER_SCROLL);
@@ -711,11 +711,15 @@ export class Writer {
             floatToRawIntBits(0.0),        // default
             floatToRawIntBits(0.0),        // min
             maxBits,                       // max: the reserved extent
-            0,                             // STOP_GENTLY
+            stop?.mode ?? 0,               // STOP_GENTLY unless a stop mode is given
             floatToRawIntBits(0.0),        // velocity id
             3,                             // touch effects
             exp, null, null,
-            positionBits & 0x007fffff);
+            positionBits & 0x007fffff,
+            // Even notches divide the content size, which the player stores in notchMax:
+            // [count, notchMax], as RemoteComposeWriter.addModifierScroll(dir, pos, notches).
+            stop ? (stop.notchesBits !== undefined ? [stop.notchesBits, notchMaxBits] : stop.stopsBits ?? [])
+                 : undefined);
         this.buffer.start(OP.CONTAINER_END);
     }
 
@@ -935,7 +939,7 @@ export class Writer {
     touchExpression(defaultBits: number, minBits: number, maxBits: number, touchMode: number,
                     velocityBits: number, touchEffects: number, expBits: number[],
                     touchSpec: number[] | null, easingSpec: number[] | null,
-                    dataIdIn?: number): number {
+                    dataIdIn?: number, touchSpecBits?: number[]): number {
         // `dataIdIn` lets the caller drive a variable that already exists — a scroll
         // modifier's touch expression writes the position variable it was given.
         const dataId = dataIdIn ?? this.allocDataId();
@@ -947,9 +951,10 @@ export class Writer {
         this.buffer.writeInt(touchEffects);
         this.buffer.writeInt(expBits.length);
         for (const b of expBits) this.buffer.writeIntBitsAsFloat(b);
-        const spec = touchSpec ?? [];
-        this.buffer.writeInt(((touchMode & 0xffff) << 16) | (spec.length & 0xffff));
-        for (const v of spec) this.buffer.writeFloat(v);
+        // `touchSpecBits` holds raw float bits, so an entry may be a NaN-boxed id.
+        const specBits = touchSpecBits ?? (touchSpec ?? []).map(floatToRawIntBits);
+        this.buffer.writeInt(((touchMode & 0xffff) << 16) | (specBits.length & 0xffff));
+        for (const b of specBits) this.buffer.writeIntBitsAsFloat(b);
         const easing = easingSpec ?? [];
         this.buffer.writeInt(easing.length);
         for (const v of easing) this.buffer.writeFloat(v);
@@ -1600,9 +1605,16 @@ export function modBorder(width: number, corner: number, color: number, shape: n
     };
 }
 
+/**
+ * How a scroll comes to rest: a TouchExpression stop mode with either an even notch count
+ * (float bits, a constant or a NaN-boxed id; the notches divide the content size) or a list
+ * of stops (float bits: fractions of the extent for notchesPercents, dp for notchesAbsolute).
+ */
+export interface ScrollStop { mode: number; notchesBits?: number; stopsBits?: number[] }
+
 /** A scroll modifier and the touch expression that drives it. */
-export function modScroll(direction: number, positionBits: number): Emit {
-    return (w) => w.addModifierScroll(direction, positionBits);
+export function modScroll(direction: number, positionBits: number, stop?: ScrollStop): Emit {
+    return (w) => w.addModifierScroll(direction, positionBits, stop);
 }
 
 /**
