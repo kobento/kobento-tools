@@ -2144,7 +2144,10 @@ export class Parser {
                         && !value.startsWith("@") && !value.startsWith("$")) {
                     actions.push((w) => valueStringChange(targetId, w.addText(value))(w));
                 } else {
-                    actions.push(valueStringChange(targetId, this.resolveId(value)));
+                    // A reference names a string, as DefaultModifierParsers resolves it
+                    // (resolveTextId): "@draft" copies that string. resolveId read it as a float
+                    // and wrote a meaningless id, so the copy set nothing.
+                    actions.push(valueStringChange(targetId, this.resolveTextId(value)));
                 }
             } else if (t === "valueintegerexpressionchange") {
                 // DefaultModifierParsers: the target as an integer variable (2^32 + id), the
@@ -3718,12 +3721,9 @@ export class Parser {
         if (o.text === undefined || o.text === null) throw new NotImplementedComponent('textInput needs "text": the "@name" of the string it edits');
         const rest = raw.filter((_: J, i: number) => i !== at);
         const keys = rest.flatMap((m: J) => (typeof m === "string" ? [m] : Object.keys(m ?? {}))).map((k: string) => k.toLowerCase());
-        // The axis a weight is on is the parent's: a row's width, a column's height.
-        const parent = this.pathStack.length >= 2 ? this.pathStack[this.pathStack.length - 2].replace(/\[.*$/, "") : "";
-        const weightW = keys.includes("weight") && parent !== "column";
-        const weightH = keys.includes("weight") && parent === "column";
-        const hasW = weightW || keys.some((k: string) => ["fillmaxsize", "fillmaxwidth", "width", "size", "widthin", "requiredwidthin"].includes(k));
-        const hasH = weightH || keys.some((k: string) => ["fillmaxsize", "fillmaxheight", "height", "size", "heightin", "requiredheightin"].includes(k));
+        // (A weight is a width, horizontalWeight too; verticalWeight is a height, as parseModifiers writes them.)
+        const hasW = keys.some((k: string) => ["fillmaxsize", "fillmaxwidth", "width", "size", "widthin", "requiredwidthin", "weight", "horizontalweight"].includes(k));
+        const hasH = keys.some((k: string) => ["fillmaxsize", "fillmaxheight", "height", "size", "heightin", "requiredheightin", "verticalweight"].includes(k));
         const inner = { ...component, modifiers: [...(hasW ? ["fillMaxWidth"] : []), ...(hasH ? ["fillMaxHeight"] : [])] };
         return { ...o, type: "textInput", modifiers: rest, children: [inner] };
     }

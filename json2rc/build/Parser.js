@@ -2321,7 +2321,10 @@ class Parser {
                     actions.push((w) => (0, Writer_1.valueStringChange)(targetId, w.addText(value))(w));
                 }
                 else {
-                    actions.push((0, Writer_1.valueStringChange)(targetId, this.resolveId(value)));
+                    // A reference names a string, as DefaultModifierParsers resolves it
+                    // (resolveTextId): "@draft" copies that string. resolveId read it as a float
+                    // and wrote a meaningless id, so the copy set nothing.
+                    actions.push((0, Writer_1.valueStringChange)(targetId, this.resolveTextId(value)));
                 }
             }
             else if (t === "valueintegerexpressionchange") {
@@ -4005,12 +4008,9 @@ class Parser {
             throw new NotImplementedComponent('textInput needs "text": the "@name" of the string it edits');
         const rest = raw.filter((_, i) => i !== at);
         const keys = rest.flatMap((m) => (typeof m === "string" ? [m] : Object.keys(m ?? {}))).map((k) => k.toLowerCase());
-        // The axis a weight is on is the parent's: a row's width, a column's height.
-        const parent = this.pathStack.length >= 2 ? this.pathStack[this.pathStack.length - 2].replace(/\[.*$/, "") : "";
-        const weightW = keys.includes("weight") && parent !== "column";
-        const weightH = keys.includes("weight") && parent === "column";
-        const hasW = weightW || keys.some((k) => ["fillmaxsize", "fillmaxwidth", "width", "size", "widthin", "requiredwidthin"].includes(k));
-        const hasH = weightH || keys.some((k) => ["fillmaxsize", "fillmaxheight", "height", "size", "heightin", "requiredheightin"].includes(k));
+        // (A weight is a width, horizontalWeight too; verticalWeight is a height, as parseModifiers writes them.)
+        const hasW = keys.some((k) => ["fillmaxsize", "fillmaxwidth", "width", "size", "widthin", "requiredwidthin", "weight", "horizontalweight"].includes(k));
+        const hasH = keys.some((k) => ["fillmaxsize", "fillmaxheight", "height", "size", "heightin", "requiredheightin", "verticalweight"].includes(k));
         const inner = { ...component, modifiers: [...(hasW ? ["fillMaxWidth"] : []), ...(hasH ? ["fillMaxHeight"] : [])] };
         return { ...o, type: "textInput", modifiers: rest, children: [inner] };
     }
