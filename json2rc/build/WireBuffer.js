@@ -117,6 +117,16 @@ class WireBuffer {
         this.buf.set(tail, insertLocation);
         this.buf.set(head, insertLocation + tail.length);
     }
+    /** The bytes `[from, to)`, a copy. */
+    slice(from, to) {
+        return this.buf.slice(from, to);
+    }
+    /** Overwrite bytes from `position` (within what is written) with `bytes`. */
+    overwrite(position, bytes) {
+        if (position < 0 || position + bytes.length > this.len)
+            throw new Error("overwrite past the end");
+        this.buf.set(bytes, position);
+    }
     get index() {
         return this.len;
     }

@@ -223,6 +223,9 @@ export class Writer {
 
     // ── global sections, hoisted ahead of the root ───────────────────────────
 
+    /** Where a global section goes: bytes hoisted there shift everything written after it. */
+    get hoistPoint(): number { return this.insertPoint; }
+
     beginGlobal(): void {
         if (this.globalStart !== -1) throw new Error("global section started twice");
         if (this.insertPoint === -1) this.insertPoint = this.buffer.index;
@@ -994,12 +997,25 @@ export class Writer {
         const hit = this.textCache.get(s);
         if (hit !== undefined) return hit;
         const id = this.allocDataId();
+        const start = this.buffer.index;
         this.buffer.start(OP.DATA_TEXT);
         this.buffer.writeInt(id);
         this.buffer.writeUtf8(s);
         this.textCache.set(s, id);
+        // (One in a global section is hoisted ahead of the root: already before every reader.)
+        if (this.textLogs.length && this.globalStart === -1) {
+            const entry = { start, end: this.buffer.index, hoist: this.insertPoint };
+            for (const log of this.textLogs) log.push(entry);
+        }
         return id;
     }
+
+    /**
+     * Where each DATA_TEXT went while a right-to-left row's children are converted (one log
+     * per open row, nested rows sharing the entries): the row puts them ahead of the children
+     * it reorders, so no text is written after a component that shows it.
+     */
+    readonly textLogs: Array<Array<{ start: number; end: number; hoist: number }>> = [];
 
     /**
      * DATA_SHADER — RemoteComposeShader.commit / ShaderData.apply: the AGSL source as

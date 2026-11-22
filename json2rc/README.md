@@ -165,9 +165,14 @@ own, so one JSON gives both directions; components that set one keep it.
 
 Right to left:
 
-- a `row` (and `flow`, `collapsibleRow`) writes its children in reverse order, so the first
-  child is at the right, unless it is arranged `left` or `right`; children that are not laid out
-  (variables, `rem`) come first, in their order;
+- a `row` (and `collapsibleRow`) writes its children in reverse order, so the first child is at
+  the right, unless it is arranged `left` or `right`; children that are not laid out (variables,
+  `rem`) come first, in their order. They are converted in their JSON order (a name one declares
+  is known to the siblings after it) and their bytes then put in the mirrored order, with the
+  texts they intern moved ahead of them all, so none is written after a component showing it;
+- a `flow` keeps its children's order, its lines packed to the right: where it wraps is only
+  known at layout, and reversed children would put its last line first. Within a line its
+  children still run left to right (the players would need a direction of their own);
 - `start` and `end` swap in `horizontalAlignment` and `horizontalArrangement`, in a text's
   `textAlign` (its default, start, is then END), in `padding` (`[start, top, end, bottom]` and
   `{"start", "end"}`) and in a rounded `clip`'s corners (`topStart` ...);
@@ -179,7 +184,8 @@ Right to left:
 
 A left-to-right document converts to the same bytes as before. `tests/check-rtl.cjs` checks
 every rule by converting a right-to-left document and its hand-mirrored left-to-right twin to
-the same bytes.
+the same bytes (the converter's own ids compared by order of appearance, since they follow the
+JSON order).
 
 ## Runtime shaders
 

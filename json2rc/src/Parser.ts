@@ -689,21 +689,65 @@ export class Parser {
     }
 
     /**
-     * A row's children in the order they are written: reversed right to left, as Compose's
-     * RemoteRow does, unless the arrangement is an absolute one (left, right). Children that
-     * are not laid out (variables, comments) come first, in their order. Each child keeps its
-     * JSON index in the component paths.
+     * A row's children, right to left in reverse order (the first child at the right), as
+     * Compose's RemoteRow does, unless the arrangement is an absolute one (left, right).
+     *
+     * They are converted in their JSON order, so a name one declares (a tree variable, a
+     * text) is known to the siblings after it, and then their bytes are put in the mirrored
+     * order: children that are not laid out (variables, comments) first, in their order, then
+     * the laid-out ones reversed. A player applies every data operation once before it lays
+     * anything out, so a text or a value written after its first reader is still there.
      */
     private parseRowChildren(component: J, kids: J[]): void {
         const arr = String(component.horizontalArrangement ?? component.horizontalAlignment ?? "start").toLowerCase();
-        if (!this.rtl || arr === "left" || arr === "right") {
+        if (!this.rtl || arr === "left" || arr === "right" || kids.length < 2) {
             for (const k of kids) this.parseComponent(k);
             return;
         }
-        const indexed = kids.map((k, i) => [k, i] as [J, number]);
-        const quiet = indexed.filter(([k]) => NOT_LAID_OUT_TYPES.has(String(k.type ?? "").toLowerCase()));
-        const laid = indexed.filter(([k]) => !NOT_LAID_OUT_TYPES.has(String(k.type ?? "").toLowerCase()));
-        for (const [k, i] of [...quiet, ...laid.reverse()]) this.parseComponent(k, i);
+        const buf = this.writer.buffer;
+        // A global section inside a child is hoisted ahead of the root: what was written
+        // before it moves by its size, so each position is corrected by how far the hoist
+        // point moved since it was taken.
+        const log: Array<{ start: number; end: number; hoist: number }> = [];
+        this.writer.textLogs.push(log);
+        let parts;
+        try {
+            parts = kids.map((k, i) => {
+                const start = buf.index, hoistBefore = this.writer.hoistPoint;
+                this.parseComponent(k, i);
+                return { start, hoistBefore, end: buf.index, hoistAfter: this.writer.hoistPoint,
+                         quiet: NOT_LAID_OUT_TYPES.has(String(k.type ?? "").toLowerCase()) };
+            });
+        } finally { this.writer.textLogs.pop(); }
+        const hoist = this.writer.hoistPoint;
+        const spans = parts.map((p) => ({ ...p, from: p.start + (hoist - p.hoistBefore), to: p.end + (hoist - p.hoistAfter) }));
+        const texts = log.map((e) => ({ e, from: e.start + (hoist - e.hoist), to: e.end + (hoist - e.hoist) }))
+            .sort((a, b) => a.from - b.from);
+        // A span's bytes without the texts inside it.
+        const without = (from: number, to: number): Uint8Array[] => {
+            const out: Uint8Array[] = [];
+            let at = from;
+            for (const t of texts) {
+                if (t.to <= from || t.from >= to) continue;
+                if (t.from > at) out.push(buf.slice(at, t.from));
+                at = t.to;
+            }
+            if (at < to) out.push(buf.slice(at, to));
+            return out;
+        };
+        // The texts first, in their order (a nested row's already in front of its own children:
+        // their entries are updated, so the rows around it still find them), then the children.
+        const first = spans[0].from;
+        const textBytes = texts.map((t) => buf.slice(t.from, t.to));
+        const order = [...spans.filter((p) => p.quiet), ...spans.filter((p) => !p.quiet).reverse()];
+        const bodies = order.flatMap((p) => without(p.from, p.to));
+        let at = first;
+        texts.forEach((t, i) => {
+            const len = textBytes[i].length;
+            t.e.start = at; t.e.end = at + len; t.e.hoist = hoist;
+            buf.overwrite(at, textBytes[i]); at += len;
+        });
+        for (const b of bodies) { buf.overwrite(at, b); at += b.length; }
     }
 
     /** Resolve a canvas float field to raw float32 bits (literal, ref or expression). */
@@ -1456,7 +1500,11 @@ export class Parser {
                 vAlignOf(component, "top"), mods,
                 optInt(component.maxColumns, 2147483647), 0.0,
                 optInt(component.maxLines, 2147483647));
-            this.parseRowChildren(component, kids);
+            // Not reversed right to left (unlike a row): where a flow wraps is only known when
+            // it is laid out, and reversed children would put its last line first (a two-pane
+            // layout's second pane on top). Its lines pack to the right; within a line the
+            // children still run left to right.
+            for (const k of kids) this.parseComponent(k);
             this.writer.endFlow();
             return;
         }

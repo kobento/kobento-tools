@@ -223,6 +223,12 @@ class Writer {
         /** The interning caches as each open pattern definition found them (RemoteComposeState's
          *  data scopes). The component-value cache is the writer's own, as in the reference. */
         this.dataScopes = [];
+        /**
+         * Where each DATA_TEXT went while a right-to-left row's children are converted (one log
+         * per open row, nested rows sharing the entries): the row puts them ahead of the children
+         * it reorders, so no text is written after a component that shows it.
+         */
+        this.textLogs = [];
         // ── functions, attributes, lookups, matrices (RemoteComposeWriter / RemoteComposeBuffer) ──
         /** RemoteComposeState's Integer-keyed data cache (textMeasure, textLength, mapLookup). */
         this.intCache = new Map();
@@ -253,6 +259,8 @@ class Writer {
         return this.nextDataId++;
     }
     // ── global sections, hoisted ahead of the root ───────────────────────────
+    /** Where a global section goes: bytes hoisted there shift everything written after it. */
+    get hoistPoint() { return this.insertPoint; }
     beginGlobal() {
         if (this.globalStart !== -1)
             throw new Error("global section started twice");
@@ -987,10 +995,17 @@ class Writer {
         if (hit !== undefined)
             return hit;
         const id = this.allocDataId();
+        const start = this.buffer.index;
         this.buffer.start(exports.OP.DATA_TEXT);
         this.buffer.writeInt(id);
         this.buffer.writeUtf8(s);
         this.textCache.set(s, id);
+        // (One in a global section is hoisted ahead of the root: already before every reader.)
+        if (this.textLogs.length && this.globalStart === -1) {
+            const entry = { start, end: this.buffer.index, hoist: this.insertPoint };
+            for (const log of this.textLogs)
+                log.push(entry);
+        }
         return id;
     }
     /**

@@ -122,6 +122,17 @@ export class WireBuffer {
         this.buf.set(head, insertLocation + tail.length);
     }
 
+    /** The bytes `[from, to)`, a copy. */
+    slice(from: number, to: number): Uint8Array {
+        return this.buf.slice(from, to);
+    }
+
+    /** Overwrite bytes from `position` (within what is written) with `bytes`. */
+    overwrite(position: number, bytes: Uint8Array): void {
+        if (position < 0 || position + bytes.length > this.len) throw new Error("overwrite past the end");
+        this.buf.set(bytes, position);
+    }
+
     get index(): number {
         return this.len;
     }
