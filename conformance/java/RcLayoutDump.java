@@ -20,6 +20,7 @@ import androidx.compose.remote.core.CoreDocument;
 import androidx.compose.remote.core.RemoteComposeBuffer;
 import androidx.compose.remote.core.RemoteContext;
 import androidx.compose.remote.core.layout.MockRemoteContext;
+import androidx.compose.remote.core.VariableSupport;
 import androidx.compose.remote.core.operations.Theme;
 import androidx.compose.remote.core.operations.layout.Component;
 import androidx.compose.remote.core.operations.layout.LayoutComponent;
@@ -84,6 +85,17 @@ public class RcLayoutDump {
                 super.loadText(id, text);
                 if (!mRemoteComposeState.containsId(id)) mRemoteComposeState.cacheData(id, text);
                 else mRemoteComposeState.updateData(id, text);
+            }
+            // The mock logs every registration in a fixed table indexed by id; a text lookup
+            // registers for its list (an array id, around 2^21) and registrations repeat across
+            // passes. The player keeps maps: skip ids past the table, and repeats.
+            @Override
+            public void listensTo(int id, VariableSupport variableSupport) {
+                if (id < 0 || id >= mVariableSupport.length) return;
+                java.util.ArrayList<Object> l = mVariableSupport[id];
+                if (l != null && l.contains(variableSupport)) return;
+                if (listenerCount >= listeners.length) listeners = java.util.Arrays.copyOf(listeners, listeners.length * 2);
+                super.listensTo(id, variableSupport);
             }
             // The mock drops a host action; the player's hands it to the document by name.
             @Override

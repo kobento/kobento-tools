@@ -26,4 +26,9 @@ assert.throws(() => convert(doc({ set: "@missing", value: 1 })), /not a float va
 assert.throws(() => convert({ header: { apiLevel: 7, width: 10, height: 10, profiles: 513 }, root: [{ variable: { name: "l", vtype: "floatList" } }] }), /needs a "size"/);
 // "@bounds" outside a block is unknown.
 assert.throws(() => convert({ header: { apiLevel: 7, width: 10, height: 10, profiles: 513 }, root: [{ variable: { name: "x", value: "arrayGet(@bounds, 3)" } }] }));
+// A float list declared in resources (evaluated before any layout, as the tree's is not on Java).
+const res = convert({ header: { apiLevel: 7, width: 10, height: 10, profiles: 513 },
+    resources: { variables: { l: { vtype: "floatList", size: 4 }, x: "arrayGet(@l, 1) + 1" } }, root: { box: { modifiers: ["fillMaxSize"] } } });
+assert.ok(count(res, 197) >= 1, "the list in resources");
+assert.throws(() => convert({ header: { apiLevel: 7, width: 10, height: 10, profiles: 513 }, resources: { variables: { l: { vtype: "floatList" } } }, root: { box: {} } }), /needs a "size"/);
 console.log("check-compute-record: ok");

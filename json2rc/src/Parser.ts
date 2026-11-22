@@ -1193,7 +1193,7 @@ export class Parser {
                             const name = String(r.set).replace(/^[@$]/, "");
                             const bits = this.variables.get(name);
                             if (bits === undefined || !isNanBits(bits)) {
-                                throw new NotImplementedComponent(`${k}: record set ${r.set}: not a float variable with an id (declare it with "export": true or as an expression)`);
+                                throw new NotImplementedComponent(`${k}: record set ${r.set}: not a float variable (declare it first: resources.variables {"name": 0})`);
                             }
                             w.floatExpressionInto(idFromNanBits(bits), [this.fbits(r.value)]);
                             continue;
@@ -3870,6 +3870,16 @@ export class Parser {
                     const id = named ? this.writer.addNamedString(name, text)
                                      : this.writer.addVariableText(text);
                     this.variables.set(name, floatToRawIntBits(id));
+                    continue;
+                }
+                // EXTENSION: {"vtype": "floatList", "size": n}, as the tree variable: a list
+                // the document writes at run time (compute blocks' "record").
+                if (cfg && String(cfg.vtype ?? "").toLowerCase() === "floatlist") {
+                    const size = Math.trunc(Number(cfg.size));
+                    if (!(size > 0)) throw new NotImplementedComponent(`resources.variables.${name}: a floatList needs a "size" over 0`);
+                    const aid = this.writer.allocArrayId();
+                    this.writer.addDynamicFloatArray(aid, floatToRawIntBits(size));
+                    this.variables.set(name, (aid | 0xff800000) >>> 0);
                     continue;
                 }
                 // ResourceParser "variables". An object value is unwrapped to its `value`
