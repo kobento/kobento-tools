@@ -208,7 +208,7 @@ internal fun Player(bytes: ByteArray, look: Look) {
     }
     AndroidView(
         modifier = Modifier.fillMaxSize(),
-        factory = { DpHost(it, RemoteComposePlayer(it).apply { fullSpeed(it); allowShaders(); setTheme(theme); setDocument(bytes); setUseChoreographer(false) }) },
+        factory = { DpHost(it, RemoteComposePlayer(DpHost.childContext(it)).apply { fullSpeed(it); allowShaders(); setTheme(theme); setDocument(bytes); setUseChoreographer(false) }) },
         // Auto follows the system: the theme changes in place, the document keeps its state.
         update = { (it.child as RemoteComposePlayer).setTheme(theme) },
     )

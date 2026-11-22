@@ -9,9 +9,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ANDROIDX="${ANDROIDX:-$HOME/androidx}"
 R="$ANDROIDX/frameworks/support/compose/remote"
 CACHE="${RC_JAVA_CACHE:-${TMPDIR:-/tmp}/rc-java-ref}"
-CP="$(ls "$HOME"/.gradle/caches/modules-2/files-2.1/org.json/json/*/*/json-*.jar 2>/dev/null | grep -v sources | tail -1)"
-CP="$CP:$(ls "$HOME"/.gradle/caches/modules-2/files-2.1/org.jspecify/jspecify/1.0.0/*/jspecify-1.0.0.jar | head -1)"
-CP="$CP:$(ls "$HOME"/.gradle/caches/modules-2/files-2.1/androidx.annotation/annotation-jvm/*/*/annotation-jvm-*.jar | grep -v sources | tail -1)"
+# A jar from Gradle's cache, else androidx's prebuilts (Gradle prunes its cache).
+jar() { { ls $1 2>/dev/null; ls $2 2>/dev/null; } | grep -v sources | tail -1; }
+G="$HOME/.gradle/caches/modules-2/files-2.1" P="$ANDROIDX/prebuilts/androidx"
+CP="$(jar "$G/org.json/json/*/*/json-*.jar" "$P/external/org/json/json/*/json-*.jar")"
+CP="$CP:$(jar "$G/org.jspecify/jspecify/1.0.0/*/jspecify-1.0.0.jar" "$P/external/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar")"
+CP="$CP:$(jar "$G/androidx.annotation/annotation-jvm/*/*/annotation-jvm-*.jar" "$P/internal/androidx/annotation/annotation-jvm/*/annotation-jvm-*.jar")"
 STAMP="$(find "$R/remote-core/src/main/java" "$HERE/java" -name '*.java' -newer "$CACHE/.stamp" 2>/dev/null | head -1 || true)"
 if [ ! -f "$CACHE/.stamp" ] || [ -n "$STAMP" ]; then
     rm -rf "$CACHE"; mkdir -p "$CACHE/out"

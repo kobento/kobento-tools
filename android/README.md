@@ -127,7 +127,9 @@ The showcases have no density header: `densityBehavior` needs API level 8, and t
 The androidx player lays out a document like that in pixels. The showcases are written in dp, and
 the web and C++ players read them that way. `DpHost` therefore gives the player the screen's size in
 dp and scales the view up by the display density. Drawing stays sharp, and touches are mapped back
-into the document's coordinates.
+into the document's coordinates. The player itself is made with a context of density 1: androidx
+scales `widthIn` and `heightIn` (and dp widths) by its context's density, which on top of the view's
+scaling made a 48 dp minimum 126 dp tall at 2.625.
 
 ## What plays
 
