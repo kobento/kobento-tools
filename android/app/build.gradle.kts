@@ -64,6 +64,10 @@ android {
         // The server to sign in to: -PkobentoServer=... (a launch can name another: `--es server`).
         val server = providers.gradleProperty("kobentoServer").getOrElse("https://mcp.kobento.dev")
         buildConfigField("String", "KOBENTO_SERVER", "\"$server\"")
+        // -Pplayer3D=true: the player implements the 3D operations (a build with the 3D change),
+        // so documents that draw in 3D are played rather than shown as "Not playable here".
+        val player3D = providers.gradleProperty("player3D").getOrElse("false").toBoolean()
+        buildConfigField("boolean", "PLAYER_3D", "$player3D")
     }
 
     // The upload key for Google Play (Play App Signing keeps the real one): android/keystore.properties,

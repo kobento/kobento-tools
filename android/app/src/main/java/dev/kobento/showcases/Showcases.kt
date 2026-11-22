@@ -67,7 +67,7 @@ fun loadShowcases(assets: AssetManager): List<Showcase> {
             summary = meta.optString("summary"),
             formFactor = meta.optString("form_factor", "phone"),
             looks = Look.entries.filter { it.file in files },
-            unsupported = meta.optJSONObject("derived")?.optJSONObject("operations")?.keys()?.asSequence()
+            unsupported = if (BuildConfig.PLAYER_3D) null else meta.optJSONObject("derived")?.optJSONObject("operations")?.keys()?.asSequence()
                 ?.filter { "_3D" in it }?.toList()?.takeIf { it.isNotEmpty() }
                 ?.let { "It draws with Kobento's 3D extension (${it.sorted().joinToString(", ")}), which the androidx player does not implement." },
             opCount = derived?.optInt("op_count") ?: 0,

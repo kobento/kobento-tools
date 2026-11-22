@@ -98,6 +98,21 @@ version: `./gradlew -PremoteVersion=1.0.0-alpha23 installDebug`.
 The player's API is `@RestrictTo(LIBRARY_GROUP)` in the alphas, so the `RestrictedApi` lint check is
 off.
 
+To try a player built from a local androidx checkout (a change under review), publish its three
+modules as a snapshot and point the app at that repository. `-Pplayer3D=true` also plays the
+showcases that draw in 3D instead of showing them as "Not playable here", for a player with the 3D
+change (https://android-review.googlesource.com/c/platform/frameworks/support/+/4256202, with which
+all six play):
+
+```sh
+# in the androidx checkout (frameworks/support): out of the way of the main OUT_DIR
+SNAPSHOT=1 OUT_DIR=$HOME/androidx/out-3d DIST_DIR=$HOME/androidx/out-3d/dist ./gradlew \
+  :compose:remote:remote-core:publish :compose:remote:remote-player-core:publish \
+  :compose:remote:remote-player-view:publish
+# here
+./gradlew installDebug -PlocalRemoteRepo=$HOME/androidx/out-3d/dist/repository -Pplayer3D=true
+```
+
 ## Frame rate
 
 The player's frame budget is off. Its defaults (60 fps at most, 10 fps on average over a 10 s
