@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HOST_ACTION_STRING_TYPE = exports.SEMANTICS_MODE_SET = exports.Writer = exports.TYPE_WRAP = exports.BITMAP_ENCODING_EMPTY = exports.BITMAP_ENCODING_URL = exports.BITMAP_ENCODING_INLINE = exports.BITMAP_TYPE_RAW8888 = exports.BITMAP_TYPE_PNG = exports.TYPE_WEIGHT = exports.TYPE_FILL = exports.TYPE_EXACT = exports.OP = void 0;
+exports.HOST_ACTION_STRING_TYPE = exports.SEMANTICS_MODE_SET = exports.Writer = exports.TYPE_WRAP = exports.BITMAP_ENCODING_EMPTY = exports.BITMAP_ENCODING_URL = exports.BITMAP_ENCODING_INLINE = exports.BITMAP_TYPE_RAW8888 = exports.BITMAP_TYPE_PNG_8888 = exports.BITMAP_TYPE_PNG = exports.TYPE_WEIGHT = exports.TYPE_FILL = exports.TYPE_EXACT = exports.OP = void 0;
 exports.refusedOperations = refusedOperations;
 exports.javaHashMapOrder = javaHashMapOrder;
 exports.modWidth = modWidth;
@@ -141,6 +141,9 @@ exports.TYPE_FILL = 1;
 exports.TYPE_WEIGHT = 3;
 // BitmapData.TYPE_* / ENCODING_* (BitmapData.java)
 exports.BITMAP_TYPE_PNG = 1;
+/** An inline PNG as players decode it: androidx's RemoteBitmapDecoder refuses TYPE_PNG with
+ *  ENCODING_INLINE, and its JSON parser and RemoteComposeBuffer.storeBitmap write this one. */
+exports.BITMAP_TYPE_PNG_8888 = 0;
 exports.BITMAP_TYPE_RAW8888 = 3;
 exports.BITMAP_ENCODING_INLINE = 0;
 exports.BITMAP_ENCODING_URL = 1; // the payload is the picture's URL (UTF-8)
@@ -816,7 +819,7 @@ class Writer {
      * form by those high bits being set, which is why each dimension must stay inside 16
      * bits: a 70000-pixel image would silently read back as a different type.
      */
-    addBitmap(imageId, width, height, data, type = exports.BITMAP_TYPE_PNG, encoding = exports.BITMAP_ENCODING_INLINE) {
+    addBitmap(imageId, width, height, data, type = exports.BITMAP_TYPE_PNG_8888, encoding = exports.BITMAP_ENCODING_INLINE) {
         if (!(width >= 0 && width <= 0xffff) || !(height >= 0 && height <= 0xffff)) {
             throw new Error(`bitmap ${width}x${height}: each dimension must fit in 16 bits, because the `
                 + "wire format packs type and encoding into the high half of those words");

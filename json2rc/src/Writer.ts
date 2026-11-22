@@ -110,6 +110,9 @@ export const TYPE_FILL = 1;
 export const TYPE_WEIGHT = 3;
 // BitmapData.TYPE_* / ENCODING_* (BitmapData.java)
 export const BITMAP_TYPE_PNG = 1;
+/** An inline PNG as players decode it: androidx's RemoteBitmapDecoder refuses TYPE_PNG with
+ *  ENCODING_INLINE, and its JSON parser and RemoteComposeBuffer.storeBitmap write this one. */
+export const BITMAP_TYPE_PNG_8888 = 0;
 export const BITMAP_TYPE_RAW8888 = 3;
 export const BITMAP_ENCODING_INLINE = 0;
 export const BITMAP_ENCODING_URL = 1;     // the payload is the picture's URL (UTF-8)
@@ -808,7 +811,7 @@ export class Writer {
      * bits: a 70000-pixel image would silently read back as a different type.
      */
     addBitmap(imageId: number, width: number, height: number, data: Uint8Array,
-              type = BITMAP_TYPE_PNG, encoding = BITMAP_ENCODING_INLINE): number {
+              type = BITMAP_TYPE_PNG_8888, encoding = BITMAP_ENCODING_INLINE): number {
         if (!(width >= 0 && width <= 0xffff) || !(height >= 0 && height <= 0xffff)) {
             throw new Error(
                 `bitmap ${width}x${height}: each dimension must fit in 16 bits, because the `
