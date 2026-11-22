@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.Toast
 import androidx.compose.remote.player.view.RemoteComposePlayer
 import kotlin.math.ceil
 
@@ -96,7 +97,7 @@ fun PlayerScreen(showcase: Showcase, onBack: () -> Unit) {
             } else {
                 DocumentFrame(showcase.formFactor, Modifier.weight(1f).fillMaxWidth()) {
                     // A new player per look: each look is its own document (or the same one in another theme).
-                    key(look) { Player(bytes, look) }
+                    key(look) { Player(bytes, look, onBack) }
                 }
             }
         }
@@ -200,15 +201,21 @@ internal fun formatBytes(n: Int) = if (n < 1024) "$n B" else "%.1f KB".format(n 
 
 @SuppressLint("VisibleForTests")   // setUseChoreographer is marked for tests: see fullSpeed
 @Composable
-internal fun Player(bytes: ByteArray, look: Look) {
+internal fun Player(bytes: ByteArray, look: Look, onBack: () -> Unit) {
     val theme = when (look) {
         Look.Auto -> if (isSystemInDarkTheme()) RemoteComposePlayer.THEME_DARK else RemoteComposePlayer.THEME_LIGHT
         Look.Light, Look.MonoLight -> RemoteComposePlayer.THEME_LIGHT
         Look.Dark, Look.MonoDark -> RemoteComposePlayer.THEME_DARK
     }
+    val context = LocalContext.current
+    var player by remember { mutableStateOf<RemoteComposePlayer?>(null) }
+    player?.let { NavigatorHost(it, onBack = onBack, onNavigate = { route ->
+        // This app has no screens of its own to open: say what the document asked for.
+        Toast.makeText(context, "navigate $route", Toast.LENGTH_SHORT).show()
+    }) }
     AndroidView(
         modifier = Modifier.fillMaxSize(),
-        factory = { DpHost(it, RemoteComposePlayer(DpHost.childContext(it)).apply { fullSpeed(it); allowShaders(); setTheme(theme); setDocument(bytes); setUseChoreographer(false) }) },
+        factory = { DpHost(it, RemoteComposePlayer(DpHost.childContext(it)).apply { fullSpeed(it); allowShaders(); setTheme(theme); setDocument(bytes); setUseChoreographer(false); player = this }) },
         // Auto follows the system: the theme changes in place, the document keeps its state.
         update = { (it.child as RemoteComposePlayer).setTheme(theme) },
     )

@@ -99,6 +99,15 @@ static constexpr int THEME_LIGHT = -3;
     _context->mWidth = (float)size.width;
     _context->mHeight = (float)size.height;
     _context->mDensity = 1.0f;   // laid out in dp; the canvas scale takes it to pixels
+    __weak KBPlayer *weakSelf = self;
+    _context->hostNamedAction = [weakSelf](const std::string &name, int, const std::string &value) {
+        KBPlayer *me = weakSelf;
+        if (!me || !me.onNamedAction) return;
+        NSString *n = [NSString stringWithUTF8String:name.c_str()] ?: @"";
+        NSString *v = [NSString stringWithUTF8String:value.c_str()] ?: @"";
+        // Actions run inside a touch or a paint: the app hears of them after it.
+        dispatch_async(dispatch_get_main_queue(), ^{ if (me.onNamedAction) me.onNamedAction(n, v); });
+    };
     _doc->registerListeners(*_context);
     _doc->applyDataOperations(*_context, [self theme]);
     _timeVars = rccore::TimeVariables();
@@ -193,6 +202,20 @@ static constexpr int THEME_LIGHT = -3;
 - (void)clickX:(float)x y:(float)y {
     // Clicks are their own dispatch (click areas), not part of the touch listeners.
     if (_doc && _context) _doc->onClick(*_context, x, y);
+}
+
+- (float)floatNamed:(NSString *)name {
+    if (!_context) return NAN;
+    int id = _context->namedVariableId(name.UTF8String);
+    return id < 0 ? NAN : _context->getFloat(id);
+}
+
+- (BOOL)setFloat:(float)value named:(NSString *)name {
+    if (!_context) return NO;
+    int id = _context->namedVariableId(name.UTF8String);
+    if (id < 0) return NO;
+    _context->overrideFloat(id, value);
+    return YES;
 }
 
 @end

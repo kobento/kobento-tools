@@ -112,7 +112,7 @@ fun PagePlayerScreen(page: PublishedPage, subtitle: String, share: ShareUi?, onB
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
                         TextButton(onClick = { attempt++ }) { Text("Try again") }
                     }
-                    else -> DocumentFrame("phone", Modifier.fillMaxSize()) { key(look) { Player(result.getOrThrow(), look) } }
+                    else -> DocumentFrame("phone", Modifier.fillMaxSize()) { key(look) { Player(result.getOrThrow(), look, onBack) } }
                 }
             }
         }

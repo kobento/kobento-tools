@@ -5,6 +5,7 @@ struct PlayerScreen: View {
     let showcase: Showcase
     @State private var look = Launch.showcase != nil ? Launch.look ?? .auto : .auto
     @State private var info = Launch.showcase != nil && Launch.info
+    @State private var nav = NavigatorBridge()
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -14,10 +15,11 @@ struct PlayerScreen: View {
             LookChips(looks: showcase.looks, look: $look)
             DocumentFrame(formFactor: showcase.formFactor) {
                 // Each look is its own document, or the same one in another theme.
-                PlayerView(bytes: bytes, dark: look.dark(systemDark: scheme == .dark)).id(look)
+                PlayerView(bytes: bytes, dark: look.dark(systemDark: scheme == .dark), nav: nav).id(look)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .navigatorBack(nav)
         .toolbar {
             ToolbarItem(placement: .principal) { TitleBlock(title: showcase.name, subtitle: showcase.id) }
             ToolbarItem(placement: .topBarTrailing) {

@@ -8,6 +8,8 @@ struct PlayerView: UIViewRepresentable {
     let bytes: Data
     let dark: Bool
     var background: UIColor = .systemBackground
+    /// The app's side of the Navigator convention, if the screen keeps back's meaning.
+    var nav: NavigatorBridge? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -22,6 +24,11 @@ struct PlayerView: UIViewRepresentable {
         view.delegate = c
         view.player = c.player
         c.view = view
+        if let nav {
+            nav.player = c.player
+            nav.wake = { [weak c] in c?.wake() }
+            c.player.onNamedAction = { [weak nav] name, value in nav?.action(name, value) }
+        }
         c.load(bytes, dark: dark, background: background)
         return view
     }

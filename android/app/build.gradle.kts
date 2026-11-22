@@ -100,13 +100,16 @@ android {
 }
 
 dependencies {
-    // The androidx RemoteCompose player (gradle.properties' remoteVersion). remote-core too: the
-    // player's own types (RemoteComposePlayer extends one) are only on its runtime classpath.
+    // The androidx RemoteCompose player (gradle.properties' remoteVersion). remote-core and
+    // remote-player-core too: the player's own types (RemoteComposePlayer extends one, its
+    // getDocument() is a RemoteDocument) are only on its runtime classpath.
     val remote = providers.gradleProperty("remoteVersion").get()
     @Suppress("UseTomlInstead")   // the version is a property, to switch between the snapshot and a release
     implementation("androidx.compose.remote:remote-player-view:$remote")
     @Suppress("UseTomlInstead")
     implementation("androidx.compose.remote:remote-core:$remote")
+    @Suppress("UseTomlInstead")
+    implementation("androidx.compose.remote:remote-player-core:$remote")
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)

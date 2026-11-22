@@ -9,6 +9,7 @@ struct PagePlayerScreen: View {
     @Environment(\.openURL) private var openURL
     @State private var look = Look.auto
     @State private var info = false
+    @State private var nav = NavigatorBridge()
     @State private var sharing = false
     @State private var bytes: Result<Data, Error>?
     @State private var attempt = 0
@@ -42,11 +43,12 @@ struct PagePlayerScreen: View {
                 .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             case .success(let d):
                 DocumentFrame(formFactor: "phone") {
-                    PlayerView(bytes: d, dark: look.dark(systemDark: scheme == .dark)).id(look)
+                    PlayerView(bytes: d, dark: look.dark(systemDark: scheme == .dark), nav: nav).id(look)
                 }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .navigatorBack(nav)
         .toolbar {
             ToolbarItem(placement: .principal) { TitleBlock(title: page.title, subtitle: open.subtitle) }
             ToolbarItemGroup(placement: .topBarTrailing) {

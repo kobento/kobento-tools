@@ -15,10 +15,14 @@ G="$HOME/.gradle/caches/modules-2/files-2.1"
 # device does, where desktop org.json's HashMap reorders keys, and with them the ids the
 # parser assigns to resources.
 ORGJSON_SRC="${ANDROID_ORGJSON:-$(ls -d "$ANDROIDX"/prebuilts/fullsdk-darwin/sources/android-35/org/json "$ANDROIDX"/prebuilts/fullsdk-linux/sources/android-35/org/json 2>/dev/null | head -1)}"
+# A jar from the Gradle cache, else from the androidx checkout's prebuilts (the cache gets pruned).
+jar() { { ls $1 2>/dev/null; ls $2 2>/dev/null; } | grep -v sources | tail -1; }
+P="$ANDROIDX/prebuilts/androidx"
 CP="$CACHE/orgjson"
-CP="$CP:$(ls "$G"/androidx.annotation/annotation-jvm/*/*/annotation-jvm-*.jar | grep -v sources | tail -1)"
-CP="$CP:$(ls "$G"/org.jspecify/jspecify/1.0.0/*/jspecify-1.0.0.jar | head -1)"
-KSTD="$(ls "$G"/org.jetbrains.kotlin/kotlin-stdlib/2.1.0/*/kotlin-stdlib-2.1.0.jar | head -1)"
+CP="$CP:$(jar "$G/androidx.annotation/annotation-jvm/*/*/annotation-jvm-*.jar" "$P/internal/androidx/annotation/annotation-jvm/*/annotation-jvm-*.jar")"
+CP="$CP:$(jar "$G/org.jspecify/jspecify/1.0.0/*/jspecify-1.0.0.jar" "$P/external/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar")"
+# Any Kotlin 2 standard library: the creation sources only need what 2.0 has.
+KSTD="$(jar "$G/org.jetbrains.kotlin/kotlin-stdlib/2.*/*/kotlin-stdlib-2.*.jar" "$P/external/org/jetbrains/kotlin/kotlin-stdlib/2.*/kotlin-stdlib-2.*.jar")"
 STAMP="$(find "$R/remote-core/src/main/java" "$R/remote-creation-core/src/main" "$HERE/java/JsonToRc.java" \
     -name '*.java' -newer "$CACHE/.stamp" -o -name '*.kt' -newer "$CACHE/.stamp" 2>/dev/null | head -1 || true)"
 if [ ! -f "$CACHE/.stamp" ] || [ -n "$STAMP" ]; then

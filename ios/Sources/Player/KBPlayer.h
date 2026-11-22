@@ -36,6 +36,16 @@ NS_ASSUME_NONNULL_BEGIN
 /// A tap: the document's click areas (a button's onClick). Send it after touchUp.
 - (void)clickX:(float)x y:(float)y;
 
+/// A float the document exports by that name, or NaN (no such variable, or not started yet).
+- (float)floatNamed:(NSString *)name NS_SWIFT_NAME(float(named:));
+
+/// Sets a float the document exports, as a host value (it sticks until the document's own
+/// actions write it). NO when the document has no float of that name, or has not started.
+- (BOOL)setFloat:(float)value named:(NSString *)name NS_SWIFT_NAME(setFloat(_:named:));
+
+/// The document's host actions (hostNamedAction): the name, and the value as text ("" for none).
+@property (nonatomic, copy, nullable) void (^onNamedAction)(NSString *name, NSString *value);
+
 @end
 
 NS_ASSUME_NONNULL_END
