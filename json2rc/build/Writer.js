@@ -471,6 +471,15 @@ class Writer {
                 this.buffer.writeFloat(v);
         return (0, WireBuffer_1.asNanBits)(dataId);
     }
+    /** A float expression writing into an existing float id (a variable set where it runs). */
+    floatExpressionInto(dataId, opsBits) {
+        (0, Expr_1.checkExpressionSize)(opsBits);
+        this.buffer.start(exports.OP.ANIMATED_FLOAT);
+        this.buffer.writeInt(dataId);
+        this.buffer.writeInt(opsBits.length);
+        for (const b of opsBits)
+            this.buffer.writeInt(b);
+    }
     // ── paint + draw ────────────────────────────────────────────────────────
     paintValues(ints) {
         this.buffer.start(exports.OP.PAINT_VALUES);

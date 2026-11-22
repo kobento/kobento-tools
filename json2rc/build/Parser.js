@@ -1271,6 +1271,22 @@ class Parser {
                     throw new NotImplementedComponent(`${k}: "${key}" is not set by a ${type === 1 ? "position" : "measure"} compute`);
                 }
             }
+            // EXTENSION: inside the block, "@bounds" is the component's box as the player measured
+            // or placed it (x, y, width, height, parent width, parent height at 0..5), and
+            // "record": [{"into": "@list", "at": expr, "value": expr}] writes values into a
+            // float list ({"variable": {"name": "list", "vtype": "floatList", "size": n}}) at
+            // layout time: a row recording its measured height for the rows after it.
+            const records = o.record === undefined ? [] : Array.isArray(o.record) ? o.record : [o.record];
+            // {"set": "@name", "value": expr} writes a float variable instead (declared before,
+            // e.g. resources.variables {"name": {"value": 0, "export": true}}): unlike a list,
+            // a variable notifies what reads it, so expressions that read the lists can depend
+            // on it to be re-evaluated (Java does not listen to a list's contents).
+            for (const r of records) {
+                const ok = r && typeof r === "object" && r.value !== undefined
+                    && (r.set !== undefined || (r.into !== undefined && r.at !== undefined));
+                if (!ok)
+                    throw new NotImplementedComponent(`${k}: each "record" is {"into": "@list", "at": index, "value": expr} or {"set": "@variable", "value": expr}`);
+            }
             out.push((w) => {
                 const boundsId = w.allocArrayId();
                 w.buffer.start(238);
@@ -1278,10 +1294,37 @@ class Parser {
                 w.buffer.writeInt(boundsId);
                 w.buffer.writeBoolean(o.animate === true);
                 w.addDynamicFloatArray(boundsId, (0, WireBuffer_1.floatToRawIntBits)(6));
-                for (const [key, index] of slots) {
-                    if (o[key] === undefined)
-                        continue;
-                    w.setArrayValue(boundsId, (0, WireBuffer_1.floatToRawIntBits)(index), this.fbits(o[key]));
+                const saved = this.variables.get("bounds");
+                this.variables.set("bounds", (boundsId | 0xff800000) >>> 0);
+                try {
+                    for (const r of records) {
+                        if (r.set !== undefined) {
+                            const name = String(r.set).replace(/^[@$]/, "");
+                            const bits = this.variables.get(name);
+                            if (bits === undefined || !isNanBits(bits)) {
+                                throw new NotImplementedComponent(`${k}: record set ${r.set}: not a float variable with an id (declare it with "export": true or as an expression)`);
+                            }
+                            w.floatExpressionInto((0, WireBuffer_1.idFromNanBits)(bits), [this.fbits(r.value)]);
+                            continue;
+                        }
+                        const ref = String(r.into).replace(/^[@$]/, "");
+                        const bits = this.variables.get(ref);
+                        if (bits === undefined || ((bits >>> 0) & 0xff800000) >>> 0 !== 0xff800000) {
+                            throw new NotImplementedComponent(`${k}: record into ${r.into}: not a float list (declare it with vtype "floatList")`);
+                        }
+                        w.setArrayValue((bits >>> 0) & 0x7fffff, this.fbits(r.at), this.fbits(r.value));
+                    }
+                    for (const [key, index] of slots) {
+                        if (o[key] === undefined)
+                            continue;
+                        w.setArrayValue(boundsId, (0, WireBuffer_1.floatToRawIntBits)(index), this.fbits(o[key]));
+                    }
+                }
+                finally {
+                    if (saved === undefined)
+                        this.variables.remove("bounds");
+                    else
+                        this.variables.set("bounds", saved);
                 }
                 w.containerEnd();
             });
@@ -3728,6 +3771,18 @@ class Parser {
                 this.variables.set(name, this.materialiseVariable(command));
             else
                 this.variables.defer(name, command);
+            return;
+        }
+        if (vtype === "floatlist") {
+            // EXTENSION: a float list the document writes at run time (DYNAMIC_FLOAT_LIST, all
+            // zeros): {"variable": {"name": "heights", "vtype": "floatList", "size": 1000}}, read
+            // with arrayGet(@heights, i), written by a compute block's "record" (or setArrayValue).
+            const size = Math.trunc(Number(command.size));
+            if (!(size > 0))
+                throw new NotImplementedComponent(`variable '${name}': a floatList needs a "size" over 0`);
+            const aid = this.writer.allocArrayId();
+            this.writer.addDynamicFloatArray(aid, (0, WireBuffer_1.floatToRawIntBits)(size));
+            this.variables.set(name, (aid | 0xff800000) >>> 0);
             return;
         }
         if (vtype === "floatarrays") {

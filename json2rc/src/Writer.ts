@@ -434,6 +434,15 @@ export class Writer {
         return asNanBits(dataId);
     }
 
+    /** A float expression writing into an existing float id (a variable set where it runs). */
+    floatExpressionInto(dataId: number, opsBits: number[]): void {
+        checkExpressionSize(opsBits);
+        this.buffer.start(OP.ANIMATED_FLOAT);
+        this.buffer.writeInt(dataId);
+        this.buffer.writeInt(opsBits.length);
+        for (const b of opsBits) this.buffer.writeInt(b);
+    }
+
     // ── paint + draw ────────────────────────────────────────────────────────
 
     paintValues(ints: number[]): void {
