@@ -57,6 +57,22 @@ const EASE = "a[0] * a[0] * (3 - 2 * a[0])";
 const ALONG = "(1.5 * a[0] * (1 - a[0]) + a[0] * a[0] * a[0])";
 
 /** A chain's style, and its markers' lengths in path order (a reversed chain starts at "to"). */
+// A run-time current node (graph.highlight: node id -> {flag, ring}, flag a 0/1 "@variable",
+// ring a colour "@variable" from transparent to the accent by it): a ring of HIGHLIGHT_PAD
+// around it. Reflow: the node sits in a box padding it by that much, whose background is the
+// ring colour (every node gets the padding, so nothing moves when the current one changes; a
+// fill-size child would take the whole graph in a wrap-size box). Canvas: a round rect under
+// the node, its paint alpha the flag.
+const HIGHLIGHT_PAD = 3;
+function highlighted(graph, id, lookName, body) {
+    if (!graph.highlight) return body;
+    const hl = graph.highlight.get(id);
+    const radius = lookName === "pill" ? 999 : 12;
+    return { box: { horizontalAlignment: "center", verticalAlignment: "center",
+        modifiers: [...(hl ? [{ clip: { roundedRect: radius } }, { background: hl.ring }] : []), { padding: HIGHLIGHT_PAD }],
+        children: [body] } };
+}
+
 function chainStyle(graph, chain) {
     const st = edgeStyle(graph, chain.edge);
     const [first, last] = chain.reversed ? [st.head, st.tail] : [st.tail, st.head];
@@ -303,7 +319,8 @@ function reflowVariant(graph, T, { G, chains, room, loops }, dir, prefix) {
             : [lookForGroup(graph, T.groups.get(id)), "group"];
         if (!look.layout) throw new Error(`look "${name}" has no layout (needed by reflow mode)`);
         const v = it.kind === "group" ? { ...vars, content: ranksOf(id) } : vars;
-        return wrap(id, fill(look.layout, v, `${what} ${id}, look "${name}"`));
+        const body = fill(look.layout, v, `${what} ${id}, look "${name}"`);
+        return wrap(id, it.kind === "node" ? highlighted(graph, id, name, body) : body);
     }
     const graphLayout = ranksOf(ROOT);
 
@@ -636,6 +653,15 @@ function canvasView(graph, T, { G, chains, room, loops }, dir, prefix) {
     for (const [id, it] of T.items) {
         if (it.kind !== "node" && it.kind !== "label") continue;
         const { body, label } = drawn(id);
+        const hl = it.kind === "node" ? graph.highlight?.get(id)?.flag : null;
+        if (hl) {
+            // The current node (graph.highlight): an accent ring drawn under it, shown by alpha.
+            const b = geo.get(id), pad = HIGHLIGHT_PAD, pill = looks.get(id).name === "pill";
+            const rr = pill ? r1(b.h / 2 + pad) : 12;
+            nodeCmds.push({ paint: { ops: [{ color: themeOf(graph).accent }, { alpha: hl }, { style: "fill" }] } },
+                { drawRoundRect: { left: r1(b.left - pad), top: r1(b.top - pad), right: r1(b.right + pad), bottom: r1(b.bottom + pad), rx: rr, ry: rr } },
+                { paint: { ops: [{ alpha: 1 }] } });
+        }
         nodeCmds.push(...body); labelCmds.push(...label);
     }
     nodeCmds.push(...nodeLoopBodies); labelCmds.push(...loopLabelCmds);

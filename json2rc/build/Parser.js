@@ -3788,7 +3788,7 @@ class Parser {
             // variable, written where it is first used, so it can read values declared in the
             // tree before it (a Slider's live value), which resources.colors cannot.
             const v = command.value;
-            if (v && typeof v === "object" && !Array.isArray(v) && (Array.isArray(v.hsv) || Array.isArray(v.argb))) {
+            if (v && typeof v === "object" && !Array.isArray(v) && (Array.isArray(v.hsv) || Array.isArray(v.argb) || Array.isArray(v.mix))) {
                 const id = this.computedColorId(name, v);
                 if (named)
                     this.writer.setColorName(id, name);
@@ -3984,7 +3984,29 @@ class Parser {
         // EXTENSION (not in the reference JSON parser): a colour computed at run time,
         // the reference's ColorExpression. {"hsv": [h, s, v], "alpha": 0..255} with h,
         // s, v in 0..1, or {"argb": [a, r, g, b]} in 0..1 — each a number, a "@var" or
-        // an expression; the players re-evaluate it when an input changes.
+        // an expression; the players re-evaluate it when an input changes. Or {"mix": [a, b],
+        // "t": 0..1}: between two colours (each a "@colors.name" or "@name" colour, which
+        // follows the theme, or a literal), by t, a number or an expression (the reference's
+        // interpolate modes: a selection highlight that fades in).
+        if (Array.isArray(value.mix)) {
+            if (value.mix.length !== 2)
+                throw new NotImplementedComponent(`resources.colors.${name}: "mix" takes [a, b]`);
+            if (value.t === undefined)
+                throw new NotImplementedComponent(`resources.colors.${name}: "mix" needs "t" (0: a, 1: b)`);
+            const end = (c) => {
+                if (typeof c === "string" && /^[@$]/.test(c)) {
+                    const n = c.replace(/^[@$](colors\.)?/, "");
+                    const id = this.colors.get(n);
+                    if (id === undefined)
+                        throw new NotImplementedComponent(`resources.colors.${name}: mix colour ${c} is not declared`);
+                    return [true, id];
+                }
+                return [false, parseColor(c)];
+            };
+            const [aId, a] = end(value.mix[0]), [bId, b] = end(value.mix[1]);
+            // ColorExpression's interpolate modes: bit 0 the first is an id, bit 1 the second.
+            return this.writer.addColorExpression((aId ? 1 : 0) | (bId ? 2 : 0), a, b, this.fbits(value.t));
+        }
         const comps = (Array.isArray(value.hsv) ? value.hsv : value.argb);
         if (comps.length !== (Array.isArray(value.hsv) ? 3 : 4)) {
             throw new NotImplementedComponent(`resources.colors.${name}: "hsv" takes [h, s, v], "argb" takes [a, r, g, b]`);
@@ -4018,7 +4040,7 @@ class Parser {
         }
         if ("colors" in section) {
             for (const [name, cfg, value] of eachResource(section.colors)) {
-                if (value && typeof value === "object" && !Array.isArray(value) && (Array.isArray(value.hsv) || Array.isArray(value.argb))) {
+                if (value && typeof value === "object" && !Array.isArray(value) && (Array.isArray(value.hsv) || Array.isArray(value.argb) || Array.isArray(value.mix))) {
                     this.computedColors.push([name, cfg, value]);
                     continue;
                 }
