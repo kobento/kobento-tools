@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HOST_ACTION_STRING_TYPE = exports.SEMANTICS_MODE_SET = exports.Writer = exports.TYPE_WRAP = exports.BITMAP_ENCODING_EMPTY = exports.BITMAP_ENCODING_URL = exports.BITMAP_ENCODING_INLINE = exports.BITMAP_TYPE_RAW8888 = exports.BITMAP_TYPE_PNG_8888 = exports.BITMAP_TYPE_PNG = exports.TYPE_WEIGHT = exports.TYPE_FILL = exports.TYPE_EXACT = exports.OP = void 0;
+exports.allowedOperations = allowedOperations;
+exports.profilesAllowing = profilesAllowing;
 exports.refusedOperations = refusedOperations;
 exports.javaHashMapOrder = javaHashMapOrder;
 exports.modWidth = modWidth;
@@ -40,6 +42,7 @@ exports.modBackground = modBackground;
 const WireBuffer_1 = require("./WireBuffer");
 const Header_1 = require("./Header");
 const Expr_1 = require("./Expr");
+const Profiles_1 = require("./Profiles");
 exports.OP = {
     COMPONENT_VALUE: 150, MODIFIER_OFFSET: 221, ACCESSIBILITY_SEMANTICS: 250,
     MODIFIER_CLICK: 59, MODIFIER_DIMENSION_CONSTRAINTS: 243, TEXT_MERGE: 136, MODIFIER_MULTI_CLICK: 83, HOST_NAMED_ACTION: 210, HOST_ACTION: 209, HOST_ACTION_METADATA: 216,
@@ -76,63 +79,53 @@ exports.OP = {
 // ── operations by profile (Operations.getOperations(apiLevel >= 7, profiles)) ────────────
 // The Java writer gives its buffer the operation map for the document's version and
 // profiles, and WireBuffer.start throws "Operation N is not supported for this version" for
-// anything outside it. These are the operations remote-core knows at v7 that the default
-// map (fillDefaultVersionMap, plus REM and the three matrix ops every v7 map adds) leaves
-// out: each is only valid through a profile. Operations
-// remote-core does not know at all (the 3D set) are not gated here.
-const PROFILE_WIDGETS = 0x100, PROFILE_ANDROIDX = 0x200;
-const PROFILE_EXPERIMENTAL = 0x1, PROFILE_DEPRECATED = 0x2;
-const GATED_OPS = {
-    45: "DATA_SHADER", 49: "DRAW_BITMAP_FONT_TEXT_RUN_ON_PATH", 65: "ROOT_CONTENT_BEHAVIOR",
-    83: "MODIFIER_MULTI_CLICK", 93: "LAYOUT_CUSTOM", 104: "ADD_MESH_2D", 105: "DRAW_MESH_2D",
-    106: "MATRIX_FROM_MESH_2D", 110: "EVENT_ACTION", 141: "PLAY_SOUND",
-    142: "REFERENCED_OPERATIONS", 169: "DATA_SOUND", 181: "MATRIX_FROM_PATH",
-    182: "TEXT_SUBTEXT", 183: "BITMAP_TEXT_MEASURE", 184: "DRAW_BITMAP_TEXT_ANCHORED",
-    189: "DATA_FONT", 190: "DRAW_TO_BITMAP", 191: "WAKE_IN", 192: "ID_LOOKUP",
-    193: "PATH_EXPRESSION", 194: "PARTICLE_COMPARE", 196: "COLOR_THEME",
-    197: "DYNAMIC_FLOAT_LIST", 198: "UPDATE_DYNAMIC_FLOAT_LIST", 199: "TEXT_TRANSFORM",
-    206: "SOUND_EXPRESSION", 237: "MODIFIER_ALIGN_BY", 238: "LAYOUT_COMPUTE", 239: "CORE_TEXT",
-    240: "LAYOUT_FLOW", 241: "SKIP", 242: "TEXT_STYLE", 243: "MODIFIER_DIMENSION_CONSTRAINTS",
-    244: "MACRO_FOR_EACH", 245: "INCLUDE_REFERENCED_OPERATIONS", 246: "MACRO_DEFINE",
-    247: "MACRO_CALL", 248: "MACRO_ARGUMENT", 249: "MACRO_BLOCK",
-};
-// createMapV7_Androidx / _Widgets, their _Experimental and _Deprecated additions.
-const V7_ANDROIDX = [45, 49, 181, 182, 183, 184, 189, 190, 191, 192, 193, 194, 196, 197, 198, 199, 239, 241, 242];
-const V7_WIDGETS = [49, 181, 182, 183, 184, 190, 191, 192, 193, 194, 196, 197, 198, 199, 239, 241, 242];
-const V7_ANDROIDX_EXPERIMENTAL = [83, 93, 104, 105, 106, 110, 141, 142, 169, 206, 237, 238, 240, 243, 244, 245, 246, 247, 248, 249];
-const V7_WIDGETS_EXPERIMENTAL = [83, 104, 105, 106, 141, 142, 169, 206, 237, 238, 240, 243, 244, 245, 246, 247, 248, 249];
-const V7_DEPRECATED = [65];
-/** The gated operations a v7 document with these profiles may NOT write, each with a hint
- *  naming the profiles that would allow it. Two profiles allow only what both allow. */
-function refusedOperations(profiles) {
+// anything outside it; the player's reader refuses the same ("Unknown operation encountered").
+// The table (Profiles.ts) is generated from androidx's Operations.java (tools/gen-profiles.cjs).
+/** The operations a v7 document with these profiles may write: the baseline, plus each
+ *  requested family's (its experimental and deprecated ones with those flags); two families
+ *  allow only what both allow (Operations.createMapV7). */
+function allowedOperations(profiles) {
+    const exp = (profiles & Profiles_1.PROFILE_EXPERIMENTAL) !== 0, dep = (profiles & Profiles_1.PROFILE_DEPRECATED) !== 0;
     const lists = [];
-    const exp = (profiles & PROFILE_EXPERIMENTAL) !== 0, dep = (profiles & PROFILE_DEPRECATED) !== 0;
-    if (profiles & PROFILE_ANDROIDX) {
-        lists.push(new Set([...V7_ANDROIDX, ...(exp ? V7_ANDROIDX_EXPERIMENTAL : []), ...(dep ? V7_DEPRECATED : [])]));
+    for (const f of Object.values(Profiles_1.FAMILIES)) {
+        if (profiles & f.bit)
+            lists.push(new Set([...f.ops, ...(exp ? f.experimental : []), ...(dep ? f.deprecated : [])]));
     }
-    if (profiles & PROFILE_WIDGETS) {
-        lists.push(new Set([...V7_WIDGETS, ...(exp ? V7_WIDGETS_EXPERIMENTAL : []), ...(dep ? V7_DEPRECATED : [])]));
+    const allowed = new Set(Profiles_1.BASELINE_OPS);
+    if (lists.length)
+        for (const op of lists[0])
+            if (lists.every((l) => l.has(op)))
+                allowed.add(op);
+    return allowed;
+}
+/** Each profile value that allows this operation on its own, named ("512 (androidx)"). */
+function profilesAllowing(op) {
+    if (Profiles_1.BASELINE_OPS.includes(op))
+        return ["0 (baseline)"];
+    const where = [];
+    for (const [name, f] of Object.entries(Profiles_1.FAMILIES)) {
+        if (f.ops.includes(op))
+            where.push(`${f.bit} (${name})`);
+        else if (f.experimental.includes(op))
+            where.push(`${f.bit | Profiles_1.PROFILE_EXPERIMENTAL} (${name} + experimental)`);
+        else if (f.deprecated.includes(op))
+            where.push(`${f.bit | Profiles_1.PROFILE_DEPRECATED} (${name} + deprecated)`);
     }
-    const allowed = (op) => lists.length > 0 && lists.every((l) => l.has(op));
+    return where;
+}
+/** The operations a v7 document with these profiles may NOT write, each with a hint naming
+ *  the profiles that would allow it. */
+function refusedOperations(profiles) {
+    const allowed = allowedOperations(profiles);
     const refused = new Map();
-    for (const [code, name] of Object.entries(GATED_OPS)) {
-        const op = Number(code);
-        if (allowed(op))
+    for (let op = 0; op < 256; op++) {
+        if (allowed.has(op))
             continue;
-        const where = [];
-        if (V7_ANDROIDX.includes(op))
-            where.push(`${PROFILE_ANDROIDX} (androidx)`);
-        else if (V7_ANDROIDX_EXPERIMENTAL.includes(op))
-            where.push(`${PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL} (androidx + experimental)`);
-        if (V7_WIDGETS.includes(op))
-            where.push(`${PROFILE_WIDGETS} (widgets)`);
-        else if (V7_WIDGETS_EXPERIMENTAL.includes(op))
-            where.push(`${PROFILE_WIDGETS | PROFILE_EXPERIMENTAL} (widgets + experimental)`);
-        if (V7_DEPRECATED.includes(op))
-            where.push(`${PROFILE_ANDROIDX | PROFILE_DEPRECATED} (androidx + deprecated)`);
+        const name = Profiles_1.OP_NAMES[op] ?? `opcode ${op}`;
+        const where = profilesAllowing(op);
         refused.set(op, where.length
             ? `${name} needs "profiles": ${where.join(" or ")} in the header; this document has "profiles": ${profiles}`
-            : `${name} is not in any profile`); // none today: every gated op has one
+            : `${name} is not an operation androidx's player reads at apiLevel 7`);
     }
     return refused;
 }

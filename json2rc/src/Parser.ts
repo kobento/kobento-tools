@@ -673,9 +673,13 @@ export class Parser {
     /** ConvertOptions.layoutDirection: replaces the document's own. */
     private optionDirection?: J;
 
-    constructor(options: { readFile?: (path: string) => Uint8Array; layoutDirection?: "ltr" | "rtl" } = {}) {
+    /** ConvertOptions.profiles: replaces the header's. */
+    private optionProfiles?: number;
+
+    constructor(options: { readFile?: (path: string) => Uint8Array; layoutDirection?: "ltr" | "rtl"; profiles?: number } = {}) {
         this.readFile = options.readFile;
         this.optionDirection = options.layoutDirection;
+        this.optionProfiles = options.profiles;
     }
     private profiles = 0;
     private apiLevel = 7;
@@ -785,14 +789,14 @@ export class Parser {
      * The document's names and the ids they got: what a tool reading the .rc back (the
      * inspector) cannot see, since only exported variables carry a name in the binary.
      */
-    symbols(): { variables: Record<string, number>; components: Record<number, string> } {
+    symbols(): { variables: Record<string, number>; components: Record<number, string>; operations: number[]; profiles: number } {
         const variables: Record<string, number> = {};
         for (const [name, bits] of this.variables.entries()) variables[name] = (bits & 0x3fffff);
-        return { variables, components: { ...this.componentPaths } };
+        return { variables, components: { ...this.componentPaths }, operations: this.writer.buffer.operations(), profiles: this.profiles };
     }
 
     parse(doc: J): Uint8Array {
-        const header = doc.header ?? {};
+        const header = this.optionProfiles === undefined ? doc.header ?? {} : { ...(doc.header ?? {}), profiles: this.optionProfiles };
         this.profiles = Number(header.profiles ?? 0);
         const apiLevel = Number(header.apiLevel ?? 7);
         if (apiLevel < 7) {
@@ -829,7 +833,7 @@ export class Parser {
         if (doc.resources) { this.inFirstPass = true; this.parseResources(doc.resources);
                              this.inFirstPass = false; }
         const root = doc.root;
-        if (root === undefined || root === null) return this.writer.encodeToByteArray();
+        if (root === undefined || root === null) { this.writer.buffer.checkRefused(); return this.writer.encodeToByteArray(); }
         const items = (Array.isArray(root) ? root : [root]).map(normalizeComponent);
 
         // The root op carries its children directly — there is no content op under it, and
@@ -872,6 +876,7 @@ export class Parser {
             this.parseComponent(item);
         }
         this.writer.containerEnd();
+        this.writer.buffer.checkRefused();
         return this.writer.encodeToByteArray();
     }
 
@@ -4062,6 +4067,12 @@ export interface ConvertOptions {
      * right-to-left documents.
      */
     layoutDirection?: "ltr" | "rtl";
+    /**
+     * The header's profiles, whatever the document says: what the document is written for
+     * (512 androidx, 256 widgets, 768 both; + 1 with their experimental operations). An
+     * operation those profiles do not allow is refused, as androidx's writer and player do.
+     */
+    profiles?: number;
 }
 
 export function convert(json: string | J, options: ConvertOptions = {}): Uint8Array {
@@ -4070,7 +4081,7 @@ export function convert(json: string | J, options: ConvertOptions = {}): Uint8Ar
 }
 
 /** convert, plus the symbol table (see Parser.symbols). */
-export function convertWithSymbols(json: string | J, options: ConvertOptions = {}): { bytes: Uint8Array; symbols: { variables: Record<string, number>; components: Record<number, string> } } {
+export function convertWithSymbols(json: string | J, options: ConvertOptions = {}): { bytes: Uint8Array; symbols: { variables: Record<string, number>; components: Record<number, string>; operations: number[]; profiles: number } } {
     const doc = typeof json === "string" ? JSON.parse(json) : json;
     const parser = new Parser(options);
     const bytes = parser.parse(unwrap(doc));
@@ -4078,3 +4089,5 @@ export function convertWithSymbols(json: string | J, options: ConvertOptions = {
 }
 
 export { compressDocument, isCompressedDocument } from "./Compress";
+export { allowedOperations, profilesAllowing } from "./Writer";
+export { OP_NAMES, PROFILE_ANDROIDX, PROFILE_WIDGETS, PROFILE_EXPERIMENTAL, PROFILE_DEPRECATED } from "./Profiles";

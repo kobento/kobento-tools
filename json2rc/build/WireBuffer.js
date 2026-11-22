@@ -20,6 +20,10 @@ class WireBuffer {
         /** Operations this document's version and profiles do not allow (setValidOperations),
          *  with the hint the refusal carries; null allows everything. */
         this.refusedOps = null;
+        /** Every operation written (opcode -> 1), and those refused, in the order first met: the
+         *  converter reports them all at the end (checkRefused) rather than only the first. */
+        this.opsWritten = new Uint8Array(256);
+        this.refusedWritten = [];
     }
     ensure(n) {
         if (this.len + n <= this.buf.length)
@@ -90,11 +94,28 @@ class WireBuffer {
     }
     /** WireBuffer.start(type): the opcode byte, nothing else — there is no length field. */
     start(opCode) {
-        const hint = this.refusedOps?.get(opCode);
-        if (hint !== undefined) {
-            throw new Error(`Operation ${opCode} is not supported for this version (${hint})`);
+        if (!this.opsWritten[opCode]) {
+            this.opsWritten[opCode] = 1;
+            if (this.refusedOps?.has(opCode))
+                this.refusedWritten.push(opCode);
         }
         this.writeByte(opCode);
+    }
+    /** Throws for the refused operations written, each with its hint (as the reference's
+     *  "Operation N is not supported for this version", which stops at the first). */
+    checkRefused() {
+        if (!this.refusedWritten.length)
+            return;
+        const lines = this.refusedWritten.map((op) => `Operation ${op} is not supported for this version (${this.refusedOps.get(op)})`);
+        throw new Error(lines.join("\n"));
+    }
+    /** The operations written, ascending. */
+    operations() {
+        const ops = [];
+        for (let op = 0; op < 256; op++)
+            if (this.opsWritten[op])
+                ops.push(op);
+        return ops;
     }
     overwriteInt(position, value) {
         const v = value >>> 0;

@@ -187,6 +187,22 @@ every rule by converting a right-to-left document and its hand-mirrored left-to-
 the same bytes (the converter's own ids compared by order of appearance, since they follow the
 JSON order).
 
+## Profiles
+
+A document may only contain the operations its header's `profiles` allow, as androidx's writer
+and player enforce (`Operations.createMapV7`): the apiLevel 7 baseline, plus the operations of
+each family named (androidx 0x200, widgets 0x100), with their experimental (+0x1) or
+deprecated (+0x2) ones when those bits are set; with both families, only what both allow. The
+table, `src/Profiles.ts`, is generated from androidx's `Operations.java` by
+`node tools/gen-profiles.cjs [Operations.java]` (default: the `support-3d` worktree, androidx-main
+with the 3D change, since the converter writes 3D). Rerun it when androidx moves an operation.
+
+An operation outside the profiles is refused once the document is converted, every one listed
+with the profiles that would allow it (the Java writer stops at the first). `ConvertOptions.profiles`
+replaces the header's: one JSON written for several targets. `convertWithSymbols` also returns
+the operations written and the profiles, which the MCP turns into the targets a document fits.
+`tests/check-profiles.cjs` covers it.
+
 ## Runtime shaders
 
 A paint's `shader` (or `runtimeShader`) can be an AGSL runtime shader, not only a shader

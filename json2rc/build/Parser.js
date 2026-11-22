@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isCompressedDocument = exports.compressDocument = exports.Parser = exports.DeferredVariables = exports.NotImplementedComponent = void 0;
+exports.PROFILE_DEPRECATED = exports.PROFILE_EXPERIMENTAL = exports.PROFILE_WIDGETS = exports.PROFILE_ANDROIDX = exports.OP_NAMES = exports.profilesAllowing = exports.allowedOperations = exports.isCompressedDocument = exports.compressDocument = exports.Parser = exports.DeferredVariables = exports.NotImplementedComponent = void 0;
 exports.parseColor = parseColor;
 exports.parseHAlign = parseHAlign;
 exports.parseVAlign = parseVAlign;
@@ -725,6 +725,7 @@ class Parser {
         this.soundKinds = new Map();
         this.readFile = options.readFile;
         this.optionDirection = options.layoutDirection;
+        this.optionProfiles = options.profiles;
     }
     /** A component's horizontal alignment or arrangement, start and end resolved to sides. */
     hAlign(c, dflt) {
@@ -850,10 +851,10 @@ class Parser {
         const variables = {};
         for (const [name, bits] of this.variables.entries())
             variables[name] = (bits & 0x3fffff);
-        return { variables, components: { ...this.componentPaths } };
+        return { variables, components: { ...this.componentPaths }, operations: this.writer.buffer.operations(), profiles: this.profiles };
     }
     parse(doc) {
-        const header = doc.header ?? {};
+        const header = this.optionProfiles === undefined ? doc.header ?? {} : { ...(doc.header ?? {}), profiles: this.optionProfiles };
         this.profiles = Number(header.profiles ?? 0);
         const apiLevel = Number(header.apiLevel ?? 7);
         if (apiLevel < 7) {
@@ -893,8 +894,10 @@ class Parser {
             this.inFirstPass = false;
         }
         const root = doc.root;
-        if (root === undefined || root === null)
+        if (root === undefined || root === null) {
+            this.writer.buffer.checkRefused();
             return this.writer.encodeToByteArray();
+        }
         const items = (Array.isArray(root) ? root : [root]).map(normalizeComponent);
         // The root op carries its children directly — there is no content op under it, and
         // it closes with a single ContainerEnd. (A column *does* get a content op; the root
@@ -943,6 +946,7 @@ class Parser {
             this.parseComponent(item);
         }
         this.writer.containerEnd();
+        this.writer.buffer.checkRefused();
         return this.writer.encodeToByteArray();
     }
     parseModifiers(raw) {
@@ -4381,3 +4385,12 @@ function convertWithSymbols(json, options = {}) {
 var Compress_1 = require("./Compress");
 Object.defineProperty(exports, "compressDocument", { enumerable: true, get: function () { return Compress_1.compressDocument; } });
 Object.defineProperty(exports, "isCompressedDocument", { enumerable: true, get: function () { return Compress_1.isCompressedDocument; } });
+var Writer_2 = require("./Writer");
+Object.defineProperty(exports, "allowedOperations", { enumerable: true, get: function () { return Writer_2.allowedOperations; } });
+Object.defineProperty(exports, "profilesAllowing", { enumerable: true, get: function () { return Writer_2.profilesAllowing; } });
+var Profiles_1 = require("./Profiles");
+Object.defineProperty(exports, "OP_NAMES", { enumerable: true, get: function () { return Profiles_1.OP_NAMES; } });
+Object.defineProperty(exports, "PROFILE_ANDROIDX", { enumerable: true, get: function () { return Profiles_1.PROFILE_ANDROIDX; } });
+Object.defineProperty(exports, "PROFILE_WIDGETS", { enumerable: true, get: function () { return Profiles_1.PROFILE_WIDGETS; } });
+Object.defineProperty(exports, "PROFILE_EXPERIMENTAL", { enumerable: true, get: function () { return Profiles_1.PROFILE_EXPERIMENTAL; } });
+Object.defineProperty(exports, "PROFILE_DEPRECATED", { enumerable: true, get: function () { return Profiles_1.PROFILE_DEPRECATED; } });
