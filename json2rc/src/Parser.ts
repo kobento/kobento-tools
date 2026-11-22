@@ -163,7 +163,9 @@ export function parseColor(value: J): number {
 }
 
 const H_ALIGN: Record<string, number> =
-    { start: 1, center: 2, end: 3, spacebetween: 6, spaceevenly: 7, spacearound: 8 };
+    { start: 1, center: 2, end: 3, spacebetween: 6, spaceevenly: 7, spacearound: 8,
+      // EXTENSION: the absolute sides, which a right-to-left layout does not mirror.
+      left: 1, right: 3 };
 const V_ALIGN: Record<string, number> =
     { start: 1, top: 4, center: 2, bottom: 5, spacebetween: 6, spaceevenly: 7, spacearound: 8 };
 const TEXT_ALIGN: Record<string, number> =
@@ -191,6 +193,26 @@ export function vAlignOf(c: J, dflt: string): number {
 // An unknown value is LEFT, as in the reference parser (RemoteComposeJsonParser.parseTextAlign).
 export function parseTextAlign(a: string): number { return TEXT_ALIGN[a.toLowerCase()] ?? 1; }
 
+/**
+ * EXTENSION: a layout direction, `"ltr"` or `"rtl"` (also `true`/`false` for rtl). Players
+ * have no layout direction: as Compose's creation side does (RemoteLayoutDirection), the
+ * converter resolves start and end to sides as it writes the document.
+ */
+export function parseLayoutDirection(v: J, where: string): boolean {
+    if (v === true || v === false) return v;
+    const s = String(v).toLowerCase();
+    if (s === "rtl") return true;
+    if (s === "ltr") return false;
+    throw new NotImplementedComponent(`${where}: layoutDirection '${v}' (ltr or rtl)`);
+}
+
+/** start <-> end in a right-to-left layout; every other word (left, right, center, ...) stays. */
+function mirrorWord(word: string, rtl: boolean): string {
+    const w = word.toLowerCase();
+    if (!rtl) return w;
+    return w === "start" ? "end" : w === "end" ? "start" : w;
+}
+
 /** `{"column": {...}}` is shorthand for `{"type": "column", ...}`. */
 export function normalizeComponent(c: J): J {
     if (!("type" in c) && Object.keys(c).length === 1) {
@@ -214,6 +236,9 @@ const FIRST_PASS_TYPES = new Set(["resources", "variable", "global",
 const FIRST_PASS_ONLY_TYPES = new Set(["resources", "variable", "definepattern", "referencedoperations",
                                        "createfloatfunction", "floatfunction",
                                        "definevisibilityanimation", "createoffscreenbitmap"]);
+
+/** Children of a row that are not laid out: kept in their order when a right-to-left row reverses its children. */
+const NOT_LAID_OUT_TYPES = new Set([...FIRST_PASS_TYPES, "rem"]);
 
 const PATH_MOVE = 10, PATH_LINE = 11, PATH_QUAD = 12, PATH_CUBIC = 14, PATH_CLOSE = 15;
 const SVG_SPLIT = /(?=[MmZzLlHhVvCcSsQqTtAa])/;
@@ -645,12 +670,41 @@ export class Parser {
     /** Supplied by the caller; see ConvertOptions.readFile. */
     private readFile?: (path: string) => Uint8Array;
 
-    constructor(options: { readFile?: (path: string) => Uint8Array } = {}) {
+    /** ConvertOptions.layoutDirection: replaces the document's own. */
+    private optionDirection?: J;
+
+    constructor(options: { readFile?: (path: string) => Uint8Array; layoutDirection?: "ltr" | "rtl" } = {}) {
         this.readFile = options.readFile;
+        this.optionDirection = options.layoutDirection;
     }
     private profiles = 0;
     private apiLevel = 7;
     private inFirstPass = false;
+    /** Right to left: the document's (or ConvertOptions') layoutDirection, a component's within its subtree. */
+    private rtl = false;
+
+    /** A component's horizontal alignment or arrangement, start and end resolved to sides. */
+    private hAlign(c: J, dflt: string): number {
+        return parseHAlign(mirrorWord(String(c.horizontalAlignment ?? c.horizontalArrangement ?? dflt), this.rtl));
+    }
+
+    /**
+     * A row's children in the order they are written: reversed right to left, as Compose's
+     * RemoteRow does, unless the arrangement is an absolute one (left, right). Children that
+     * are not laid out (variables, comments) come first, in their order. Each child keeps its
+     * JSON index in the component paths.
+     */
+    private parseRowChildren(component: J, kids: J[]): void {
+        const arr = String(component.horizontalArrangement ?? component.horizontalAlignment ?? "start").toLowerCase();
+        if (!this.rtl || arr === "left" || arr === "right") {
+            for (const k of kids) this.parseComponent(k);
+            return;
+        }
+        const indexed = kids.map((k, i) => [k, i] as [J, number]);
+        const quiet = indexed.filter(([k]) => NOT_LAID_OUT_TYPES.has(String(k.type ?? "").toLowerCase()));
+        const laid = indexed.filter(([k]) => !NOT_LAID_OUT_TYPES.has(String(k.type ?? "").toLowerCase()));
+        for (const [k, i] of [...quiet, ...laid.reverse()]) this.parseComponent(k, i);
+    }
 
     /** Resolve a canvas float field to raw float32 bits (literal, ref or expression). */
     fbits(value: J): number {
@@ -704,6 +758,8 @@ export class Parser {
                 `apiLevel ${apiLevel}: only apiLevel >= 7 is implemented`);
         }
         this.apiLevel = apiLevel;
+        const direction = this.optionDirection ?? doc.layoutDirection;
+        this.rtl = direction === undefined ? false : parseLayoutDirection(direction, "document");
         const tags: Tag[] = [];
         for (const [key, value] of Object.entries(header)) {
             if (key === "apiLevel" || key === "orderedResources") continue;
@@ -885,9 +941,14 @@ export class Parser {
                         const r = Number(shape.radius);
                         out.push(modClipRoundedRect(r, r, r, r));
                     } else {
-                        out.push(modClipRoundedRect(
-                            Number(shape.topStart ?? 0), Number(shape.topEnd ?? 0),
-                            Number(shape.bottomStart ?? 0), Number(shape.bottomEnd ?? 0)));
+                        // The wire's corners are sides (top left first): start and end follow
+                        // the layout direction; EXTENSION: topLeft ... bottomRight are sides.
+                        const [ts, te, bs, be] = this.rtl
+                            ? ["topEnd", "topStart", "bottomEnd", "bottomStart"]
+                            : ["topStart", "topEnd", "bottomStart", "bottomEnd"];
+                        const c = (abs: string, rel: string) => Number(shape[abs] ?? shape[rel] ?? 0);
+                        out.push(modClipRoundedRect(c("topLeft", ts), c("topRight", te),
+                            c("bottomLeft", bs), c("bottomRight", be)));
                     }
                 } else if (k === "size") {
                     // `[w, h]` is a pair, and goes through getDouble rather than parseFloat,
@@ -1244,14 +1305,20 @@ export class Parser {
                 return [h, v, h, v];
             }
             if (value.length >= 4) {
-                return [numBits(value[0]), numBits(value[1]), numBits(value[2]), numBits(value[3])];
+                // Right to left, start is the right side.
+                const s = numBits(value[0]), e = numBits(value[2]);
+                return this.rtl ? [e, numBits(value[1]), s, numBits(value[3])]
+                    : [s, numBits(value[1]), e, numBits(value[3])];
             }
             if (value.length === 1) { const v = numBits(value[0]); return [v, v, v, v]; }
             return null;
         }
         if (value && typeof value === "object") {
             const g = (k: string) => numBits(value[k] ?? 0);
-            return [g("start"), g("top"), g("end"), g("bottom")];
+            // start and end follow the layout direction; EXTENSION: left and right are the sides.
+            const side = (abs: string, rel: string) => numBits(value[abs] ?? value[rel] ?? 0);
+            const [l, r] = this.rtl ? ["end", "start"] : ["start", "end"];
+            return [side("left", l), g("top"), side("right", r), g("bottom")];
         }
         const v = this.fbits(value);
         return [v, v, v, v];
@@ -1306,12 +1373,18 @@ export class Parser {
     private childCounts = new Map<string, number>();
     componentPaths: Record<number, string> = {};
 
-    private parseComponent(component: J): void {
+    private parseComponent(component: J, at?: number): void {
         const parent = this.pathStack.join(".");
-        const n = this.childCounts.get(parent) ?? 0;
-        this.childCounts.set(parent, n + 1);
+        const n = at ?? this.childCounts.get(parent) ?? 0;
+        if (at === undefined) this.childCounts.set(parent, n + 1);
         this.pathStack.push(`${String(component?.type ?? "?").toLowerCase()}[${n}]`);
-        try { this.parseComponentAt(component); } finally { this.pathStack.pop(); }
+        // EXTENSION: "layoutDirection" on a component sets it for the component and its subtree
+        // (a phone number kept left to right in a right-to-left screen).
+        const saved = this.rtl;
+        if (component && component.layoutDirection !== undefined) {
+            this.rtl = parseLayoutDirection(component.layoutDirection, String(component.type ?? "component"));
+        }
+        try { this.parseComponentAt(component); } finally { this.pathStack.pop(); this.rtl = saved; }
     }
 
     private parseComponentAt(component: J): void {
@@ -1344,23 +1417,24 @@ export class Parser {
                 // A childless box takes the leaf form, and its alignment defaults differ:
                 // centre/centre here, start/top for the container form.
                 this.writer.boxLeaf(
-                    hAlignOf(component, "center"),
+                    this.hAlign(component, "center"),
                     vAlignOf(component, "center"), mods);
                 return;
             }
-            const h = hAlignOf(component, "start");
+            const h = this.hAlign(component, "start");
             const v = vAlignOf(component, "top");
             if (ctype === "column") this.writer.startColumn(h, v, mods);
             else if (ctype === "row") this.writer.startRow(h, v, mods);
             else this.writer.startBox(h, v, mods);
             this.bindComponentValues(component);
-            for (const k of kids) this.parseComponent(k);
+            if (ctype === "row") this.parseRowChildren(component, kids);
+            else for (const k of kids) this.parseComponent(k);
             this.writer.endContainer();
             return;
         }
         if (ctype === "fitbox") {
             this.writer.startFitBox(
-                hAlignOf(component, "center"),
+                this.hAlign(component, "center"),
                 vAlignOf(component, "center"), mods);
             for (const k of (component.children ?? []).map(normalizeComponent)) {
                 this.parseComponent(k);
@@ -1378,13 +1452,11 @@ export class Parser {
         }
         if (ctype === "flow") {
             this.writer.startFlow(
-                hAlignOf(component, "start"),
+                this.hAlign(component, "start"),
                 vAlignOf(component, "top"), mods,
                 optInt(component.maxColumns, 2147483647), 0.0,
                 optInt(component.maxLines, 2147483647));
-            for (const k of (component.children ?? []).map(normalizeComponent)) {
-                this.parseComponent(k);
-            }
+            this.parseRowChildren(component, kids);
             this.writer.endFlow();
             return;
         }
@@ -1417,8 +1489,9 @@ export class Parser {
         }
         if (ctype === "collapsiblecolumn" || ctype === "collapsiblerow") {
             this.writer.startCollapsible(ctype === "collapsiblecolumn",
-                hAlignOf(component, "center"), vAlignOf(component, "center"), mods);
-            for (const k of kids) this.parseComponent(k);
+                this.hAlign(component, "center"), vAlignOf(component, "center"), mods);
+            if (ctype === "collapsiblerow") this.parseRowChildren(component, kids);
+            else for (const k of kids) this.parseComponent(k);
             this.writer.endContainer();
             return;
         }
@@ -1468,7 +1541,16 @@ export class Parser {
         if (ctype === "canvas") {
             this.writer.startCanvas(mods, this.apiLevel);
             this.bindComponentValues(component);
+            // EXTENSION: "autoMirror": true flips the drawing right to left (a back arrow, a
+            // send icon), as Compose's autoMirror icons; a canvas is otherwise never mirrored.
+            const mirror = this.rtl && [true, 1, "true", "1"].includes(component.autoMirror);
+            if (mirror) {
+                this.writer.matrixSave();
+                this.writer.matrixTranslate(this.fbits("componentWidth()"), floatToRawIntBits(0));
+                this.writer.matrixScale(floatToRawIntBits(-1), floatToRawIntBits(1));
+            }
             for (const cmd of component.commands ?? []) this.parseCommand(cmd);
+            if (mirror) this.writer.matrixRestore();
             this.writer.endCanvas(this.apiLevel);
             return;
         }
@@ -3873,7 +3955,7 @@ export class Parser {
                     "fontAxis and fontAxisValues must be the same length");
             }
         }
-        const textAlign = parseTextAlign(String(component.textAlign ?? "start"));
+        const textAlign = parseTextAlign(mirrorWord(String(component.textAlign ?? "start"), this.rtl));
         let maxLines = component.maxLines !== undefined ? optInt(component.maxLines, INT_MAX) : INT_MAX;
         if (editable) {
             // The layout takes the modifiers; the text fills its width (and is one line when
@@ -3926,6 +4008,12 @@ export interface ConvertOptions {
      * as it is the caller who knows where the document came from.
      */
     readFile?: FileReader;
+    /**
+     * Lays the document out in this direction, whatever its own `layoutDirection` says
+     * (components that set one keep theirs): one JSON gives its left-to-right and
+     * right-to-left documents.
+     */
+    layoutDirection?: "ltr" | "rtl";
 }
 
 export function convert(json: string | J, options: ConvertOptions = {}): Uint8Array {
