@@ -26,19 +26,20 @@ import kotlinx.coroutines.delay
  *   `navigate`, whose value is a route of the app's, maybe with `?presentation=modal|replace`.
  *
  * `canGoBack` is read every 50 ms, so the handler is enabled before a gesture starts. A document
- * without these variables reads NaN: the handler stays off.
+ * without these variables reads NaN: the handler stays off. (The player throws for a name the
+ * document does not have, NoSuchElementException, where the newer sources return NaN.)
  */
 @Composable
 internal fun NavigatorHost(player: RemoteComposePlayer, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     var canGoBack by remember(player) { mutableStateOf(false) }
     LaunchedEffect(player) {
         while (true) {
-            canGoBack = player.getNamedFloat("canGoBack") > 0.5f
+            canGoBack = player.floatOrNaN("canGoBack") > 0.5f
             delay(50)
         }
     }
     BackHandler(enabled = canGoBack) {
-        val n = player.getNamedFloat("backCount")
+        val n = player.floatOrNaN("backCount")
         player.setLocalFloat("backCount", (if (n.isNaN()) 0f else n) + 1f)
         // setLocalFloat invalidates the document, not the view: an idle player would not draw
         // (nor re-evaluate what reads backCount) until something else asked for a frame.
@@ -57,3 +58,7 @@ internal fun NavigatorHost(player: RemoteComposePlayer, onBack: () -> Unit, onNa
         onDispose { }
     }
 }
+
+/** A float the document exports, or NaN when it has none of that name. */
+private fun RemoteComposePlayer.floatOrNaN(name: String): Float =
+    try { getNamedFloat(name) } catch (_: NoSuchElementException) { Float.NaN }
