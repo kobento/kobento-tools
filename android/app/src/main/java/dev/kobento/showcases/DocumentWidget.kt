@@ -59,8 +59,9 @@ class DocumentWidget : AppWidgetProvider() {
             if (bytes != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 try {
                     return RemoteViews(RemoteViews.DrawInstructions.Builder(listOf(bytes)).build())
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     // The platform has the API but not the feature (draw_data_parcel off): say so below.
+                    android.util.Log.w("DocumentWidget", "draw instructions refused", e)
                 }
             }
             return RemoteViews(context.packageName, R.layout.widget_message).apply {
@@ -76,15 +77,28 @@ class DocumentWidget : AppWidgetProvider() {
         fun supported() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM
 
         /**
-         * Puts [bytes] on the home screen: asks the launcher to pin a new widget showing it. A
-         * launcher that can't pin is told to add the widget from its list; the document waits for it.
+         * The device's density for the server (`?density=`): the launcher's player lays a
+         * document out in pixels, so the widget gets the document converted to them.
          */
-        fun addToHomeScreen(context: Context, bytes: ByteArray, title: String) {
+        private fun densityParam(context: Context): String =
+            "%.4f".format(java.util.Locale.US, context.resources.displayMetrics.density).trimEnd('0').trimEnd('.')
+
+        /**
+         * Puts a document on the home screen: asks the launcher to pin a new widget showing it.
+         * [densityUrl], the document's .rc on the server, gives the version converted for this
+         * screen's density (the launcher lays documents out in pixels, the documents are in dp);
+         * without it, or when it can't be fetched, [bytes] as they are (they show small). A
+         * launcher that can't pin is told to add the widget from its list; the document waits.
+         */
+        suspend fun addToHomeScreen(context: Context, bytes: ByteArray, title: String, densityUrl: String?) {
             if (!supported()) {
                 Toast.makeText(context, R.string.widget_unsupported, Toast.LENGTH_LONG).show()
                 return
             }
-            nextFile(context).writeBytes(bytes)
+            val sep = if (densityUrl?.contains('?') == true) "&" else "?"
+            val scaled = densityUrl?.let { runCatching { download("$it${sep}density=${densityParam(context)}") }.getOrNull() }
+            if (scaled == null) Toast.makeText(context, R.string.widget_not_scaled, Toast.LENGTH_LONG).show()
+            nextFile(context).writeBytes(scaled ?: bytes)
             val manager = AppWidgetManager.getInstance(context)
             val provider = ComponentName(context, DocumentWidget::class.java)
             val pinned = PendingIntent.getBroadcast(context, 0,

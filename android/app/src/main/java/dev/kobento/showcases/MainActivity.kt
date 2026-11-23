@@ -112,7 +112,7 @@ private fun App(start: String?, account: Account, redirect: MutableState<Uri?>) 
         }
         open != null -> {
             BackHandler { openId = null }
-            PlayerScreen(open, onBack = { openId = null })
+            PlayerScreen(open, account.server, onBack = { openId = null })
         }
         else -> GalleryScreen(
             showcases,

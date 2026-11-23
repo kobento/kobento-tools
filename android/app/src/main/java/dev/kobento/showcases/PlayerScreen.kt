@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,15 +53,17 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.Toast
 import androidx.compose.remote.player.view.RemoteComposePlayer
 import kotlin.math.ceil
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(showcase: Showcase, onBack: () -> Unit) {
+fun PlayerScreen(showcase: Showcase, server: String, onBack: () -> Unit) {
     var look by rememberSaveable(showcase.id) { mutableStateOf(Look.Auto) }
     var info by rememberSaveable(showcase.id) { mutableStateOf(false) }
     val context = LocalContext.current
     // The look being played: its own file (the mono looks are separate documents).
     val bytes = remember(showcase.folder, look) { context.assets.open(showcase.asset(look.file)).use { it.readBytes() } }
+    val scope = rememberCoroutineScope()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -76,7 +79,10 @@ fun PlayerScreen(showcase: Showcase, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back") }
                 },
                 actions = {
-                    if (DocumentWidget.supported()) IconButton(onClick = { DocumentWidget.addToHomeScreen(context, bytes, showcase.name) }) {
+                    // The server's copy, converted for this screen's density (/rc/<id>.rc, a mono look /rc/<id>/<look>.rc).
+                    val look = look.file.removePrefix("doc.").removeSuffix(".rc").takeIf { it != "rc" && it.isNotEmpty() }
+                    val densityUrl = "$server/rc/${showcase.id}${if (look != null) "/$look" else ""}.rc"
+                    if (DocumentWidget.supported()) IconButton(onClick = { scope.launch { DocumentWidget.addToHomeScreen(context, bytes, showcase.name, densityUrl) } }) {
                         Icon(painterResource(R.drawable.ic_widget), contentDescription = stringResource(R.string.widget_add))
                     }
                     IconButton(onClick = { info = !info }) {

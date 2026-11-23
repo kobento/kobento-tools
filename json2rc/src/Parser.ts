@@ -676,10 +676,86 @@ export class Parser {
     /** ConvertOptions.profiles: replaces the header's. */
     private optionProfiles?: number;
 
-    constructor(options: { readFile?: (path: string) => Uint8Array; layoutDirection?: "ltr" | "rtl"; profiles?: number } = {}) {
+    constructor(options: { readFile?: (path: string) => Uint8Array; layoutDirection?: "ltr" | "rtl"; profiles?: number; density?: number } = {}) {
         this.readFile = options.readFile;
         this.optionDirection = options.layoutDirection;
         this.optionProfiles = options.profiles;
+        this.density = Number(options.density) > 0 ? Number(options.density) : 1;
+    }
+    /** ConvertOptions.density: 1 writes the document as it is (in dp). */
+    private density = 1;
+    /** Variables the player writes in pixels (scroll positions): read through a dp companion. */
+    private pixelVars = new Set<string>();
+
+    /** A length (dp) where the player takes pixels: times the density. */
+    lbits(value: J): number {
+        const d = this.density;
+        if (d === 1) return this.fbits(value);
+        if (typeof value === "number") return floatToRawIntBits(value * d);
+        if (typeof value === "string") {
+            if (["NaN", "Infinity", "-Infinity", "max"].includes(value)) return this.fbits(value);
+            if (value.trim() !== "" && !Number.isNaN(Number(value))) return floatToRawIntBits(Number(value) * d);
+            return this.fbits(`(${value}) * ${d}`);
+        }
+        if (value && typeof value === "object" && "value" in value) return this.fbits({ ...value, value: `(${value.value}) * ${d}` });
+        return this.fbits(value);
+    }
+
+    /** A constraint's length: times the density, but -1 (unset) and a missing one as written. */
+    private cbits(value: J): number {
+        return value === undefined || value === null || value === -1 || value === "-1" ? this.fbits(value) : this.lbits(value);
+    }
+
+    /** A literal length (getDouble paths: padding, a size pair): times the density. */
+    private lnum(value: J): number { return floatToRawIntBits(Number(value) * this.density); }
+
+    /** The player's lengths an expression reads, in dp (ConvertOptions.density). */
+    private toDp(s: string): string {
+        if (s.includes("\u0001")) return s.replace(/\u0001/g, "");   // a dp companion's own definition
+        const d = this.density;
+        let out = s.replace(/arrayGet\(\s*@bounds\s*,\s*([^()]*?)\)/g, (m) => `(${m} / ${d})`);
+        // A component's own size: divided in place (it differs per component).
+        out = out.replace(/(?<![\w@$.])(componentWidth\(\)|componentHeight\(\)|componentWidth|componentHeight|width|height)(?![\w(])/g, (m) => `(${m} / ${d})`);
+        // The window and the touch: one dp variable each, declared once (no longer expressions).
+        out = out.replace(/(?<![\w@$.])(windowWidth\(\)|windowHeight\(\)|touchX\(\)|touchY\(\)|touchVelX\(\)|touchVelY\(\)|fontSize\(\)|windowWidth|windowHeight|touchPositionX|touchPositionY|touchPosX|touchPosY|touchX|touchY|touchVelocityX|touchVelocityY|touchVelX|touchVelY|fontSize)(?![\w(])/g, (m) => {
+            const canon = m.replace(/\(\)$/, "").replace(/^touchPos(ition)?/, "touch").replace(/^touchVelocity/, "touchVel");
+            const name = `__dp_${canon}`;
+            if (!this.variables.has(name)) this.variables.defer(name, { type: "variable", name, value: `\u0001${canon}() / ${d}` });
+            return `@${name}`;
+        });
+        out = out.replace(/(?<![\w@$.])density(\(\))?(?![\w(])/g, "1");
+        if (this.pixelVars.size) {
+            out = out.replace(/[@$]([A-Za-z_][\w]*)(?![\w.])/g, (m, name) => (this.pixelVars.has(name) ? `${m}__dp` : m));
+        }
+        return out;
+    }
+
+    /** fbits without the dp rewrite: where the player itself takes the variable (a scroll's position). */
+    private fbitsRaw(value: J): number {
+        const saved = this.expr.rewrite;
+        this.expr.rewrite = null;
+        try { return this.fbits(value); } finally { this.expr.rewrite = saved; }
+    }
+
+    /** Scroll positions (verticalScroll/horizontalScroll "@name"): the player writes them in pixels. */
+    private collectPixelVars(node: J): void {
+        if (Array.isArray(node)) { for (const x of node) this.collectPixelVars(x); return; }
+        if (!node || typeof node !== "object") return;
+        for (const [k, v] of Object.entries(node)) {
+            const lk = k.toLowerCase();
+            if (lk === "verticalscroll" || lk === "horizontalscroll") {
+                const pos = v && typeof v === "object" && !Array.isArray(v) ? (v as J).position : v;
+                if (typeof pos === "string" && /^[@$][A-Za-z_]\w*$/.test(pos)) this.pixelVars.add(pos.slice(1));
+                if (v && typeof v === "object" && (v as J).maxName !== undefined) this.pixelVars.add(String((v as J).maxName));
+            }
+            this.collectPixelVars(v);
+        }
+    }
+
+    /** A pixel variable's dp companion, `<name>__dp`, read in its place (emitted at first use). */
+    private declareDpCompanion(name: string): void {
+        if (this.density === 1 || !this.pixelVars.has(name)) return;
+        this.variables.defer(`${name}__dp`, { type: "variable", name: `${name}__dp`, value: `\u0001@${name} / ${this.density}` });
     }
     private profiles = 0;
     private apiLevel = 7;
@@ -778,7 +854,9 @@ export class Parser {
             }
             // Anything else is an expression: a bare variable reference resolves to its id,
             // otherwise it is compiled and the *result* id comes back NaN-boxed.
-            if (this.expr.isVariable(value)) return this.expr.variableNanBits(value);
+            if (this.expr.isVariable(value)) {
+                if (!(this.expr.rewrite && this.expr.rewrite(value) !== value)) return this.expr.variableNanBits(value);
+            }
             return this.expr.parseExpression(value);
         }
         if (value && typeof value === "object") return this.expr.parseExpression(value);
@@ -809,8 +887,14 @@ export class Parser {
         const direction = this.optionDirection ?? doc.layoutDirection;
         this.rtl = direction === undefined ? false : parseLayoutDirection(direction, "document");
         const tags: Tag[] = [];
+        // ConvertOptions.density on a document that says its own units: in pixels already, it
+        // is written as it is; in dp (the player to scale it), the conversion does the scaling
+        // instead, and the header goes (a launcher's player does not read it).
+        if (this.density !== 1 && Number(header.densityBehavior) === 1) this.density = 1;
+        const dropDensityHeader = this.density !== 1 && Number(header.densityBehavior) === 2;
         for (const [key, value] of Object.entries(header)) {
             if (key === "apiLevel" || key === "orderedResources") continue;
+            if (key === "densityBehavior" && dropDensityHeader) continue;
             if (key === "densityBehavior" && apiLevel < 8) {
                 // RemoteComposeWriter.filterAndValidateTags: below apiLevel 8 the legacy
                 // value (0) is dropped and anything else is refused.
@@ -822,11 +906,18 @@ export class Parser {
             }
             const tag = HEADER_KEY_TO_TAG[key];
             if (tag === undefined) throw new NotImplementedComponent(`Unknown header tag: ${key}`);
-            tags.push([tag, value as number | string]);
+            // The document's size, in pixels for its density (ConvertOptions.density).
+            const scaled = (key === "width" || key === "height") && this.density !== 1 && typeof value === "number"
+                ? Math.round(value * this.density) : value;
+            tags.push([tag, scaled as number | string]);
         }
         this.writer = new Writer(apiLevel, tags, this.profiles);
         this.writer.onComponentId = (id) => { if (!(id in this.componentPaths)) this.componentPaths[id] = this.pathStack.join(".") || "root"; };
         this.expr = new ExpressionParser(this.writer, this.variables);
+        if (this.density !== 1) {
+            this.collectPixelVars(doc);
+            this.expr.rewrite = (e) => this.toDp(e);
+        }
         // First use of a deferred variable materialises it, wherever that happens to be.
         this.variables.resolver = (_name, cmd) => this.materialiseVariable(cmd);
 
@@ -905,12 +996,12 @@ export class Parser {
                 } else if (k === "fillmaxheight") {
                     pushH(modHeight(TYPE_FILL, this.fbits(value)));
                 } else if (k === "width") {
-                    pushW(modWidth(TYPE_EXACT, this.fbits(value)));
+                    pushW(modWidth(TYPE_EXACT, this.lbits(value)));
                 } else if (k === "height") {
-                    pushH(modHeight(TYPE_EXACT, this.fbits(value)));
+                    pushH(modHeight(TYPE_EXACT, this.lbits(value)));
                 } else if (k === "spacedby") {
                     // Not a modifier on the wire: the row/column's own spacing parameter.
-                    this.writer.spacedByBits = this.fbits(value);
+                    this.writer.spacedByBits = this.lbits(value);
                 } else if (k === "ripple") {
                     out.push((w) => w.rippleModifier());   // RippleModifierOperation: the opcode alone
                 } else if (k === "id") {
@@ -926,7 +1017,7 @@ export class Parser {
                         : modBackground(parseColor(value)));
                 } else if (k === "border") {
                     const b = (value ?? {}) as Record<string, J>;
-                    out.push(modBorder(Number(b.width), Number(b.cornerRadius),
+                    out.push(modBorder(Number(b.width) * this.density, Number(b.cornerRadius) * this.density,
                                        this.resolveColor(b.color), Math.trunc(Number(b.shape ?? 0)),
                                        this.apiLevel <= 7));
                 } else if (k === "verticalscroll" || k === "horizontalscroll") {
@@ -949,13 +1040,13 @@ export class Parser {
                         // rcj extension: where the scroll starts (dp, a constant or an
                         // expression), e.g. a wheel picker opening on its current value. The
                         // reference always starts at 0.
-                        if (spec.initial !== undefined) initialBits = this.fbits(spec.initial);
+                        if (spec.initial !== undefined) initialBits = this.lbits(spec.initial);
                     }
                     if (maxName !== undefined && this.variables.has(maxName)) {
                         throw new NotImplementedComponent(`scroll maxName '${maxName}' is already a variable`);
                     }
-                    out.push(modClipRect(), modScroll(direction, this.fbits(position), stop,
-                        maxName === undefined ? undefined : (bits) => this.variables.set(maxName!, bits),
+                    out.push(modClipRect(), modScroll(direction, this.fbitsRaw(position), stop,
+                        maxName === undefined ? undefined : (bits) => { this.variables.set(maxName!, bits); this.declareDpCompanion(maxName!); },
                         initialBits));
                 } else if (k === "visibility") {
                     // A variable id, not a boolean: the document flips the variable and
@@ -987,7 +1078,7 @@ export class Parser {
                         throw new NotImplementedComponent(`Unknown shape type: ${st}`);
                     }
                     if ("radius" in shape) {
-                        const r = Number(shape.radius);
+                        const r = Number(shape.radius) * this.density;
                         out.push(modClipRoundedRect(r, r, r, r));
                     } else {
                         // The wire's corners are sides (top left first): start and end follow
@@ -995,7 +1086,7 @@ export class Parser {
                         const [ts, te, bs, be] = this.rtl
                             ? ["topEnd", "topStart", "bottomEnd", "bottomStart"]
                             : ["topStart", "topEnd", "bottomStart", "bottomEnd"];
-                        const c = (abs: string, rel: string) => Number(shape[abs] ?? shape[rel] ?? 0);
+                        const c = (abs: string, rel: string) => Number(shape[abs] ?? shape[rel] ?? 0) * this.density;
                         out.push(modClipRoundedRect(c("topLeft", ts), c("topRight", te),
                             c("bottomLeft", bs), c("bottomRight", be)));
                     }
@@ -1003,9 +1094,9 @@ export class Parser {
                     // `[w, h]` is a pair, and goes through getDouble rather than parseFloat,
                     // so neither element may be an expression. A scalar covers both axes.
                     if (Array.isArray(value)) {
-                        pushW(modWidth(TYPE_EXACT, numBits(value[0]))); pushH(modHeight(TYPE_EXACT, numBits(value[1])));
+                        pushW(modWidth(TYPE_EXACT, this.lnum(value[0]))); pushH(modHeight(TYPE_EXACT, this.lnum(value[1])));
                     } else {
-                        const v = this.fbits(value);
+                        const v = this.lbits(value);
                         pushW(modWidth(TYPE_EXACT, v)); pushH(modHeight(TYPE_EXACT, v));
                     }
                 } else if (k === "weight" || k === "horizontalweight") {
@@ -1017,12 +1108,13 @@ export class Parser {
                     out.push(modWidthIn(this.fbits(wi[0]), this.fbits(wi[1])));
                 } else if (k === "requiredwidthin" || k === "requiredheightin") {
                     const r = value as J[];
+                    // The player does not scale these by its density (widthIn and heightIn it does).
                     out.push(modDimensionConstraints(k === "requiredwidthin" ? 2 : 3,
-                                                     this.fbits(r[0]), this.fbits(r[1])));
+                                                     this.cbits(r[0]), this.cbits(r[1])));
                 } else if (k === "dimensionconstraints") {
                     const dc = (value ?? {}) as Record<string, J>;
                     const type = optInt(dc.type, 0);
-                    const min = this.fbits(dc.min), max = this.fbits(dc.max);
+                    const min = this.cbits(dc.min), max = this.cbits(dc.max);
                     out.push(modDimensionConstraints(type, min, max));
                 } else if (k === "heightin") {
                     const hi = value as J[];
@@ -1049,10 +1141,10 @@ export class Parser {
                         Boolean(sem.clickable ?? false)));
                 } else if (k === "offset") {
                     if (Array.isArray(value)) {
-                        out.push(modOffset(this.fbits(value[0]), this.fbits(value[1])));
+                        out.push(modOffset(this.lbits(value[0]), this.lbits(value[1])));
                     } else if (value && typeof value === "object") {
                         const o = value as Record<string, J>;
-                        out.push(modOffset(this.fbits(o.x ?? 0), this.fbits(o.y ?? 0)));
+                        out.push(modOffset(this.lbits(o.x ?? 0), this.lbits(o.y ?? 0)));
                     } else {
                         throw new NotImplementedComponent(
                             `offset modifier value ${JSON.stringify(value)}`);
@@ -1072,7 +1164,8 @@ export class Parser {
                     const attrs = new Map<number, number>();
                     for (const [gk, gv] of Object.entries(value)) {
                         const id = GRAPHICS_LAYER_ATTR[gk.toLowerCase()];
-                        if (id !== undefined) attrs.set(id, this.fbits(gv));
+                        // translationX/Y are lengths; scale, rotation and alpha are not.
+                        if (id !== undefined) attrs.set(id, id === 7 || id === 8 ? this.lbits(gv) : this.fbits(gv));
                     }
                     const sorted = [...attrs.entries()].sort((a, b) => a[0] - b[0]);
                     out.push(modGraphicsLayer(sorted));
@@ -1203,11 +1296,12 @@ export class Parser {
                         if (bits === undefined || ((bits >>> 0) & 0xff800000) >>> 0 !== 0xff800000) {
                             throw new NotImplementedComponent(`${k}: record into ${r.into}: not a float list (declare it with vtype "floatList")`);
                         }
-                        w.setArrayValue((bits >>> 0) & 0x7fffff, this.fbits(r.at), this.fbits(r.value));
+                        // Into @bounds (the box the player uses): a length; into the document's own lists: as written (dp).
+                        w.setArrayValue((bits >>> 0) & 0x7fffff, this.fbits(r.at), ref === "bounds" ? this.lbits(r.value) : this.fbits(r.value));
                     }
                     for (const [key, index] of slots) {
                         if (o[key] === undefined) continue;
-                        w.setArrayValue(boundsId, floatToRawIntBits(index), this.fbits(o[key]));
+                        w.setArrayValue(boundsId, floatToRawIntBits(index), this.lbits(o[key]));
                     }
                 } finally {
                     if (saved === undefined) this.variables.remove("bounds"); else this.variables.set("bounds", saved);
@@ -1388,26 +1482,26 @@ export class Parser {
             // [all], [horizontal, vertical] or [start, top, end, bottom] (extra values are
             // ignored); any other length writes no padding at all, as in the reference.
             if (value.length === 2) {
-                const h = numBits(value[0]), v = numBits(value[1]);
+                const h = this.lnum(value[0]), v = this.lnum(value[1]);
                 return [h, v, h, v];
             }
             if (value.length >= 4) {
                 // Right to left, start is the right side.
-                const s = numBits(value[0]), e = numBits(value[2]);
-                return this.rtl ? [e, numBits(value[1]), s, numBits(value[3])]
-                    : [s, numBits(value[1]), e, numBits(value[3])];
+                const s = this.lnum(value[0]), e = this.lnum(value[2]);
+                return this.rtl ? [e, this.lnum(value[1]), s, this.lnum(value[3])]
+                    : [s, this.lnum(value[1]), e, this.lnum(value[3])];
             }
-            if (value.length === 1) { const v = numBits(value[0]); return [v, v, v, v]; }
+            if (value.length === 1) { const v = this.lnum(value[0]); return [v, v, v, v]; }
             return null;
         }
         if (value && typeof value === "object") {
-            const g = (k: string) => numBits(value[k] ?? 0);
+            const g = (k: string) => this.lnum(value[k] ?? 0);
             // start and end follow the layout direction; EXTENSION: left and right are the sides.
-            const side = (abs: string, rel: string) => numBits(value[abs] ?? value[rel] ?? 0);
+            const side = (abs: string, rel: string) => this.lnum(value[abs] ?? value[rel] ?? 0);
             const [l, r] = this.rtl ? ["end", "start"] : ["start", "end"];
             return [side("left", l), g("top"), side("right", r), g("bottom")];
         }
-        const v = this.fbits(value);
+        const v = this.lbits(value);
         return [v, v, v, v];
     }
 
@@ -1637,10 +1731,18 @@ export class Parser {
             const mirror = this.rtl && [true, 1, "true", "1"].includes(component.autoMirror);
             if (mirror) {
                 this.writer.matrixSave();
-                this.writer.matrixTranslate(this.fbits("componentWidth()"), floatToRawIntBits(0));
+                // In pixels: the mirror is set before a density's scale (ConvertOptions.density).
+                this.writer.matrixTranslate(this.fbitsRaw("componentWidth()"), floatToRawIntBits(0));
                 this.writer.matrixScale(floatToRawIntBits(-1), floatToRawIntBits(1));
             }
+            // A document for a density draws its canvases in dp, scaled to pixels.
+            const scaled = this.density !== 1;
+            if (scaled) {
+                this.writer.matrixSave();
+                this.writer.matrixScale(floatToRawIntBits(this.density), floatToRawIntBits(this.density));
+            }
             for (const cmd of component.commands ?? []) this.parseCommand(cmd);
+            if (scaled) this.writer.matrixRestore();
             if (mirror) this.writer.matrixRestore();
             this.writer.endCanvas(this.apiLevel);
             return;
@@ -1671,7 +1773,11 @@ export class Parser {
             }
             const vt = KINDS[String(kind).toLowerCase()];
             if (vt === undefined) throw new NotImplementedComponent(`componentValues: kind '${kind}'`);
-            this.variables.set(name, this.writer.addComponentValue(vt));
+            const bits = this.writer.addComponentValue(vt);
+            if (this.density === 1) { this.variables.set(name, bits); continue; }
+            // The player's pixels, read in dp (ConvertOptions.density).
+            this.variables.set(`${name}__px`, bits);
+            this.variables.set(name, this.expr.parseExpression(`\u0001@${name}__px / ${this.density}`));
         }
     }
 
@@ -2658,8 +2764,8 @@ export class Parser {
             // expressionY and count are required even though the op allows a null Y, because
             // the reference JSON parser throws without them - accepting them here would
             // produce bytes no reference run could be compared against.
-            const xOps = this.expr.infixToRpn(String(command.expressionX));
-            const yOps = this.expr.infixToRpn(String(command.expressionY));
+            const xOps = this.expr.rpn(String(command.expressionX));
+            const yOps = this.expr.rpn(String(command.expressionY));
             checkEquationSize(xOps, "pathExpression expressionX", String(command.expressionX));
             checkEquationSize(yOps, "pathExpression expressionY", String(command.expressionY));
             const pid = w.pathExpression(
@@ -2680,7 +2786,7 @@ export class Parser {
             // how the loop body and any drawing command refer to them.
             const names = (command.variables as J[]).map(String);
             const inits = (command.initialValues as J[]).map((v, i) => {
-                const ops = this.expr.infixToRpn(String(v));
+                const ops = this.expr.rpn(String(v));
                 checkEquationSize(ops, `createParticles initialValues[${i}]`, String(v));
                 return ops;
             });
@@ -2699,10 +2805,10 @@ export class Parser {
             // true — that is what makes an emitter loop rather than run once.
             const systemBits = f("system");
             const restart = "restart" in command
-                ? this.expr.infixToRpn(String(command.restart)) : null;
+                ? this.expr.rpn(String(command.restart)) : null;
             if (restart) checkEquationSize(restart, "particlesLoop restart", String(command.restart));
             const eqs = (command.equations as J[]).map((e, i) => {
-                const ops = this.expr.infixToRpn(String(e));
+                const ops = this.expr.rpn(String(e));
                 checkEquationSize(ops, `particlesLoop equations[${i}]`, String(e));
                 return ops;
             });
@@ -2716,13 +2822,13 @@ export class Parser {
                 const raw = command[key] as J[] | undefined;
                 return raw !== undefined && raw !== null
                     ? raw.map((e, i) => {
-                        const ops = this.expr.infixToRpn(String(e));
+                        const ops = this.expr.rpn(String(e));
                         checkEquationSize(ops, `particlesComparison ${key}[${i}]`, String(e), 46);
                         return ops;
                     }) : null;
             };
             const cond = "condition" in command
-                ? this.expr.infixToRpn(String(command.condition)) : null;
+                ? this.expr.rpn(String(command.condition)) : null;
             if (cond) checkEquationSize(cond, "particlesComparison condition", String(command.condition), 46);
             // `then2` falls back to `then`, matching the reference's spelling of the same
             // field; `then1` has no such alias.
@@ -2755,7 +2861,16 @@ export class Parser {
             w.paint3DState(P3_DEPTH_BIAS, [this.fbits(command.constant ?? 0.0),
                                            this.fbits(command.slope ?? 0.0)]); return;
         }
-        if (t === "drawmesh3d") { w.drawMesh3D(Number(command.mesh), this.meshMode(command)); return; }
+        if (t === "drawmesh3d") {
+            // A document for a density draws its canvases scaled (parseComponent), but the 3D
+            // buffer is already the document's size in pixels: undo the scale around the mesh
+            // (the restore puts the buffer on the canvas, at scale 1).
+            const undo = this.density !== 1;
+            if (undo) { w.matrixSave(); w.matrixScale(floatToRawIntBits(1 / this.density), floatToRawIntBits(1 / this.density)); }
+            w.drawMesh3D(Number(command.mesh), this.meshMode(command));
+            if (undo) w.matrixRestore();
+            return;
+        }
         if (t === "texture3d") {
             // 0 clears the texture; a name would resolve against resources.bitmaps.
             const bitmap = command.bitmap ?? 0;
@@ -2873,7 +2988,7 @@ export class Parser {
                 throw new NotImplementedComponent(
                     `vectorExpression dimension ${dim} (expected 2, 3 or 4)`);
             }
-            const ops = this.expr.infixToRpn(String(command.expression), VECTOR_FUNCTIONS);
+            const ops = this.expr.rpn(String(command.expression), VECTOR_FUNCTIONS);
             const base = w.vectorExpression(dim, Math.trunc(Number(command.flags ?? 0)), ops);
             if (command.name) {
                 // Bind name.x/.y/.z/.w to the component ids so later expressions read them as
@@ -2908,7 +3023,7 @@ export class Parser {
             const rawExpr = command.expression ?? "touchX()";
             const ops = Array.isArray(rawExpr)
                 ? rawExpr.map((v) => this.fbits(v))
-                : this.expr.infixToRpn(String(rawExpr));
+                : this.expr.rpn(String(rawExpr));
             const bits = w.touchExpression(
                 this.fbits(command.defaultValue ?? 0.0), minB, this.fbits(command.max ?? 1.0),
                 Math.trunc(Number(mode)), velB, Math.trunc(Number(command.touchEffects ?? 0)),
@@ -3068,7 +3183,7 @@ export class Parser {
                 this.variables.set("u", VAR1_BITS);
                 this.variables.set("v", VAR2_BITS);
                 try {
-                    return this.expr.infixToRpn(String(expr));
+                    return this.expr.rpn(String(expr));
                 } finally {
                     for (const k of ["u", "v"]) {
                         if (saved[k] === undefined) this.variables.remove(k);
@@ -3426,7 +3541,7 @@ export class Parser {
             // addPolarPathExpression: a PATH_EXPRESSION whose second array is the centre and
             // whose flags carry POLAR (8).
             const id = String(req("id"));
-            const rOps = this.expr.infixToRpn(String(req("expressionR")));
+            const rOps = this.expr.rpn(String(req("expressionR")));
             const start = f("start"), end = f("end"), count = f("count");
             const cx = this.fbits("centerX" in command ? command.centerX : "cx" in command ? command.cx : 0);
             const cy = this.fbits("centerY" in command ? command.centerY : "cy" in command ? command.cy : 0);
@@ -3490,6 +3605,12 @@ export class Parser {
         if (vtype !== "float") {
             throw new NotImplementedComponent(`variable vtype '${vtype}'`);
         }
+        if (this.density !== 1 && this.pixelVars.has(name)) {
+            // A scroll position: the player keeps it in pixels (its start too); the document
+            // reads it through <name>__dp.
+            if (typeof command.value === "number") command = { ...command, value: command.value * this.density };
+            this.declareDpCompanion(name);
+        }
         if (!(this.inFirstPass || commit || flush)) {
             this.variables.defer(name, command);      // emitted at first use
             return;
@@ -3504,7 +3625,7 @@ export class Parser {
             if (val !== null && typeof val === "object") {
                 this.variables.set(name, asNanBits(targetId));
             } else if (typeof val === "string" && /[+\-*/%(),]/.test(val)) {
-                const ops = this.expr.infixToRpn(val);
+                const ops = this.expr.rpn(val);
                 checkExpressionSize(ops, val);
                 this.writer.floatExpressionAt(targetId, ops);
                 this.variables.set(name, asNanBits(targetId));
@@ -3914,14 +4035,21 @@ export class Parser {
                 if (val === "width" || val === "height") {
                     const bits = this.writer.addComponentValue(val === "width" ? OP.CV_WIDTH : OP.CV_HEIGHT);
                     if (isNamed) this.writer.setFloatName(bits & 0x3fffff, name);
-                    this.variables.set(name, bits);
+                    if (this.density === 1) { this.variables.set(name, bits); continue; }
+                    // The player's pixels, read in dp (ConvertOptions.density).
+                    this.variables.set(`${name}__px`, bits);
+                    this.variables.set(name, this.expr.parseExpression(`\u0001@${name}__px / ${this.density}`));
                     continue;
                 }
                 if (val === "fontSize") {
                     if (isNamed) this.writer.setFloatName(33, name);
-                    this.variables.set(name, asNanBits(33));
+                    // The system font size is in pixels: read in dp (ConvertOptions.density).
+                    this.variables.set(name, this.density === 1 ? asNanBits(33) : this.expr.parseExpression(`\u0001fontSize() / ${this.density}`));
                     continue;
                 }
+                // A scroll position starts in pixels (ConvertOptions.density).
+                const pixel = this.density !== 1 && this.pixelVars.has(name);
+                if (pixel && typeof val === "number") val = val * this.density;
                 const bits = typeof val === "number" ? floatToRawIntBits(val) : this.fbits(val);
                 if (!isNanBits(bits)) {
                     const fv = f32FromBits(bits);
@@ -3931,6 +4059,7 @@ export class Parser {
                     if (isNamed) this.writer.setFloatName(bits & 0x3fffff, name);
                     this.variables.set(name, bits);
                 }
+                if (pixel) this.declareDpCompanion(name);
             }
         }
     }
@@ -4045,15 +4174,15 @@ export class Parser {
         // The order matters: each float can be an expression, which writes its ops as it
         // is parsed, so they are read in the order RemoteComposeJsonParser reads them.
         const has = (k: string) => component[k] !== undefined && component[k] !== null;
-        const fontSizeBits = has("fontSize") ? this.fbits(component.fontSize)
-            : has("textSize") ? this.fbits(component.textSize) : floatToRawIntBits(36.0);
+        const fontSizeBits = has("fontSize") ? this.lbits(component.fontSize)
+            : has("textSize") ? this.lbits(component.textSize) : floatToRawIntBits(36.0 * this.density);
         const fontWeightBits = has("fontWeight")
             ? this.fbits(component.fontWeight) : floatToRawIntBits(400.0);
         const textStyleId = optInt(component.textStyleId, -1);
         const minFontSizeBits = has("minFontSize")
-            ? this.fbits(component.minFontSize) : floatToRawIntBits(-1.0);
+            ? this.lbits(component.minFontSize) : floatToRawIntBits(-1.0);
         const maxFontSizeBits = has("maxFontSize")
-            ? this.fbits(component.maxFontSize) : floatToRawIntBits(-1.0);
+            ? this.lbits(component.maxFontSize) : floatToRawIntBits(-1.0);
         let fontStyle = 0;
         if (has("fontStyle")) {
             fontStyle = String(component.fontStyle).toLowerCase() === "italic"
@@ -4063,7 +4192,7 @@ export class Parser {
         const letterSpacingBits = has("letterSpacing")
             ? this.fbits(component.letterSpacing) : floatToRawIntBits(0.0);
         const lineHeightAddBits = has("lineHeightAdd")
-            ? this.fbits(component.lineHeightAdd) : floatToRawIntBits(0.0);
+            ? this.lbits(component.lineHeightAdd) : floatToRawIntBits(0.0);
         const lineHeightMultiplierBits = has("lineHeightMultiplier")
             ? this.fbits(component.lineHeightMultiplier) : floatToRawIntBits(1.0);
         let fontAxis: string[] | null = null;
@@ -4151,6 +4280,13 @@ export interface ConvertOptions {
      * operation those profiles do not allow is refused, as androidx's writer and player do.
      */
     profiles?: number;
+    /**
+     * Writes the document in pixels for a screen of this density: its lengths (dp) times the
+     * density, and the player's lengths it reads (a component's size, a scroll position, a
+     * touch, @bounds) divided by it, so its expressions keep working in dp. For a player that
+     * lays a document out in pixels, as a launcher's widget host does. 1 (or absent): as written.
+     */
+    density?: number;
 }
 
 export function convert(json: string | J, options: ConvertOptions = {}): Uint8Array {

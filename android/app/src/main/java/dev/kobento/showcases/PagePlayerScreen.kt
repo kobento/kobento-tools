@@ -59,6 +59,7 @@ fun PagePlayerScreen(page: PublishedPage, subtitle: String, share: ShareUi?, onB
     val bytes by produceState<Result<ByteArray>?>(null, page.rcUrl, attempt) { value = runCatching { download(page.rcUrl) } }
     val context = LocalContext.current
     var sharing by rememberSaveable(page.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     if (sharing && share != null) ShareDialog(page, share, onDone = { sharing = false })
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -73,7 +74,7 @@ fun PagePlayerScreen(page: PublishedPage, subtitle: String, share: ShareUi?, onB
                 navigationIcon = { IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back") } },
                 actions = {
                     val loaded = bytes?.getOrNull()
-                    if (loaded != null && DocumentWidget.supported()) IconButton(onClick = { DocumentWidget.addToHomeScreen(context, loaded, page.title) }) {
+                    if (loaded != null && DocumentWidget.supported()) IconButton(onClick = { scope.launch { DocumentWidget.addToHomeScreen(context, loaded, page.title, page.rcUrl) } }) {
                         Icon(painterResource(R.drawable.ic_widget), contentDescription = stringResource(R.string.widget_add))
                     }
                     if (share != null) IconButton(onClick = { sharing = true }) {

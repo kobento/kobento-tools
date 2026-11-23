@@ -6,4 +6,5 @@
     <string name="widget_unsupported">This launcher can\'t play RemoteCompose widgets (Android 15 or later)</string>
     <string name="widget_add_manually">%1$s is ready: add a Kobento widget from your launcher\'s widget list</string>
     <string name="widget_add">Add to home screen</string>
+    <string name="widget_not_scaled">Couldn\'t get this screen\'s version from the server: the widget shows the document as written, small</string>
 </resources>

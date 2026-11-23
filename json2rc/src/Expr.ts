@@ -74,15 +74,24 @@ export class ExpressionParser {
                 private variables: { has(n: string): boolean;
                                      get(n: string): number | undefined }) {}
 
+    /**
+     * Applied to an expression's text before it is compiled: a document converted for a
+     * density (ConvertOptions.density) reads the player's lengths (a component's size, a
+     * scroll position, a touch) in dp.
+     */
+    rewrite: ((expression: string) => string) | null = null;
+
     parseExpression(value: any): number {
         if (typeof value === "string") {
-            const ops = this.infixToRpn(value);
-            checkExpressionSize(ops, value);
+            const text = this.rewrite ? this.rewrite(value) : value;
+            const ops = this.infixToRpn(text);
+            checkExpressionSize(ops, text);
             return this.writer.floatExpression(ops);
         }
         if (value && typeof value === "object") {
-            const ops = this.infixToRpn(String(value.value));
-            checkExpressionSize(ops, String(value.value));
+            const text = this.rewrite ? this.rewrite(String(value.value)) : String(value.value);
+            const ops = this.infixToRpn(text);
+            checkExpressionSize(ops, text);
             const duration = Number(value.anim ?? 1.0);
             // anim(duration) with the default easing writes nothing extra at 1.0.
             return this.writer.floatExpression(ops, duration !== 1.0 ? [duration] : null);
@@ -224,6 +233,11 @@ export class ExpressionParser {
             return name.length > 0 && /^[\p{L}\p{N}_.]+$/u.test(name);
         }
         return this.isVariable(token);
+    }
+
+    /** infixToRpn after the rewrite (ConvertOptions.density): what the Parser compiles. */
+    rpn(expression: string, extraFunctions?: Record<string, number>): number[] {
+        return this.infixToRpn(this.rewrite ? this.rewrite(expression) : expression, extraFunctions);
     }
 
     infixToRpn(expression: string, extraFunctions?: Record<string, number>): number[] {
