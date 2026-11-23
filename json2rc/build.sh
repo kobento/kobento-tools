@@ -8,4 +8,5 @@ npx tsc --outDir build --module commonjs --target es2020 --lib es2020,dom \
         --skipLibCheck --esModuleInterop src/Parser.ts
 echo '{"type":"commonjs"}' > build/package.json
 cp tools/cli.js tools/compare-rcj.js build/
+node tools/bundle-browser.cjs
 echo "built -> build/"

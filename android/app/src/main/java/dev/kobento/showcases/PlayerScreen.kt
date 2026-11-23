@@ -53,7 +53,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.Toast
 import androidx.compose.remote.player.view.RemoteComposePlayer
 import kotlin.math.ceil
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,10 +81,16 @@ fun PlayerScreen(showcase: Showcase, server: String, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back") }
                 },
                 actions = {
-                    // The server's copy, converted for this screen's density (/rc/<id>.rc, a mono look /rc/<id>/<look>.rc).
+                    // For a widget, converted for this screen's density: from the look's expanded JSON
+                    // (doc[.<look>].expanded.json beside its .rc), else the server's copy (/rc/<id>.rc,
+                    // a mono look /rc/<id>/<look>.rc).
+                    val jsonAsset = showcase.asset(look.file.removeSuffix(".rc") + ".expanded.json")
+                    val json: suspend () -> String? = {
+                        withContext(Dispatchers.IO) { context.assets.open(jsonAsset).bufferedReader().use { it.readText() } }
+                    }
                     val look = look.file.removePrefix("doc.").removeSuffix(".rc").takeIf { it != "rc" && it.isNotEmpty() }
                     val densityUrl = "$server/rc/${showcase.id}${if (look != null) "/$look" else ""}.rc"
-                    if (DocumentWidget.supported()) IconButton(onClick = { scope.launch { DocumentWidget.addToHomeScreen(context, bytes, showcase.name, densityUrl) } }) {
+                    if (DocumentWidget.supported()) IconButton(onClick = { scope.launch { DocumentWidget.addToHomeScreen(context, bytes, showcase.name, json, densityUrl) } }) {
                         Icon(painterResource(R.drawable.ic_widget), contentDescription = stringResource(R.string.widget_add))
                     }
                     IconButton(onClick = { info = !info }) {

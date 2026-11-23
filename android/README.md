@@ -67,6 +67,13 @@ instructions, Android 15 and later), not this app's: a document newer than that 
 unknown operation), so this needs a newer Android. A widget added from the launcher's widget list
 takes the last document sent; each widget keeps its own (`files/widgets/<id>.rc`).
 
+The launcher's player lays a document out in pixels, and the documents are written in dp, so the
+widget gets the document converted for the screen's density: json2rc's `density` option, run in
+the app (`DensityBaker.kt`: json2rc's browser bundle, `json2rc/build/json2rc-browser.js`, in a
+WebView that is never shown) on the look's expanded JSON (the build copies it beside each
+`.rc`), or a page's JSON (the files its page lists). If that fails it asks the server
+(`<rc url>?density=`), and failing that sends the document as it is, which shows small.
+
 ## Sign in
 
 **Sign in** on the Your pages tab (or a vote on the Stream tab) opens mcp.kobento.dev's own sign-in page in a Custom Tab.

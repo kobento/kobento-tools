@@ -74,7 +74,7 @@ fun PagePlayerScreen(page: PublishedPage, subtitle: String, share: ShareUi?, onB
                 navigationIcon = { IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back") } },
                 actions = {
                     val loaded = bytes?.getOrNull()
-                    if (loaded != null && DocumentWidget.supported()) IconButton(onClick = { scope.launch { DocumentWidget.addToHomeScreen(context, loaded, page.title, page.rcUrl) } }) {
+                    if (loaded != null && DocumentWidget.supported()) IconButton(onClick = { scope.launch { DocumentWidget.addToHomeScreen(context, loaded, page.title, { DocumentWidget.pageJson(page.rcUrl) }, page.rcUrl) } }) {
                         Icon(painterResource(R.drawable.ic_widget), contentDescription = stringResource(R.string.widget_add))
                     }
                     if (share != null) IconButton(onClick = { sharing = true }) {

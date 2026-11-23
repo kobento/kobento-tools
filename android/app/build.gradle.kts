@@ -7,17 +7,21 @@ plugins {
 
 // The showcases come from kobento-mcp's example catalog: examples/SHW-*/ (doc.rc and its mono
 // looks, the light and dark renders as thumbnails, meta.json), and docs/examples-vocabulary.json
-// for the capability labels. A sibling checkout, or KOBENTO_MCP.
+// for the capability labels. A sibling checkout, or KOBENTO_MCP. Also each look's expanded JSON
+// and json2rc's browser bundle (../json2rc/build/json2rc-browser.js): "Add to home screen"
+// converts the document for the screen's density (DensityBaker.kt).
 val kobentoMcp: File = (System.getenv("KOBENTO_MCP") ?: providers.gradleProperty("kobentoMcp").orNull)
     ?.let { file(it) } ?: rootDir.resolve("../../kobento-mcp")
 val examplesDir = kobentoMcp.resolve("examples")
 val vocabularyFile = kobentoMcp.resolve("docs/examples-vocabulary.json")
+val converterFile = rootDir.resolve("../json2rc/build/json2rc-browser.js")
 
 /** Copies the SHW showcases from kobento-mcp/examples into generated assets (showcases/<folder>/), and the vocabulary. */
 abstract class SyncShowcases : DefaultTask() {
     @get:InputFiles @get:PathSensitive(PathSensitivity.RELATIVE) abstract val examples: ConfigurableFileCollection
     @get:Internal abstract val examplesRoot: DirectoryProperty
     @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val vocabulary: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val converter: RegularFileProperty
     @get:OutputDirectory abstract val output: DirectoryProperty
     @get:Inject abstract val fs: FileSystemOperations
 
@@ -29,12 +33,14 @@ abstract class SyncShowcases : DefaultTask() {
         fs.sync {
             from(root) { include(SHOWCASE_FILES); into("showcases") }
             from(vocabulary)
+            from(converter)
             into(output)
         }
     }
 
     companion object {
         val SHOWCASE_FILES = listOf("SHW-*/doc.rc", "SHW-*/doc.mono-dark.rc", "SHW-*/doc.mono-light.rc",
+            "SHW-*/doc.expanded.json", "SHW-*/doc.mono-dark.expanded.json", "SHW-*/doc.mono-light.expanded.json",
             "SHW-*/render-light.png", "SHW-*/render-dark.png", "SHW-*/meta.json")
     }
 }
@@ -43,6 +49,7 @@ val syncShowcases by tasks.registering(SyncShowcases::class) {
     description = "Copies the SHW showcases from kobento-mcp/examples into the app's assets."
     examplesRoot.set(examplesDir)
     vocabulary.set(vocabularyFile)
+    converter.set(converterFile)
     examples.from(fileTree(examplesDir) { include(SyncShowcases.SHOWCASE_FILES) })
 }
 

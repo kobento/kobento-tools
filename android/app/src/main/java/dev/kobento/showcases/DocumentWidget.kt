@@ -73,6 +73,20 @@ class DocumentWidget : AppWidgetProvider() {
             }
         }
 
+        /**
+         * A published page's JSON (for [rcUrl], its `.../pages/<id>/document.rc`): the files its
+         * page lists for its JSON viewer, the expanded one first (components drawn in place,
+         * what json2rc reads), else the document as published; null for a page published
+         * from an .rc.
+         */
+        suspend fun pageJson(rcUrl: String): String? {
+            val base = rcUrl.substringBeforeLast('/') + "/"
+            val html = String(download(base))
+            val files = Regex("\"url\":\"([\\w.-]+\\.json)\"").findAll(html).map { it.groupValues[1] }.toList()
+            val file = files.firstOrNull { it.endsWith(".expanded.json") } ?: files.firstOrNull() ?: return null
+            return String(download(base + file))
+        }
+
         /** Whether this device can show a document in a widget at all. */
         fun supported() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM
 
@@ -85,18 +99,26 @@ class DocumentWidget : AppWidgetProvider() {
 
         /**
          * Puts a document on the home screen: asks the launcher to pin a new widget showing it.
-         * [densityUrl], the document's .rc on the server, gives the version converted for this
-         * screen's density (the launcher lays documents out in pixels, the documents are in dp);
-         * without it, or when it can't be fetched, [bytes] as they are (they show small). A
-         * launcher that can't pin is told to add the widget from its list; the document waits.
+         * The launcher lays documents out in pixels and they are written in dp, so the widget
+         * gets the document converted for this screen's density: from its JSON ([json], the
+         * showcase's own or the page's), converted here (DensityBaker); else the server's copy
+         * ([densityUrl]`?density=`); else [bytes] as they are (they show small, and a message
+         * says so). A launcher that can't pin is told to add the widget from its list; the
+         * document waits.
          */
-        suspend fun addToHomeScreen(context: Context, bytes: ByteArray, title: String, densityUrl: String?) {
+        suspend fun addToHomeScreen(context: Context, bytes: ByteArray, title: String,
+                                    json: (suspend () -> String?)?, densityUrl: String?) {
             if (!supported()) {
                 Toast.makeText(context, R.string.widget_unsupported, Toast.LENGTH_LONG).show()
                 return
             }
+            val density = context.resources.displayMetrics.density
+            val baked = json?.let { source ->
+                runCatching { source()?.let { DensityBaker.bake(context, it, density) } }
+                    .onFailure { android.util.Log.w("DocumentWidget", "no JSON to convert", it) }.getOrNull()
+            }
             val sep = if (densityUrl?.contains('?') == true) "&" else "?"
-            val scaled = densityUrl?.let { runCatching { download("$it${sep}density=${densityParam(context)}") }.getOrNull() }
+            val scaled = baked ?: densityUrl?.let { runCatching { download("$it${sep}density=${densityParam(context)}") }.getOrNull() }
             if (scaled == null) Toast.makeText(context, R.string.widget_not_scaled, Toast.LENGTH_LONG).show()
             nextFile(context).writeBytes(scaled ?: bytes)
             val manager = AppWidgetManager.getInstance(context)
