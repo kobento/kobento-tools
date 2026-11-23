@@ -57,6 +57,16 @@ keyPassword=...
 To open one showcase directly:
 `adb shell am start -n dev.kobento.showcases/.MainActivity --es showcase SHW-23`
 
+## Home screen widget
+
+**Add to home screen** (the widget icon on a showcase or a page) asks the launcher to pin a
+Kobento widget playing the document being shown, in the look selected (`DocumentWidget.kt`).
+The launcher plays it with the platform's own RemoteCompose player (RemoteViews draw
+instructions, Android 15 and later), not this app's: a document newer than that player shows
+"Can't load widget". Android 15's player can't read current documents (it stops at an
+unknown operation), so this needs a newer Android. A widget added from the launcher's widget list
+takes the last document sent; each widget keeps its own (`files/widgets/<id>.rc`).
+
 ## Sign in
 
 **Sign in** on the Your pages tab (or a vote on the Stream tab) opens mcp.kobento.dev's own sign-in page in a Custom Tab.

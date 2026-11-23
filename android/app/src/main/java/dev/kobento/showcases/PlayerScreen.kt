@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +58,9 @@ import kotlin.math.ceil
 fun PlayerScreen(showcase: Showcase, onBack: () -> Unit) {
     var look by rememberSaveable(showcase.id) { mutableStateOf(Look.Auto) }
     var info by rememberSaveable(showcase.id) { mutableStateOf(false) }
+    val context = LocalContext.current
+    // The look being played: its own file (the mono looks are separate documents).
+    val bytes = remember(showcase.folder, look) { context.assets.open(showcase.asset(look.file)).use { it.readBytes() } }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -72,6 +76,9 @@ fun PlayerScreen(showcase: Showcase, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back") }
                 },
                 actions = {
+                    if (DocumentWidget.supported()) IconButton(onClick = { DocumentWidget.addToHomeScreen(context, bytes, showcase.name) }) {
+                        Icon(painterResource(R.drawable.ic_widget), contentDescription = stringResource(R.string.widget_add))
+                    }
                     IconButton(onClick = { info = !info }) {
                         Icon(painterResource(R.drawable.ic_info), contentDescription = if (info) "Hide details" else "Details")
                     }
@@ -81,9 +88,6 @@ fun PlayerScreen(showcase: Showcase, onBack: () -> Unit) {
         },
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets)) {
-            val context = LocalContext.current
-            // The look being played: its own file (the mono looks are separate documents).
-            val bytes = remember(showcase.folder, look) { context.assets.open(showcase.asset(look.file)).use { it.readBytes() } }
             AnimatedVisibility(info) { Details(showcase, bytes.size) }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),

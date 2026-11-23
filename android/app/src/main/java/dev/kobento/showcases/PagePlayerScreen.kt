@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -71,6 +72,10 @@ fun PagePlayerScreen(page: PublishedPage, subtitle: String, share: ShareUi?, onB
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back") } },
                 actions = {
+                    val loaded = bytes?.getOrNull()
+                    if (loaded != null && DocumentWidget.supported()) IconButton(onClick = { DocumentWidget.addToHomeScreen(context, loaded, page.title) }) {
+                        Icon(painterResource(R.drawable.ic_widget), contentDescription = stringResource(R.string.widget_add))
+                    }
                     if (share != null) IconButton(onClick = { sharing = true }) {
                         Icon(painterResource(R.drawable.ic_share),
                             contentDescription = if (page.stream != null) "Edit or take out of the stream" else "Share to the stream")
