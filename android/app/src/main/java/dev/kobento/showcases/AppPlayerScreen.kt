@@ -180,7 +180,9 @@ private fun AppStack(app: AppSpec, base: String, fetch: suspend (String) -> Byte
         val (route, params) = hit
         val tab = app.tabs.indexOfFirst { it.screen == route.to }
         if (tab >= 0) {
+            // The tab's first screen is what the route names: that tab, back to its first screen.
             cur = tab
+            while (stacks[tab].size > 1) stacks[tab].removeAt(stacks[tab].lastIndex)
             stacks[tab].first().player?.let { p -> params.forEach { (k, v) -> p.setString(k, v) } }
             return
         }

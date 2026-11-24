@@ -263,7 +263,9 @@ private struct AppStack: View {
     private func navigate(from: StackEntry, sent: String) {
         guard let hit = app.resolve(from: from.screen, sent: sent) else { show("\(sent) goes nowhere in this app"); return }
         if let t = app.tabs.firstIndex(where: { $0.screen == hit.route.to }) {
-            selectTab(t)
+            // The tab's first screen is what the route names: that tab, back to its first screen.
+            if t != cur { selectTab(t) }
+            if stacks[t].count > 1 { withAnimation(.easeInOut(duration: 0.28)) { stacks[t] = [stacks[t][0]] } }
             if let p = stacks[t].first?.nav.player { for (k, v) in hit.params { p.keep(string: v, named: k) } }
             return
         }
