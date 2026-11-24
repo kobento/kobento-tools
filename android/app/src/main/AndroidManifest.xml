@@ -32,6 +32,17 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="dev.kobento.showcases" />
             </intent-filter>
+            <!-- An app's link (kobento-mcp's apps: https://mcp.kobento.dev/apps/<id>/, or under /deploy/) opens
+                 here: App Links, verified by the site's /.well-known/assetlinks.json (RC_ANDROID_CERT_SHA256). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="mcp.kobento.dev" />
+                <data android:pathPattern="/apps/..*" />
+                <data android:pathPattern="/deploy/apps/..*" />
+            </intent-filter>
         </activity>
 
         <!-- A launcher widget playing a document (DocumentWidget; the player's "Add to home screen"). -->

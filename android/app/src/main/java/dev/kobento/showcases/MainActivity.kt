@@ -28,6 +28,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var account: Account
     /** The sign-in's answer (dev.kobento.showcases:/oauth?code=...), until App has handled it. */
     private val redirect = mutableStateOf<Uri?>(null)
+    /** An app's link the activity was opened with (App Links: https://mcp.kobento.dev/apps/<id>/). */
+    private val appLink = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,7 +43,7 @@ class MainActivity : ComponentActivity() {
         DpHost.enabled = intent.getBooleanExtra("dp", true)
         intent.getStringExtra(EXTRA_SERVER)?.let { account.useServer(it) }
         takeRedirect(intent)
-        setContent { ShowcasesTheme { App(start, startApp, account, redirect) } }
+        setContent { ShowcasesTheme { App(start, startApp, account, redirect, appLink) } }
     }
 
     // singleTask: the Custom Tab's redirect comes back to this activity.
@@ -53,6 +55,8 @@ class MainActivity : ComponentActivity() {
     private fun takeRedirect(intent: Intent?) {
         val uri = intent?.data
         if (intent?.action == Intent.ACTION_VIEW && account.isRedirect(uri)) redirect.value = uri
+        else if (intent?.action == Intent.ACTION_VIEW && uri?.scheme == "https" && Regex("^(/[^/]+)?/apps/[A-Za-z0-9_-]{22}/?$").matches(uri.path.orEmpty()))
+            appLink.value = uri.buildUpon().clearQuery().fragment(null).build().toString().let { if (it.endsWith("/")) it else "$it/" }
     }
 
     companion object {
@@ -63,7 +67,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun App(start: String?, startApp: String?, account: Account, redirect: MutableState<Uri?>) {
+private fun App(start: String?, startApp: String?, account: Account, redirect: MutableState<Uri?>, appLink: MutableState<String?>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val showcases = remember { loadShowcases(context.assets) }
@@ -77,8 +81,8 @@ private fun App(start: String?, startApp: String?, account: Account, redirect: M
     var error by remember { mutableStateOf<String?>(null) }
     var pages by remember { mutableStateOf<List<PublishedPage>?>(null) }
     var apps by remember { mutableStateOf<List<MyApp>?>(null) }
-    // An app playing: its link and name.
-    var openApp by rememberSaveable { mutableStateOf(startApp?.let { listOf(it, "App") }) }
+    // An app playing: its link, name, and "draft" for the owner's draft (read signed in).
+    var openApp by rememberSaveable { mutableStateOf(startApp?.let { listOf(it, "App", "") }) }
 
     // Runs one account step, with the spinner and the error line.
     fun run(step: suspend () -> Unit) {
@@ -94,6 +98,10 @@ private fun App(start: String?, startApp: String?, account: Account, redirect: M
         apps = try { account.apps() } catch (e: Account.HttpError) { if (e.status == 404) emptyList() else throw e }
     }
     val refresh = { run { reload() } }
+
+    // An app's link opened from elsewhere: play it.
+    val linked = appLink.value
+    LaunchedEffect(linked) { if (linked != null) { appLink.value = null; openApp = listOf(linked, "App", "") } }
 
     // The sign-in's answer: tokens, then the pages.
     val answer = redirect.value
@@ -112,7 +120,9 @@ private fun App(start: String?, startApp: String?, account: Account, redirect: M
     when {
         appPlaying != null -> {
             BackHandler { openApp = null }
-            AppPlayerScreen(appPlaying[0], appPlaying[1], onBack = { openApp = null })
+            val draft = appPlaying.getOrNull(2) == "draft"
+            AppPlayerScreen(appPlaying[0], appPlaying[1], onBack = { openApp = null }, draft = draft,
+                fetch = if (draft) { url -> account.authorizedDownload(url) } else { url -> download(url) })
         }
         playing != null -> {
             BackHandler { openPage = null }
@@ -133,7 +143,10 @@ private fun App(start: String?, startApp: String?, account: Account, redirect: M
             showcases,
             AccountUi(
                 email = account.email, busy = busy, error = error, pages = pages, apps = apps,
-                onOpenApp = { app -> app.url?.let { openApp = listOf(it, app.title) } },
+                onOpenApp = { app, draft ->
+                    val link = if (draft) app.draft else app.url
+                    link?.let { openApp = listOf(it, app.title, if (draft) "draft" else "") }
+                },
                 onSignIn = { run { account.startSignIn(context) } },
                 onSignOut = { run { account.signOut(); pages = null; apps = null } },
                 onRefresh = refresh,
@@ -150,7 +163,10 @@ private fun App(start: String?, startApp: String?, account: Account, redirect: M
                 report = { id, reason, note -> account.report(id, reason, note) },
                 block = { id -> account.block(id) },
                 onSignIn = { run { account.startSignIn(context) } },
-                onOpen = { openPage = OpenPage(it.page, "by ${it.author}", own = false) },
+                onOpen = {
+                    if (it.isApp) openApp = listOf(it.page.url, it.title, "")
+                    else openPage = OpenPage(it.page, "by ${it.author}", own = false)
+                },
             ),
             tab = tab,
             onTab = { tab = it },

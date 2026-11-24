@@ -17,6 +17,7 @@ struct KobentoShowcasesApp: App {
 /// Three tabs: the bundled showcases, the public stream, and the account's own pages.
 struct RootView: View {
     @State private var tab = Launch.tab
+    @Environment(AppModel.self) private var model
 
     enum Tab: String { case showcases, stream, pages }
 
@@ -31,6 +32,17 @@ struct RootView: View {
             PagesTab()
                 .tabItem { Label("Your pages", systemImage: "person") }
                 .tag(Tab.pages)
+        }
+        // A universal link to an app (https://mcp.kobento.dev/apps/<id>/, or under /deploy/): play it
+        // on Your pages. The site's apple-app-site-association names this app (RC_APPLE_APP_IDS).
+        .onOpenURL { url in
+            guard url.scheme == "https", url.path.firstMatch(of: #/^(/[^/]+)?/apps/[A-Za-z0-9_-]{22}/?$/#) != nil else { return }
+            var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            c?.query = nil; c?.fragment = nil
+            guard var link = c?.url?.absoluteString else { return }
+            if !link.hasSuffix("/") { link += "/" }
+            tab = .pages
+            model.pendingApp = OpenApp(link: URL(string: link)!, title: "App")
         }
     }
 }

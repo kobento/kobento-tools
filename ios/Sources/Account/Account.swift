@@ -142,9 +142,15 @@ final class Account {
             guard let id = a["app_id"] as? String else { return nil }
             // The link is absolute, or under the server when the server does not know its own address.
             let link = (a["url"] as? String).nonEmpty.flatMap { URL(string: $0.hasPrefix("/") ? server + $0 : $0) }
+            let draft = (a["draft"] as? String).nonEmpty.flatMap { URL(string: $0.hasPrefix("/") ? server + $0 : $0) }
             return MyApp(id: id, title: (a["title"] as? String).nonEmpty ?? "Untitled", screens: a["screens"] as? Int ?? 0,
-                         link: link, version: a["version"] as? Int ?? 0)
+                         link: link, version: a["version"] as? Int ?? 0, draft: draft)
         }
+    }
+
+    /// A file only the signed-in account may read (an app's draft: its app.json and screens).
+    func authorizedDownload(_ url: URL) async throws -> Data {
+        try await authorized("GET", url.absoluteString)
     }
 
     /// The public stream (stream/items.json): newest or top first, only `tag`'s items, matching

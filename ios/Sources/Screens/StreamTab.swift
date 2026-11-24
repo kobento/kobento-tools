@@ -71,6 +71,7 @@ struct StreamTab: View {
                 await model.loadStream()
             }
             .navigationDestination(for: OpenPage.self) { PagePlayerScreen(open: $0) }
+            .navigationDestination(for: OpenApp.self) { AppPlayerScreen(open: $0) }
             .sheet(item: $reporting) { item in
                 ReportSheet(item: item) { reason, note in
                     reporting = nil
@@ -137,9 +138,7 @@ struct StreamCard: View {
     var onReport: (() -> Void)?
     var onBlock: (() -> Void)?
 
-    var body: some View {
-        VStack(spacing: 0) {
-            NavigationLink(value: OpenPage(page: item.page, subtitle: "by \(item.author)", own: false)) {
+    private var card: some View {
                 Card {
                     RemoteImage(url: item.page.previewUrl)
                         .overlay(alignment: .topLeading) {
@@ -155,6 +154,17 @@ struct StreamCard: View {
                     if !item.tags.isEmpty {
                         Text(item.tags.map { "#\($0)" }.joined(separator: "  ")).font(.caption).foregroundStyle(Color.accentColor).lineLimit(1)
                     }
+                }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Group {
+                // An app plays screen by screen; a page in the page player.
+                if item.isApp, let link = item.page.url {
+                    NavigationLink(value: OpenApp(link: link, title: item.title)) { card }
+                } else {
+                    NavigationLink(value: OpenPage(page: item.page, subtitle: "by \(item.author)", own: false)) { card }
                 }
             }
             .buttonStyle(.plain)

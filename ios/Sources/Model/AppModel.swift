@@ -11,6 +11,8 @@ final class AppModel {
     var pages: [PublishedPage]?
     /// The account's apps (several pages tied together), or nil until listed.
     var apps: [MyApp]?
+    /// An app's link the app was opened with (a universal link), for Your pages to play.
+    var pendingApp: OpenApp?
     /// The account's public name (the stream shows it with what it posts), or nil.
     var name: String?
     var busy = false

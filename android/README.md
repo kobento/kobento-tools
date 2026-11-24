@@ -29,7 +29,20 @@ over the last (a sheet rising from the bottom), with the route's values (`/plant
 set as the screen's string variables; back (the system gesture, or a document's back) returns to
 the screen under it as it was left, each screen on the stack keeping its own player. The app's
 shared values (a cart count) are set on each screen that declares them and read back from the
-screen showing. To open one directly:
+screen showing; those the app marks `persist` are kept for next time (SharedPreferences, per app).
+
+- **Tabs.** An app with tabs (`set_tabs`) has a Material navigation bar (the icons are Material
+  Symbols paths from app.json): each tab keeps its own stack, with its players alive while another
+  tab shows; a route to a tab's screen switches to it, tapping the tab showing goes back to its
+  first screen, and back on another tab's first screen goes to the first tab.
+- **Drafts.** A row's **Draft** (or the row itself, before the app is published) plays the owner's
+  draft, the pages as they are now (`<server>/deploy/apps/<id>/draft/`, read with the access token).
+- **The stream.** An app posted to the stream (`apps {"action": "share"}`) plays here too.
+- **Links.** An app's link (`https://mcp.kobento.dev/apps/<id>/`, or under `/deploy/`) opens in the
+  app: App Links (`autoVerify`), verified once the site serves `/.well-known/assetlinks.json`
+  (`RC_ANDROID_CERT_SHA256` on the server: the release signing certificate's SHA-256).
+
+The app script (`set_script`) runs only on the web. To open one directly:
 
 ```sh
 adb shell am start -n dev.kobento.showcases/.MainActivity --es app https://mcp.kobento.dev/apps/<id>/

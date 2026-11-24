@@ -63,6 +63,8 @@ struct StreamItem: Identifiable, Hashable {
     /// This account's vote (1, -1, 0), or nil signed out.
     var myVote: Int?
     let showcase: Bool
+    /// An app (several screens, played by AppPlayerScreen from page.url), not a page.
+    let isApp: Bool
     let page: PublishedPage
 
     init(json j: [String: Any]) {
@@ -75,6 +77,7 @@ struct StreamItem: Identifiable, Hashable {
         downs = j["downs"] as? Int ?? 0
         myVote = j["my_vote"] as? Int
         showcase = j["showcase"] as? Bool ?? false
+        isApp = j["kind"] as? String == "app"
         page = PublishedPage(json: j)
     }
 }

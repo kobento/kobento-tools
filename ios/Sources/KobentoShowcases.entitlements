@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- An app's link (https://mcp.kobento.dev/apps/<id>/) opens in this app: the site's
+	     /.well-known/apple-app-site-association names it (RC_APPLE_APP_IDS on the server). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:mcp.kobento.dev</string>
+	</array>
+</dict>
+</plist>

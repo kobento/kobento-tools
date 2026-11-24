@@ -59,7 +59,8 @@ data class AccountUi(
     val pages: List<PublishedPage>?,
     /** The account's apps (null until listed). */
     val apps: List<MyApp>? = null,
-    val onOpenApp: (MyApp) -> Unit = {},
+    /** Plays an app: its published copy, or (draft) the owner's pages as they are now. */
+    val onOpenApp: (MyApp, Boolean) -> Unit = { _, _ -> },
     val onSignIn: () -> Unit,
     val onSignOut: () -> Unit,
     val onRefresh: () -> Unit,
@@ -154,7 +155,7 @@ private fun PagesTab(account: AccountUi, insets: PaddingValues) {
         val apps = account.apps.orEmpty()
         if (account.email != null && apps.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) { Text("Apps", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp)) }
-            items(apps, key = { "app-" + it.id }, span = { GridItemSpan(maxLineSpan) }) { AppRow(it, onClick = { account.onOpenApp(it) }) }
+            items(apps, key = { "app-" + it.id }, span = { GridItemSpan(maxLineSpan) }) { AppRow(it, onOpen = { draft -> account.onOpenApp(it, draft) }) }
             item(span = { GridItemSpan(maxLineSpan) }) { Text("Pages", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
         }
         val pages = account.pages
@@ -171,20 +172,27 @@ private fun PagesTab(account: AccountUi, insets: PaddingValues) {
     }
 }
 
-/** An app in the list: its name and screens; one not published yet cannot be played here. */
+/**
+ * An app in the list: its name and screens. A tap plays the published app (the draft when it is
+ * not published yet); Draft plays the pages as they are now.
+ */
 @Composable
-private fun AppRow(app: MyApp, onClick: () -> Unit) {
+private fun AppRow(app: MyApp, onOpen: (draft: Boolean) -> Unit) {
+    val canPlay = app.url != null || app.draft != null
     Card(
-        modifier = Modifier.fillMaxWidth().let { if (app.url != null) it.clickable(onClick = onClick) else it },
+        modifier = Modifier.fillMaxWidth().let { if (canPlay) it.clickable { onOpen(app.url == null) } else it },
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Text(app.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                "${app.screens} screen${if (app.screens == 1) "" else "s"}" + if (app.url == null) " · not published yet" else " · version ${app.version}",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                Text(app.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "${app.screens} screen${if (app.screens == 1) "" else "s"}" + if (app.url == null) " · draft, not published yet" else " · version ${app.version}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (app.url != null && app.draft != null) TextButton(onClick = { onOpen(true) }) { Text("Draft") }
         }
     }
 }

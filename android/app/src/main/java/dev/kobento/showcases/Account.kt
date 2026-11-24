@@ -134,7 +134,28 @@ class Account(context: Context) {
     suspend fun apps(): List<MyApp> {
         val a = JSONObject(authorizedGet("$server/deploy/apps.json")).getJSONArray("apps")
         return (0 until a.length()).map { a.getJSONObject(it) }.map {
-            MyApp(it.getString("app_id"), it.optString("title"), it.optInt("screens"), it.optString("url").ifEmpty { null }, it.optInt("version"))
+            MyApp(it.getString("app_id"), it.optString("title"), it.optInt("screens"), it.optString("url").ifEmpty { null }, it.optInt("version"),
+                draft = it.optString("draft").ifEmpty { null })
+        }
+    }
+
+    /** A file only the signed-in account may read (an app's draft: its app.json and screens). */
+    suspend fun authorizedDownload(url: String): ByteArray {
+        suspend fun once(token: String): ByteArray = withContext(Dispatchers.IO) {
+            val c = URL(url).openConnection() as HttpURLConnection
+            try {
+                c.connectTimeout = 15_000
+                c.readTimeout = 30_000
+                c.setRequestProperty("Authorization", "Bearer $token")
+                if (c.responseCode >= 400) throw HttpError(c.responseCode, "HTTP ${c.responseCode} for $url")
+                c.inputStream.use { it.readBytes() }
+            } finally {
+                c.disconnect()
+            }
+        }
+        return try { once(accessToken()) } catch (e: HttpError) {
+            if (e.status != 401) throw e
+            once(accessToken(forceRefresh = true))
         }
     }
 
@@ -158,9 +179,10 @@ class Account(context: Context) {
                     author = it.optString("author"), authorId = if (it.isNull("author_id")) null else it.optLong("author_id"), tags = it.optJSONArray("tags").strings(),
                     score = it.optInt("score"), ups = it.optInt("ups"), downs = it.optInt("downs"),
                     myVote = if (it.isNull("my_vote")) null else it.optInt("my_vote"), showcase = it.optBoolean("showcase"),
+                    isApp = it.optString("kind") == "app",
                     page = PublishedPage(
                         id = it.getString("page_id"), title = it.optString("title").ifBlank { "Untitled" }, url = it.getString("url"),
-                        rcUrl = it.getString("rc_url"), previewUrl = it.optString("preview_url").takeIf { u -> u.isNotBlank() && u != "null" },
+                        rcUrl = if (it.isNull("rc_url")) "" else it.optString("rc_url"), previewUrl = it.optString("preview_url").takeIf { u -> u.isNotBlank() && u != "null" },
                         created = it.optString("created"), rcBytes = it.optInt("rc_bytes"),
                         width = doc?.optInt("width") ?: 0, height = doc?.optInt("height") ?: 0,
                     ),
@@ -372,7 +394,9 @@ class Account(context: Context) {
 data class MyPages(val email: String, val name: String?, val pages: List<PublishedPage>)
 
 /** An app of the account's: several pages tied together; `url` (its published link) is null until it is published. */
-data class MyApp(val id: String, val title: String, val screens: Int, val url: String?, val version: Int)
+data class MyApp(val id: String, val title: String, val screens: Int, val url: String?, val version: Int,
+    /** The owner's draft (the pages as they are now), played signed in. */
+    val draft: String? = null)
 
 /** A page's entry in the stream: the name it is shown under, its tags and its score. */
 data class StreamEntry(val title: String, val tags: List<String>, val score: Int)
@@ -409,6 +433,8 @@ data class StreamItem(
     /** This account's vote (1, -1, 0), or null signed out. */
     val myVote: Int?,
     val showcase: Boolean,
+    /** An app (several screens, played by AppPlayerScreen from page.url), not a page. */
+    val isApp: Boolean = false,
     val page: PublishedPage,
 )
 

@@ -2,7 +2,8 @@ import XCTest
 
 /// An app (kobento-mcp's apps tool) played screen by screen: opened at launch from its link
 /// (TEST_RUNNER_KOBENTO_APP), then a list of taps (TEST_RUNNER_APP_TAPS: "x,y" in iPhone 17 Pro
-/// points, or "back" for the navigation bar's back, separated by ";"), a screenshot after each,
+/// points, "back" for the navigation bar's back, or "edge" for a swipe from the leading edge,
+/// separated by ";"), a screenshot after each,
 /// attached and, with TEST_RUNNER_APP_SHOTS (a directory), written there as 1.png, 2.png...
 /// Skipped without an app link.
 final class AppPlayerTests: XCTestCase {
@@ -18,6 +19,10 @@ final class AppPlayerTests: XCTestCase {
         for (i, step) in steps.enumerated() {
             if step == "back" {
                 app.navigationBars.buttons["Back"].tap()
+            } else if step == "edge" {
+                let w = app.windows.firstMatch
+                w.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+                    .press(forDuration: 0.05, thenDragTo: w.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
             } else {
                 let xy = step.split(separator: ",").compactMap { Double($0) }
                 XCTAssertEqual(xy.count, 2, "a tap is x,y: \(step)")

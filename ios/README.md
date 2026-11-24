@@ -27,17 +27,32 @@ a published one plays screen by screen (`Sources/Screens/AppPlayerScreen.swift`)
 when it was published, `<link>app.json` and `<link>screens/<screen>.rc`. A route opens its screen
 sliding in over the last (a sheet rising from the bottom over a dimmed screen; a tap on the dim
 closes it), with the route's values (`/plant/:id` gives `id`) set as the screen's string variables;
-back (the navigation bar's, or a document's back) returns to the screen under it as it was left,
-each screen on the stack keeping its own player. The app's shared values (a cart count) are set on
-each screen that declares them and read back from the screen showing. Routes resolve as on the
-server, the web page and the Android app. To open one at launch:
+back (the navigation bar's, a swipe from the leading edge, or a document's back) returns to the
+screen under it as it was left, each screen on the stack keeping its own player. The app's shared
+values (a cart count) are set on each screen that declares them and read back from the screen
+showing; those the app marks `persist` are kept for next time (UserDefaults, per app). Routes
+resolve as on the server, the web page and the Android app.
+
+- **Tabs.** An app with tabs (`set_tabs`) plays under its own bottom bar (the icons are Material
+  Symbols paths from app.json, drawn by `SVGPathShape`), in place of this app's: each tab keeps its
+  own stack, a route to a tab's screen switches to it, and tapping the tab showing goes back to its
+  first screen.
+- **Drafts.** A row's **Draft** (or the row itself, before the app is published) plays the owner's
+  draft, the pages as they are now (`<server>/deploy/apps/<id>/draft/`, read with the access token).
+- **The stream.** An app posted to the stream (`apps {"action": "share"}`) plays here too.
+- **Links.** An app's link (`https://mcp.kobento.dev/apps/<id>/`, or under `/deploy/`) opens in the
+  app (universal links: `Sources/KobentoShowcases.entitlements`, device builds; the site serves
+  `/.well-known/apple-app-site-association` when `RC_APPLE_APP_IDS` names `<team id>.dev.kobento.showcases`).
+
+The app script (`set_script`) runs only on the web; here an action the app does not know shows as a
+note. To open one at launch:
 
 ```sh
 xcrun simctl launch booted dev.kobento.showcases -tab pages -app https://mcp.kobento.dev/apps/<id>/
 ```
 
 `UITests/AppPlayerTests.swift` plays one: `TEST_RUNNER_KOBENTO_APP` (its link), `TEST_RUNNER_APP_TAPS`
-(`"197,295;back"`: points, or the bar's back) and `TEST_RUNNER_APP_SHOTS` (a directory for the
+(`"197,295;edge;back"`: points, a swipe from the leading edge, or the bar's back) and `TEST_RUNNER_APP_SHOTS` (a directory for the
 screenshots); skipped without a link.
 
 ## Build

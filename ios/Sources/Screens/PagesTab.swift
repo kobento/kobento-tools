@@ -18,10 +18,18 @@ struct PagesTab: View {
                         if let apps = model.apps, !apps.isEmpty {
                             Text("Apps").font(.headline).padding(.top, 4)
                             ForEach(apps) { a in
-                                if let link = a.link {
-                                    NavigationLink(value: OpenApp(link: link, title: a.title)) { AppRow(app: a) }
+                                // The published app, or the draft (the pages as they are now) before it is.
+                                if let link = a.link ?? a.draft {
+                                    NavigationLink(value: OpenApp(link: link, title: a.title, draft: a.link == nil)) { AppRow(app: a) }
                                         .buttonStyle(.plain)
                                         .accessibilityIdentifier("app-\(a.id)")
+                                        .overlay(alignment: .trailing) {
+                                            if a.link != nil, let d = a.draft {
+                                                NavigationLink("Draft", value: OpenApp(link: d, title: a.title, draft: true))
+                                                    .font(.subheadline).padding(.trailing, 36)
+                                                    .accessibilityIdentifier("app-draft-\(a.id)")
+                                            }
+                                        }
                                 } else {
                                     AppRow(app: a)
                                 }
@@ -54,6 +62,12 @@ struct PagesTab: View {
                 DispatchQueue.main.async { path.append(OpenApp(link: link, title: "App")) }
             }
         }
+        // An app's link opened from elsewhere (a universal link): play it.
+        .onChange(of: model.pendingApp) { _, open in
+            guard let open else { return }
+            model.pendingApp = nil
+            path.append(open)
+        }
     }
 }
 
@@ -65,11 +79,11 @@ private struct AppRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Text("\(app.screens) screen\(app.screens == 1 ? "" : "s") · " + (app.link == nil ? "not published yet" : "version \(app.version)"))
+                Text("\(app.screens) screen\(app.screens == 1 ? "" : "s") · " + (app.link == nil ? "draft, not published yet" : "version \(app.version)"))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if app.link != nil { Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary) }
+            if app.link != nil || app.draft != nil { Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary) }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
