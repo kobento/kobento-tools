@@ -36,10 +36,12 @@ class MainActivity : ComponentActivity() {
         // `adb shell am start -n dev.kobento.showcases/.MainActivity --es showcase SHW-23` opens one;
         // `--es server http://localhost:8899` signs in to another server (a local one, for tests).
         val start = intent.getStringExtra(EXTRA_SHOWCASE)
+        // `--es app <link>` plays an app (kobento-mcp's apps tool) from its link.
+        val startApp = intent.getStringExtra(EXTRA_APP)
         DpHost.enabled = intent.getBooleanExtra("dp", true)
         intent.getStringExtra(EXTRA_SERVER)?.let { account.useServer(it) }
         takeRedirect(intent)
-        setContent { ShowcasesTheme { App(start, account, redirect) } }
+        setContent { ShowcasesTheme { App(start, startApp, account, redirect) } }
     }
 
     // singleTask: the Custom Tab's redirect comes back to this activity.
@@ -56,11 +58,12 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_SHOWCASE = "showcase"
         const val EXTRA_SERVER = "server"
+        const val EXTRA_APP = "app"
     }
 }
 
 @Composable
-private fun App(start: String?, account: Account, redirect: MutableState<Uri?>) {
+private fun App(start: String?, startApp: String?, account: Account, redirect: MutableState<Uri?>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val showcases = remember { loadShowcases(context.assets) }
@@ -73,6 +76,9 @@ private fun App(start: String?, account: Account, redirect: MutableState<Uri?>) 
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var pages by remember { mutableStateOf<List<PublishedPage>?>(null) }
+    var apps by remember { mutableStateOf<List<MyApp>?>(null) }
+    // An app playing: its link and name.
+    var openApp by rememberSaveable { mutableStateOf(startApp?.let { listOf(it, "App") }) }
 
     // Runs one account step, with the spinner and the error line.
     fun run(step: suspend () -> Unit) {
@@ -82,7 +88,11 @@ private fun App(start: String?, account: Account, redirect: MutableState<Uri?>) 
             busy = false
         }
     }
-    suspend fun reload() { val mine = account.pages(); pages = mine.pages; name = mine.name }
+    suspend fun reload() {
+        val mine = account.pages(); pages = mine.pages; name = mine.name
+        // (A server without apps answers 404: no apps, not an error.)
+        apps = try { account.apps() } catch (e: Account.HttpError) { if (e.status == 404) emptyList() else throw e }
+    }
     val refresh = { run { reload() } }
 
     // The sign-in's answer: tokens, then the pages.
@@ -98,7 +108,12 @@ private fun App(start: String?, account: Account, redirect: MutableState<Uri?>) 
 
     val open = showcases.firstOrNull { it.id == openId }
     val playing = openPage
+    val appPlaying = openApp
     when {
+        appPlaying != null -> {
+            BackHandler { openApp = null }
+            AppPlayerScreen(appPlaying[0], appPlaying[1], onBack = { openApp = null })
+        }
         playing != null -> {
             BackHandler { openPage = null }
             // An own page follows the list (its stream entry changes when it is shared).
@@ -117,9 +132,10 @@ private fun App(start: String?, account: Account, redirect: MutableState<Uri?>) 
         else -> GalleryScreen(
             showcases,
             AccountUi(
-                email = account.email, busy = busy, error = error, pages = pages,
+                email = account.email, busy = busy, error = error, pages = pages, apps = apps,
+                onOpenApp = { app -> app.url?.let { openApp = listOf(it, app.title) } },
                 onSignIn = { run { account.startSignIn(context) } },
-                onSignOut = { run { account.signOut(); pages = null } },
+                onSignOut = { run { account.signOut(); pages = null; apps = null } },
                 onRefresh = refresh,
                 onOpenPage = { openPage = OpenPage(it, "Your page", own = true) },
                 loadBlocked = { account.blocked() },

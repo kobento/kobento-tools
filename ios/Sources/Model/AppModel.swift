@@ -9,6 +9,8 @@ final class AppModel {
 
     // Your pages
     var pages: [PublishedPage]?
+    /// The account's apps (several pages tied together), or nil until listed.
+    var apps: [MyApp]?
     /// The account's public name (the stream shows it with what it posts), or nil.
     var name: String?
     var busy = false
@@ -51,6 +53,7 @@ final class AppModel {
         run {
             await self.account.signOut()
             self.pages = nil
+            self.apps = nil
             self.name = nil
             self.streamLoadedFor = nil
         }
@@ -62,6 +65,8 @@ final class AppModel {
         let mine = try await account.pages()
         pages = mine.pages
         name = mine.name
+        // An older server has no apps: the pages still show.
+        apps = (try? await account.apps()) ?? []
     }
 
     /// Loads the pages once when the app starts signed in.

@@ -132,6 +132,21 @@ final class Account {
                        })
     }
 
+    /// The signed-in account's apps (kobento-mcp's apps tool), newest first (deploy/apps.json);
+    /// none from a server without apps (404).
+    func apps() async throws -> [MyApp] {
+        let data: Data
+        do { data = try await authorized("GET", "\(server)/deploy/apps.json") } catch let e as HTTPError where e.status == 404 { return [] }
+        let list = try JSON.object(data)["apps"] as? [[String: Any]] ?? []
+        return list.compactMap { a in
+            guard let id = a["app_id"] as? String else { return nil }
+            // The link is absolute, or under the server when the server does not know its own address.
+            let link = (a["url"] as? String).nonEmpty.flatMap { URL(string: $0.hasPrefix("/") ? server + $0 : $0) }
+            return MyApp(id: id, title: (a["title"] as? String).nonEmpty ?? "Untitled", screens: a["screens"] as? Int ?? 0,
+                         link: link, version: a["version"] as? Int ?? 0)
+        }
+    }
+
     /// The public stream (stream/items.json): newest or top first, only `tag`'s items, matching
     /// `query`'s words. Signed in, each item carries this account's vote.
     func stream(sort: String, tag: String?, query: String) async throws -> StreamPage {

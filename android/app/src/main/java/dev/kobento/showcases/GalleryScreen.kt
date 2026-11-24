@@ -57,6 +57,9 @@ data class AccountUi(
     val busy: Boolean,
     val error: String?,
     val pages: List<PublishedPage>?,
+    /** The account's apps (null until listed). */
+    val apps: List<MyApp>? = null,
+    val onOpenApp: (MyApp) -> Unit = {},
     val onSignIn: () -> Unit,
     val onSignOut: () -> Unit,
     val onRefresh: () -> Unit,
@@ -147,6 +150,13 @@ private fun PagesTab(account: AccountUi, insets: PaddingValues) {
                 AccountRow(account)
             }
         }
+        // Apps: several pages tied together, played screen by screen.
+        val apps = account.apps.orEmpty()
+        if (account.email != null && apps.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) { Text("Apps", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp)) }
+            items(apps, key = { "app-" + it.id }, span = { GridItemSpan(maxLineSpan) }) { AppRow(it, onClick = { account.onOpenApp(it) }) }
+            item(span = { GridItemSpan(maxLineSpan) }) { Text("Pages", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
+        }
         val pages = account.pages
         when {
             account.email == null -> item(span = { GridItemSpan(maxLineSpan) }) {
@@ -157,6 +167,24 @@ private fun PagesTab(account: AccountUi, insets: PaddingValues) {
                 Hint("None published yet. Pages you publish with Kobento's MCP tools appear here.")
             }
             else -> items(pages, key = { it.id }) { PageCard(it, onClick = { account.onOpenPage(it) }) }
+        }
+    }
+}
+
+/** An app in the list: its name and screens; one not published yet cannot be played here. */
+@Composable
+private fun AppRow(app: MyApp, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().let { if (app.url != null) it.clickable(onClick = onClick) else it },
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(app.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${app.screens} screen${if (app.screens == 1) "" else "s"}" + if (app.url == null) " · not published yet" else " · version ${app.version}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

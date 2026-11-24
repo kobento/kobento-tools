@@ -130,6 +130,14 @@ class Account(context: Context) {
      * The public stream (the examples site's stream/items.json, under /examples): sorted "new" or "top", only [tag]'s
      * items, matching [query]'s words. Signed in, each item carries this account's vote.
      */
+    /** The signed-in account's apps (kobento-mcp's apps tool), newest first: deploy/apps.json. */
+    suspend fun apps(): List<MyApp> {
+        val a = JSONObject(authorizedGet("$server/deploy/apps.json")).getJSONArray("apps")
+        return (0 until a.length()).map { a.getJSONObject(it) }.map {
+            MyApp(it.getString("app_id"), it.optString("title"), it.optInt("screens"), it.optString("url").ifEmpty { null }, it.optInt("version"))
+        }
+    }
+
     suspend fun stream(sort: String, tag: String?, query: String): StreamPage {
         val qs = buildString {
             append("?sort=").append(sort)
@@ -362,6 +370,9 @@ class Account(context: Context) {
 
 /** What pages.json returns: who is signed in (and the public name the stream shows), and their pages. */
 data class MyPages(val email: String, val name: String?, val pages: List<PublishedPage>)
+
+/** An app of the account's: several pages tied together; `url` (its published link) is null until it is published. */
+data class MyApp(val id: String, val title: String, val screens: Int, val url: String?, val version: Int)
 
 /** A page's entry in the stream: the name it is shown under, its tags and its score. */
 data class StreamEntry(val title: String, val tags: List<String>, val score: Int)

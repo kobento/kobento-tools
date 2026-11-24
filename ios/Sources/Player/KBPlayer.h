@@ -43,6 +43,16 @@ NS_ASSUME_NONNULL_BEGIN
 /// actions write it). NO when the document has no float of that name, or has not started.
 - (BOOL)setFloat:(float)value named:(NSString *)name NS_SWIFT_NAME(setFloat(_:named:));
 
+/// A string the document exports by that name, or nil (no such variable, or not started yet).
+- (nullable NSString *)stringNamed:(NSString *)name NS_SWIFT_NAME(string(named:));
+
+/// A value the host gives the document by name (an exported string or float variable), kept
+/// across restarts: set now if the document has started, and again each time it starts (a new
+/// theme starts it again). The document's own actions may still change it. A name the document
+/// does not declare is ignored.
+- (void)keepString:(NSString *)value named:(NSString *)name NS_SWIFT_NAME(keep(string:named:));
+- (void)keepFloat:(float)value named:(NSString *)name NS_SWIFT_NAME(keep(float:named:));
+
 /// The document's host actions (hostNamedAction): the name, and the value as text ("" for none).
 @property (nonatomic, copy, nullable) void (^onNamedAction)(NSString *name, NSString *value);
 

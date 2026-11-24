@@ -36,6 +36,8 @@ static constexpr int THEME_LIGHT = -3;
     std::unique_ptr<rcskia::SkiaPaintContext> _paintCtx;
     rccore::TimeVariables _timeVars;
     BOOL _needsSetup;
+    // Values the host keeps on the document (keepString / keepFloat): NSString or NSNumber.
+    NSMutableDictionary<NSString *, id> *_kept;
 }
 
 - (instancetype)initWithDevice:(id<MTLDevice>)device commandQueue:(id<MTLCommandQueue>)queue {
@@ -112,6 +114,36 @@ static constexpr int THEME_LIGHT = -3;
     _doc->applyDataOperations(*_context, [self theme]);
     _timeVars = rccore::TimeVariables();
     _needsSetup = NO;
+    for (NSString *name in _kept) [self apply:_kept[name] named:name];
+}
+
+/// Sets one kept value on the started document; NO when it has no variable of that name.
+- (BOOL)apply:(id)value named:(NSString *)name {
+    if (!_context) return NO;
+    int id = _context->namedVariableId(name.UTF8String);
+    if (id < 0) return NO;
+    if ([value isKindOfClass:NSString.class]) _context->overrideText(id, ((NSString *)value).UTF8String);
+    else _context->overrideFloat(id, [(NSNumber *)value floatValue]);
+    return YES;
+}
+
+- (void)keepString:(NSString *)value named:(NSString *)name {
+    if (!_kept) _kept = [NSMutableDictionary dictionary];
+    _kept[name] = [value copy];
+    [self apply:value named:name];
+}
+
+- (void)keepFloat:(float)value named:(NSString *)name {
+    if (!_kept) _kept = [NSMutableDictionary dictionary];
+    _kept[name] = @(value);
+    [self apply:@(value) named:name];
+}
+
+- (NSString *)stringNamed:(NSString *)name {
+    if (!_context) return nil;
+    int id = _context->namedVariableId(name.UTF8String);
+    if (id < 0) return nil;
+    return [NSString stringWithUTF8String:_context->getText(id).c_str()];
 }
 
 - (void)drawInView:(MTKView *)view animTime:(double)animTime deltaTime:(double)deltaTime {

@@ -197,7 +197,7 @@ private val REPAINTS = mapOf("continuous" to "Every frame", "scheduled" to "On a
  * invalidates at once and draws on the next vsync; a document that waits (a clock's next minute)
  * still gets a delayed invalidate.
  */
-private fun RemoteComposePlayer.fullSpeed(context: Context) {
+internal fun RemoteComposePlayer.fullSpeed(context: Context) {
     val fps = maxOf(60, ceil(displayRefreshRate(context)).toInt())
     setMaxFps(fps)
     setDefaultMaxFps(fps)
@@ -209,7 +209,7 @@ private fun RemoteComposePlayer.fullSpeed(context: Context) {
  * returns false), so a document's shader paints draw nothing. setDocument checks the document's
  * shaders against the control, so it is set first.
  */
-private fun RemoteComposePlayer.allowShaders() = setShaderControl { true }
+internal fun RemoteComposePlayer.allowShaders() = setShaderControl { true }
 
 @Suppress("DEPRECATION")   // Context.getDisplay needs API 30; the app runs from 26
 private fun displayRefreshRate(context: Context): Float =

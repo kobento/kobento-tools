@@ -18,6 +18,23 @@ Three tabs:
   rename, retag or take it out again. Under the sign-in row: **People you blocked** (Unblock) and
   **Delete account**, which deletes the account and everything in it on the server, for good.
 
+## Apps
+
+An app is several published pages tied together with kobento-mcp's `apps` tool: one page per
+screen, and routes between them (a control's `{"type": "navigate", "route": "/plant/42"}`).
+Signed in, **Your pages** lists the account's apps above its pages (`GET <server>/deploy/apps.json`);
+a published one plays screen by screen (`AppPlayerScreen.kt`): the copy frozen when it was
+published, `<link>app.json` and `<link>screens/<screen>.rc`. A route opens its screen sliding in
+over the last (a sheet rising from the bottom), with the route's values (`/plant/:id` gives `id`)
+set as the screen's string variables; back (the system gesture, or a document's back) returns to
+the screen under it as it was left, each screen on the stack keeping its own player. The app's
+shared values (a cart count) are set on each screen that declares them and read back from the
+screen showing. To open one directly:
+
+```sh
+adb shell am start -n dev.kobento.showcases/.MainActivity --es app https://mcp.kobento.dev/apps/<id>/
+```
+
 ## Build
 
 The showcases are copied from a kobento-mcp checkout next to kobento-tools, or the one `KOBENTO_MCP`

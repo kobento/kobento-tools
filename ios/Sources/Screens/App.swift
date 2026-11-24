@@ -51,4 +51,6 @@ enum Launch {
     /// The look the showcase opens in ("Mono dark"), and whether its details show (`-info YES`).
     static let look = (args["look"] as? String).flatMap(Look.init(rawValue:))
     static let info = (args["info"] as? String) == "YES"
+    /// An app to play at launch (`-tab pages -app https://mcp.kobento.dev/apps/<id>/`).
+    static let app = (args["app"] as? String).flatMap(URL.init(string:))
 }

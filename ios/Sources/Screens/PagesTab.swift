@@ -3,9 +3,10 @@ import SwiftUI
 /// The account's own pages: sign in, then the pages it published with Kobento's MCP tools.
 struct PagesTab: View {
     @Environment(AppModel.self) private var model
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     AccountRow()
@@ -13,6 +14,20 @@ struct PagesTab: View {
                         Text("Sign in with your Kobento account to play the pages you published with Kobento's MCP tools, and share them to the stream.")
                             .font(.subheadline).foregroundStyle(.secondary)
                     } else if let pages = model.pages {
+                        // Apps: several pages tied together, played screen by screen.
+                        if let apps = model.apps, !apps.isEmpty {
+                            Text("Apps").font(.headline).padding(.top, 4)
+                            ForEach(apps) { a in
+                                if let link = a.link {
+                                    NavigationLink(value: OpenApp(link: link, title: a.title)) { AppRow(app: a) }
+                                        .buttonStyle(.plain)
+                                        .accessibilityIdentifier("app-\(a.id)")
+                                } else {
+                                    AppRow(app: a)
+                                }
+                            }
+                            Text("Pages").font(.headline).padding(.top, 8)
+                        }
                         if pages.isEmpty {
                             Text("None published yet. Pages you publish with Kobento's MCP tools appear here.")
                                 .font(.subheadline).foregroundStyle(.secondary)
@@ -31,7 +46,34 @@ struct PagesTab: View {
             .navigationTitle("Your pages")
             .refreshable { if model.account.email != nil { try? await model.reloadPages() } }
             .navigationDestination(for: OpenPage.self) { PagePlayerScreen(open: $0) }
+            .navigationDestination(for: OpenApp.self) { AppPlayerScreen(open: $0) }
         }
+        .onAppear {
+            // An app to open at launch (-app <link>): tests and screenshots.
+            if let link = Launch.app, path.isEmpty {
+                DispatchQueue.main.async { path.append(OpenApp(link: link, title: "App")) }
+            }
+        }
+    }
+}
+
+/// An app in the list: its name and screens; one not published yet cannot be played here.
+private struct AppRow: View {
+    let app: MyApp
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text("\(app.screens) screen\(app.screens == 1 ? "" : "s") · " + (app.link == nil ? "not published yet" : "version \(app.version)"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if app.link != nil { Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary) }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(Rectangle())
     }
 }
 

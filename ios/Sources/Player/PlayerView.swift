@@ -10,6 +10,8 @@ struct PlayerView: UIViewRepresentable {
     var background: UIColor = .systemBackground
     /// The app's side of the Navigator convention, if the screen keeps back's meaning.
     var nav: NavigatorBridge? = nil
+    /// Called once with the player, before its first frame: values to keep on the document.
+    var ready: ((KBPlayer) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -30,6 +32,7 @@ struct PlayerView: UIViewRepresentable {
             c.player.onNamedAction = { [weak nav] name, value in nav?.action(name, value) }
         }
         c.load(bytes, dark: dark, background: background)
+        ready?(c.player)
         return view
     }
 
