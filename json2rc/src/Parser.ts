@@ -5,7 +5,7 @@
  * Java `RemoteComposeJsonParser`. So correctness here means: the same JSON in, the same bytes
  * out, and `tools/compare_rcj.py` checks exactly that against the corpus.
  */
-import { Writer, Emit, hostAction, TYPE_EXACT, TYPE_FILL, modBorder, modGraphicsLayer, modDimensionConstraints, modScroll, ScrollStop, modClipRect, modVisibility, modClipRoundedRect, TYPE_WEIGHT, modWidthIn, modHeightIn, modWidth, modHeight, modPadding, modOffset, modBackground, modBackgroundId, modSemantics, modClick, SEMANTICS_MODE_SET, hostNamedAction,
+import { Writer, Emit, writeTextStyle, TextStyleParam, hostAction, TYPE_EXACT, TYPE_FILL, modBorder, modGraphicsLayer, modDimensionConstraints, modScroll, ScrollStop, modClipRect, modVisibility, modClipRoundedRect, TYPE_WEIGHT, modWidthIn, modHeightIn, modWidth, modHeight, modPadding, modOffset, modBackground, modBackgroundId, modSemantics, modClick, SEMANTICS_MODE_SET, hostNamedAction,
     HOST_ACTION_STRING_TYPE, valueFloatExpressionChange, valueFloatChange,
     valueIntegerChange, valueStringChange, valueIntegerExpressionChange, OP,
     BITMAP_TYPE_RAW8888, BITMAP_ENCODING_EMPTY, BITMAP_TYPE_PNG, BITMAP_ENCODING_URL }
@@ -3722,7 +3722,7 @@ export class Parser {
      */
     private static RESOURCE_ORDER =
         ["v_dims", "colors", "paths", "floatArrays", "variables",
-         "integers", "matrices", "bitmaps", "sounds"];
+         "integers", "matrices", "bitmaps", "sounds", "textStyles"];
 
     private parseResources(section: J): void {
         const order: string[] = (section.order as string[] | undefined)
@@ -3730,9 +3730,9 @@ export class Parser {
         this.computedColors = [];
         for (const key of order) {
             if (!(key in section)) continue;
-            if (!["colors", "paths", "floatArrays", "variables", "bitmaps", "integers", "sounds"].includes(key)) {
+            if (!["colors", "paths", "floatArrays", "variables", "bitmaps", "integers", "sounds", "textStyles"].includes(key)) {
                 throw new NotImplementedComponent(
-                    `resource type '${key}' (colors/paths/floatArrays/variables/integers/bitmaps/sounds only)`);
+                    `resource type '${key}' (colors/paths/floatArrays/variables/integers/bitmaps/sounds/textStyles only)`);
             }
             this.parseResourceSection(key, section[key]);
         }
@@ -3898,8 +3898,92 @@ export class Parser {
         return id;
     }
 
+    /**
+     * resources.textStyles (a json2rc extension: the reference JSON parser can only name a style
+     * by id): name -> its TEXT_STYLE id, and the properties it or its parents set.
+     */
+    private textStyles = new Map<string, { id: number; sets: Set<string> }>();
+
+    private static TEXT_STYLE_KEYS = ["parent", "color", "fontSize", "textSize", "minFontSize",
+        "maxFontSize", "fontStyle", "fontWeight", "fontFamily", "textAlign", "overflow", "maxLines",
+        "letterSpacing", "lineHeightAdd", "lineHeightMultiplier", "lineBreakStrategy",
+        "hyphenationFrequency", "justificationMode", "underline", "strikethrough", "autoSize",
+        "fontAxis", "fontAxisValues"];
+
+    /**
+     * One style, written as RemoteComposeWriter.addTextStyle writes it: only what it sets. The
+     * values read as a text's do (a size in dp, a "$colors." colour, a variable), and a text
+     * naming the style takes each one it leaves at its default (CoreText.applyStyle).
+     */
+    private declareTextStyle(name: string, def: J): void {
+        const where = `resources.textStyles.${name}`;
+        if (!def || typeof def !== "object" || Array.isArray(def)) {
+            throw new NotImplementedComponent(`${where}: an object of text properties ({"fontSize": 20, "color": "#333333", "parent": "body"})`);
+        }
+        for (const k of Object.keys(def)) {
+            if (!Parser.TEXT_STYLE_KEYS.includes(k)) {
+                throw new NotImplementedComponent(`${where}: unknown property "${k}" (${Parser.TEXT_STYLE_KEYS.join(", ")})`);
+            }
+        }
+        const has = (k: string) => def[k] !== undefined && def[k] !== null;
+        const params: TextStyleParam[] = [];
+        const sets = new Set<string>(Object.keys(def).filter((k) => k !== "parent" && has(k)));
+        if (has("textSize")) sets.add("fontSize");
+        if (has("parent")) {
+            const parentName = String(def.parent).replace(/^[@$]/, "");
+            const parent = this.textStyles.get(parentName);
+            if (!parent) {
+                throw new NotImplementedComponent(`${where}: parent "${parentName}" is not declared before it (declared: ${[...this.textStyles.keys()].join(", ") || "none"})`);
+            }
+            params.push([24, "i", parent.id]);
+            for (const k of parent.sets) sets.add(k);
+        }
+        if (has("color")) {
+            const c = def.color;
+            if (typeof c === "string" && (c.startsWith("$colors.") || c.startsWith("@colors."))) {
+                params.push([4, "i", this.resolveColor(c)]);
+            } else {
+                params.push([3, "i", this.resolveColor(c)]);
+            }
+        }
+        const size = has("fontSize") ? def.fontSize : has("textSize") ? def.textSize : undefined;
+        if (size !== undefined) params.push([5, "f", this.lbits(size)]);
+        if (has("minFontSize")) params.push([25, "f", this.lbits(def.minFontSize)]);
+        if (has("maxFontSize")) params.push([26, "f", this.lbits(def.maxFontSize)]);
+        if (has("fontStyle")) {
+            params.push([6, "i", String(def.fontStyle).toLowerCase() === "italic" ? 1 : optInt(def.fontStyle, 0)]);
+        }
+        if (has("fontWeight")) params.push([7, "f", this.fbits(def.fontWeight)]);
+        if (has("fontFamily")) params.push([8, "i", this.writer.addText(String(def.fontFamily))]);
+        if (has("textAlign")) params.push([9, "i", parseTextAlign(mirrorWord(String(def.textAlign), this.rtl))]);
+        if (has("overflow")) params.push([10, "i", OVERFLOW[String(def.overflow).toLowerCase()] ?? 1]);
+        if (has("maxLines")) params.push([11, "i", optInt(def.maxLines, INT_MAX)]);
+        if (has("letterSpacing")) params.push([12, "f", this.fbits(def.letterSpacing)]);
+        if (has("lineHeightAdd")) params.push([13, "f", this.lbits(def.lineHeightAdd)]);
+        if (has("lineHeightMultiplier")) params.push([14, "f", this.fbits(def.lineHeightMultiplier)]);
+        if (has("lineBreakStrategy")) params.push([15, "i", optInt(def.lineBreakStrategy, 0)]);
+        if (has("hyphenationFrequency")) params.push([16, "i", optInt(def.hyphenationFrequency, 0)]);
+        if (has("justificationMode")) params.push([17, "i", optInt(def.justificationMode, 0)]);
+        if (has("underline")) params.push([18, "b", optBoolean(def.underline, false)]);
+        if (has("strikethrough")) params.push([19, "b", optBoolean(def.strikethrough, false)]);
+        if (has("fontAxis") || has("fontAxisValues")) {
+            const axis = def.fontAxis, values = def.fontAxisValues;
+            if (!Array.isArray(axis) || !Array.isArray(values) || axis.length !== values.length) {
+                throw new NotImplementedComponent(`${where}: fontAxis and fontAxisValues must be arrays of the same length`);
+            }
+            params.push([20, "ai", axis.map((a: J) => this.writer.addText(String(a)))]);
+            params.push([21, "af", values.map((v: J) => floatToRawIntBits(Number(v)))]);
+        }
+        if (has("autoSize")) params.push([22, "b", optBoolean(def.autoSize, false)]);
+        this.textStyles.set(name, { id: writeTextStyle(this.writer, params), sets });
+    }
+
     private parseResourceSection(key: string, sectionValue: J): void {
         const section: J = { [key]: sectionValue };
+        if (key === "textStyles") {
+            for (const [name, , value] of eachResource(sectionValue)) this.declareTextStyle(name, value);
+            return;
+        }
         if (key === "sounds") {
             for (const [name, , value] of eachResource(sectionValue)) {
                 this.sounds.set(name, this.declareSound(name, value));
@@ -4174,11 +4258,27 @@ export class Parser {
         // The order matters: each float can be an expression, which writes its ops as it
         // is parsed, so they are read in the order RemoteComposeJsonParser reads them.
         const has = (k: string) => component[k] !== undefined && component[k] !== null;
+        // "textStyle": a style from resources.textStyles, by name; "textStyleId": a raw id, as
+        // the reference JSON parser takes it.
+        let textStyleId = optInt(component.textStyleId, -1);
+        let styleSets = new Set<string>();
+        if (has("textStyle")) {
+            const styleName = String(component.textStyle).replace(/^[@$]/, "");
+            const style = this.textStyles.get(styleName);
+            if (!style) {
+                throw new NotImplementedComponent(`text: textStyle "${styleName}" is not declared in resources.textStyles (declared: ${[...this.textStyles.keys()].join(", ") || "none"})`);
+            }
+            textStyleId = style.id;
+            styleSets = style.sets;
+        }
+        // A text with no size of its own is written at the reference default (36) when its style
+        // gives one, so the style's applies: CoreText.applyStyle only replaces a default value,
+        // and the dp-scaled default (36 x density) is not one.
         const fontSizeBits = has("fontSize") ? this.lbits(component.fontSize)
-            : has("textSize") ? this.lbits(component.textSize) : floatToRawIntBits(36.0 * this.density);
+            : has("textSize") ? this.lbits(component.textSize)
+            : floatToRawIntBits(styleSets.has("fontSize") ? 36.0 : 36.0 * this.density);
         const fontWeightBits = has("fontWeight")
             ? this.fbits(component.fontWeight) : floatToRawIntBits(400.0);
-        const textStyleId = optInt(component.textStyleId, -1);
         const minFontSizeBits = has("minFontSize")
             ? this.lbits(component.minFontSize) : floatToRawIntBits(-1.0);
         const maxFontSizeBits = has("maxFontSize")
@@ -4215,7 +4315,9 @@ export class Parser {
                     "fontAxis and fontAxisValues must be the same length");
             }
         }
-        const textAlign = parseTextAlign(mirrorWord(String(component.textAlign ?? "start"), this.rtl));
+        // Likewise the alignment: a text's default is START (5), the reference's is LEFT (1).
+        const textAlign = !has("textAlign") && styleSets.has("textAlign") ? 1
+            : parseTextAlign(mirrorWord(String(component.textAlign ?? "start"), this.rtl));
         let maxLines = component.maxLines !== undefined ? optInt(component.maxLines, INT_MAX) : INT_MAX;
         if (editable) {
             // The layout takes the modifiers; the text fills its width (and is one line when

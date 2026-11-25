@@ -34,7 +34,7 @@ export const OP = {
     PATH_APPEND: 160, TEXT_FROM_FLOAT: 135, FLOAT_LIST: 147, CV_WIDTH: 0, CV_HEIGHT: 1,
     LAYOUT_ROOT: 200, LAYOUT_CONTENT: 201, LAYOUT_BOX: 202, LAYOUT_ROW: 203,
     LAYOUT_COLUMN: 204, LAYOUT_CANVAS: 205, LAYOUT_CANVAS_CONTENT: 207,
-    CONTAINER_END: 214, DATA_TEXT: 102, CORE_TEXT: 239, DATA_SHADER: 45,
+    CONTAINER_END: 214, DATA_TEXT: 102, CORE_TEXT: 239, TEXT_STYLE: 242, DATA_SHADER: 45,
     REFERENCED_OPERATIONS: 142, INCLUDE_REFERENCED_OPERATIONS: 245, DATA_INT: 140,
     MACRO_FOR_EACH: 244, MACRO_DEFINE: 246, MACRO_CALL: 247, MACRO_ARGUMENT: 248, MACRO_BLOCK: 249,
     MODIFIER_WIDTH: 16, MODIFIER_HEIGHT: 67, MODIFIER_BACKGROUND: 55,
@@ -1586,6 +1586,36 @@ export class Writer {
         this.containerEnd();
         this.containerEnd();
     }
+}
+
+/** A TEXT_STYLE parameter that is set: its tag, wire type and value (float values as bits). */
+export type TextStyleParam = [tag: number, type: "i" | "f" | "b" | "ai" | "af", value: number | boolean | number[]];
+
+/**
+ * TextStyle.apply (RemoteComposeWriter.addTextStyle): op 242, the count, then each parameter
+ * the style sets as tag + value, in the order TextStyle writes them. The id comes from the data
+ * ids, as createNextAvailableId gives it.
+ */
+export function writeTextStyle(w: Writer, params: TextStyleParam[]): number {
+    const id = w.allocDataId();
+    // TextStyle.apply's order (by tag): id, color, colorId, fontSize, min/maxFontSize,
+    // fontStyle, fontWeight, fontFamily, ... strikethrough, fontAxis(+values), autosize, parentId.
+    const ORDER = [3, 4, 5, 25, 26, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24];
+    const sorted = [...params].sort((a, b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0]));
+    w.buffer.start(OP.TEXT_STYLE);
+    w.buffer.writeShort(sorted.length + 1);
+    w.buffer.writeByte(1);
+    w.buffer.writeInt(id);
+    for (const [tag, typ, value] of sorted) {
+        w.buffer.writeByte(tag);
+        if (typ === "b") w.buffer.writeByte(value ? 1 : 0);
+        else if (typ === "ai" || typ === "af") {
+            const arr = value as number[];
+            w.buffer.writeShort(arr.length);
+            for (const x of arr) w.buffer.writeInt(x);
+        } else w.buffer.writeInt(value as number);
+    }
+    return id;
 }
 
 // ── modifiers ───────────────────────────────────────────────────────────────

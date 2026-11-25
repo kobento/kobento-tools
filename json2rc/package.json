@@ -6,7 +6,7 @@
   "main": "build/Parser.js",
   "scripts": {
     "build": "bash build.sh",
-    "test": "node tests/check-paths.cjs && node tests/check-shaders.cjs && node tests/check-bitmap-url.cjs && node tests/check-scroll-stops.cjs && node tests/check-compress.cjs && node tests/check-rtl.cjs && node tests/check-profiles.cjs && node tests/check-color-mix.cjs && node tests/check-compute-record.cjs && node tests/check-density.cjs"
+    "test": "node tests/check-paths.cjs && node tests/check-shaders.cjs && node tests/check-bitmap-url.cjs && node tests/check-scroll-stops.cjs && node tests/check-compress.cjs && node tests/check-rtl.cjs && node tests/check-profiles.cjs && node tests/check-color-mix.cjs && node tests/check-compute-record.cjs && node tests/check-density.cjs && node tests/check-text-styles.cjs"
   },
   "devDependencies": {
     "typescript": "^5.3.0"
