@@ -1,60 +1,75 @@
 // Writes src/Profiles.ts, the operations each profile allows, from androidx's Operations.java
 // (createMapV7: the v7 baseline plus each requested profile family's operations).
 //
-//   node tools/gen-profiles.cjs [path/to/Operations.java]
+//   node tools/gen-profiles.cjs [Operations.java ...]
 //
-// Default: the androidx checkout at $ANDROIDX (~/androidx), worktree frameworks/support-3d
-// (androidx-main with the 3D change, which json2rc writes), else frameworks/support.
+// Default: the androidx checkout at $ANDROIDX (~/androidx), worktrees frameworks/support-3d
+// (androidx-main with the 3D change, which json2rc writes) and frameworks/support.
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
 const ANDROIDX = process.env.ANDROIDX ?? path.join(process.env.HOME, "androidx");
 const REL = "compose/remote/remote-core/src/main/java/androidx/compose/remote/core/Operations.java";
-const file = process.argv[2]
-    ?? [path.join(ANDROIDX, "frameworks/support-3d", REL), path.join(ANDROIDX, "frameworks/support", REL)].find(fs.existsSync);
-if (!file) throw new Error("Operations.java not found: pass its path");
-const src = fs.readFileSync(file, "utf8");
-let source = file;
-try {
-    const dir = path.dirname(file);
-    source = execSync(`git -C "${dir}" log -1 --format="%h %cs %s" -- Operations.java`).toString().trim();
-} catch { /* not a git checkout */ }
+// Every checkout found (or every path given) is read, and the tables are their union: the 3D
+// worktree has the 3D operations, androidx-main the ones merged since it branched.
+const files = process.argv.length > 2 ? process.argv.slice(2)
+    : [path.join(ANDROIDX, "frameworks/support-3d", REL), path.join(ANDROIDX, "frameworks/support", REL)].filter(fs.existsSync);
+if (!files.length) throw new Error("Operations.java not found: pass its path");
 
-const constants = {};
-for (const m of src.matchAll(/public static final int ([A-Z0-9_]+)\s*=\s*(\d+)\s*;/g)) constants[m[1]] = Number(m[2]);
-const op = (name) => {
-    if (!(name in constants)) throw new Error(`no opcode constant ${name}`);
-    return constants[name];
-};
-// The body of a method or the contents of an array initializer, by its declaration.
-function block(decl) {
-    const i = src.indexOf(decl);
-    if (i < 0) throw new Error(`not found: ${decl}`);
-    const open = src.indexOf("{", i);
-    let depth = 0;
-    for (let j = open; j < src.length; j++) {
-        if (src[j] === "{") depth++;
-        else if (src[j] === "}" && --depth === 0) return src.slice(open + 1, j);
-    }
-    throw new Error(`unbalanced: ${decl}`);
+function sourceOf(file) {
+    try {
+        return execSync(`git -C "${path.dirname(file)}" log -1 --format="%h %cs %s" -- Operations.java`).toString().trim();
+    } catch { return file; /* not a git checkout */ }
 }
-const strip = (s) => s.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-const puts = (body) => [...strip(body).matchAll(/map\.put\(\s*([A-Z0-9_]+)\s*,/g)].map((m) => op(m[1]));
-const array = (name) => strip(block(`private static final int[] ${name} =`)).split(",").map((s) => s.trim()).filter(Boolean).map(op);
 
-const baseline = [...new Set([
-    ...puts(block("private static void populateCommonOperations(")),
-    ...puts(block("private static void populateBaselineV7Operations(")),
-])].sort((a, b) => a - b);
+/** One Operations.java: its constants, baseline and families. */
+function parse(file) {
+    const src = fs.readFileSync(file, "utf8");
+    const constants = {};
+    for (const m of src.matchAll(/public static final int ([A-Z0-9_]+)\s*=\s*(\d+)\s*;/g)) constants[m[1]] = Number(m[2]);
+    const op = (name) => {
+        if (!(name in constants)) throw new Error(`${file}: no opcode constant ${name}`);
+        return constants[name];
+    };
+    // The body of a method or the contents of an array initializer, by its declaration.
+    function block(decl) {
+        const i = src.indexOf(decl);
+        if (i < 0) throw new Error(`${file}: not found: ${decl}`);
+        const open = src.indexOf("{", i);
+        let depth = 0;
+        for (let j = open; j < src.length; j++) {
+            if (src[j] === "{") depth++;
+            else if (src[j] === "}" && --depth === 0) return src.slice(open + 1, j);
+        }
+        throw new Error(`${file}: unbalanced: ${decl}`);
+    }
+    const strip = (s) => s.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    const puts = (body) => [...strip(body).matchAll(/map\.put\(\s*([A-Z0-9_]+)\s*,/g)].map((m) => op(m[1]));
+    const array = (name) => strip(block(`private static final int[] ${name} =`)).split(",").map((s) => s.trim()).filter(Boolean).map(op);
+    const baseline = [...puts(block("private static void populateCommonOperations(")), ...puts(block("private static void populateBaselineV7Operations("))];
+    const families = {};
+    for (const [fam, prefix] of [["androidx", "PROFILE_ANDROIDX"], ["widgets", "PROFILE_WIDGETS"]]) {
+        families[fam] = { ops: array(`${prefix}_OPS`), experimental: array(`${prefix}_EXPERIMENTAL_OPS`), deprecated: array(`${prefix}_DEPRECATED_OPS`) };
+    }
+    return { constants, baseline, families };
+}
+
+const parsed = files.map(parse);
+const source = files.map(sourceOf).join("; ");
+// The union, in the first checkout's order, then what the others add.
+const union = (lists) => { const out = []; for (const l of lists) for (const v of l) if (!out.includes(v)) out.push(v); return out; };
+const baseline = union(parsed.map((p) => p.baseline)).sort((a, b) => a - b);
 const families = {};
-for (const [fam, prefix] of [["androidx", "PROFILE_ANDROIDX"], ["widgets", "PROFILE_WIDGETS"]]) {
-    families[fam] = { ops: array(`${prefix}_OPS`), experimental: array(`${prefix}_EXPERIMENTAL_OPS`), deprecated: array(`${prefix}_DEPRECATED_OPS`) };
+for (const fam of ["androidx", "widgets"]) {
+    families[fam] = {};
+    for (const k of ["ops", "experimental", "deprecated"]) families[fam][k] = union(parsed.map((p) => p.families[fam][k]));
 }
 // Names for messages: the first constant for each opcode among those the tables use.
 const used = new Set([...baseline, ...Object.values(families).flatMap((f) => [...f.ops, ...f.experimental, ...f.deprecated])]);
 const names = {};
-for (const [n, v] of Object.entries(constants)) if (used.has(v) && !(v in names) && !n.startsWith("PROFILE_")) names[v] = n;
+for (const p of parsed) for (const [n, v] of Object.entries(p.constants)) if (used.has(v) && !(v in names) && !n.startsWith("PROFILE_")) names[v] = n;
+const sortedNames = Object.fromEntries(Object.keys(names).map(Number).sort((a, b) => a - b).map((k) => [k, names[k]]));
 
 const out = `// Generated by tools/gen-profiles.cjs from androidx Operations.java — do not edit.
 // Source: ${source.replace(/\n/g, " ")}
@@ -74,7 +89,7 @@ export const FAMILIES: Readonly<Record<string, { bit: number; ops: readonly numb
 ${Object.entries(families).map(([f, v]) => `    ${f}: { bit: ${f === "androidx" ? "PROFILE_ANDROIDX" : "PROFILE_WIDGETS"}, ops: ${JSON.stringify(v.ops)}, experimental: ${JSON.stringify(v.experimental)}, deprecated: ${JSON.stringify(v.deprecated)} },`).join("\n")}
 };
 
-export const OP_NAMES: Readonly<Record<number, string>> = ${JSON.stringify(names, null, 0).replace(/,"/g, ', "')};
+export const OP_NAMES: Readonly<Record<number, string>> = ${JSON.stringify(sortedNames, null, 0).replace(/,"/g, ', "')};
 `;
 const dest = path.join(__dirname, "..", "src", "Profiles.ts");
 fs.writeFileSync(dest, out);

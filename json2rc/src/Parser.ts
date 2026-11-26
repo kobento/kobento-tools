@@ -1807,7 +1807,7 @@ export class Parser {
             this.writer.referencedOperationsStart(id);
             this.parseKids(kids);
             for (const m of this.parseModifiers(component.modifiers)) m(this.writer);
-            this.writer.containerEnd();
+            this.writer.referencedOperationsEnd();
             this.variables.set(String(component.name), floatToRawIntBits(id));
             return true;
         }

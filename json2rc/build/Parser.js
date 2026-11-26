@@ -1992,7 +1992,7 @@ class Parser {
             this.parseKids(kids);
             for (const m of this.parseModifiers(component.modifiers))
                 m(this.writer);
-            this.writer.containerEnd();
+            this.writer.referencedOperationsEnd();
             this.variables.set(String(component.name), (0, WireBuffer_1.floatToRawIntBits)(id));
             return true;
         }

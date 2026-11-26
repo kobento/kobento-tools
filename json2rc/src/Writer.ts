@@ -38,7 +38,8 @@ export const OP = {
     REFERENCED_OPERATIONS: 142, INCLUDE_REFERENCED_OPERATIONS: 245, DATA_INT: 140,
     MACRO_FOR_EACH: 244, MACRO_DEFINE: 246, MACRO_CALL: 247, MACRO_ARGUMENT: 248, MACRO_BLOCK: 249,
     MODIFIER_WIDTH: 16, MODIFIER_HEIGHT: 67, MODIFIER_BACKGROUND: 55,
-    MODIFIER_PADDING: 58, MODIFIER_CLIP_RECT: 108, MODIFIER_ROUNDED_CLIP_RECT: 54,
+    MODIFIER_PADDING: 58, MODIFIER_CLIP_RECT: 108, MODIFIER_ROUNDED_CLIP_RECT: 54, MODIFIER_CLIP_PATH: 109,
+    MODIFIER_PROPERTY_BUNDLE: 95, PROPERTY_BUNDLE_LOOKUP: 96,
     DATA_FLOAT: 80, ANIMATED_FLOAT: 81, COLOR_CONSTANT: 138, NAMED_VARIABLE: 137,
     PAINT_VALUES: 40, DRAW_RECT: 42, DRAW_CIRCLE: 46, DRAW_LINE: 47, DRAW_OVAL: 56,
     DRAW_BITMAP: 44, DRAW_BITMAP_INT: 66, DRAW_BITMAP_SCALED: 149,
@@ -247,8 +248,20 @@ export class Writer {
 
     rippleModifier(): void { this.buffer.start(229); }
 
-    /** REFERENCED_OPERATIONS (142): a reusable group, closed by containerEnd(). */
-    referencedOperationsStart(id: number): void { this.buffer.start(OP.REFERENCED_OPERATIONS); this.buffer.writeInt(id); }
+    /** REFERENCED_OPERATIONS (142): a reusable group, closed by referencedOperationsEnd().
+     *  RemoteComposeWriter.startReferencedOperations opens a data scope too: the group is
+     *  executed where it is included, so data first interned inside it is not defined where
+     *  it stands, and must not be reused after it. */
+    referencedOperationsStart(id: number): void {
+        this.buffer.start(OP.REFERENCED_OPERATIONS);
+        this.buffer.writeInt(id);
+        this.pushDataScope();
+    }
+    /** RemoteComposeWriter.endReferencedOperations: the container's end, and the data scope's. */
+    referencedOperationsEnd(): void {
+        this.containerEnd();
+        this.popDataScope();
+    }
     /** INCLUDE_REFERENCED_OPERATIONS (245): replay a group here (as a component or a modifier). */
     includeReferencedOperations(id: number): void { this.buffer.start(OP.INCLUDE_REFERENCED_OPERATIONS); this.buffer.writeInt(id); }
 
@@ -263,7 +276,7 @@ export class Writer {
         // interned inside the body is defined only per inflation (the body is skipped where it
         // stands), so it must not be reused once the body ends. What was interned before stays
         // visible inside.
-        this.dataScopes.push([new Map(this.textCache), new Map(this.tffCache), new Map(this.intCache)]);
+        this.pushDataScope();
         this.buffer.start(OP.MACRO_DEFINE);
         this.buffer.writeInt(id);
         this.buffer.writeInt(paramIds.length);
@@ -277,6 +290,13 @@ export class Writer {
         if (offset !== undefined) this.buffer.overwriteInt(offset, this.buffer.index - (offset + 4));
         this.containerEnd();
         // RemoteComposeState.popDataScope: forget what the body interned.
+        this.popDataScope();
+    }
+    /** RemoteComposeState.pushDataScope / popDataScope, over the interning caches. */
+    private pushDataScope(): void {
+        this.dataScopes.push([new Map(this.textCache), new Map(this.tffCache), new Map(this.intCache)]);
+    }
+    private popDataScope(): void {
         const scope = this.dataScopes.pop();
         if (scope) [this.textCache, this.tffCache, this.intCache] = scope;
     }
@@ -575,6 +595,18 @@ export class Writer {
         this.buffer.writeInt(pathId);
         this.buffer.writeInt(1);
         this.buffer.writeInt(asNanBits(15));                    // PATH_CLOSE
+    }
+
+    /** PROPERTY_BUNDLE_LOOKUP (96, experimental): the integer `propertyId` of a component's
+     *  bundle into `valueId` (declared), else `defaultValue`. componentId -1: the enclosing
+     *  component (PropertyBundleLookupOperation.SELF_COMPONENT_ID). */
+    propertyBundleLookup(valueId: number, componentId: number, propertyId: number, defaultValue: number): void {
+        this.buffer.start(OP.PROPERTY_BUNDLE_LOOKUP);
+        this.buffer.writeInt(0);   // version
+        this.buffer.writeInt(valueId);
+        this.buffer.writeInt(componentId);
+        this.buffer.writeInt(propertyId);
+        this.buffer.writeInt(defaultValue | 0);
     }
 
     /** CLIP_PATH (38). */
@@ -1697,6 +1729,28 @@ export function modGraphicsLayer(attrs: Array<[number, number]>): Emit {
 /** MODIFIER_CLIP_RECT (108): clip to the component's own bounds. No payload. */
 export function modClipRect(): Emit {
     return (w) => { w.buffer.start(OP.MODIFIER_CLIP_RECT); };
+}
+
+/** MODIFIER_CLIP_PATH (109, experimental): clip what follows (later modifiers, the content) to
+ *  a path, in the content box's coordinates after the padding before it, not scaled by density. */
+export function modClipPath(pathId: number): Emit {
+    return (w) => { w.buffer.start(OP.MODIFIER_CLIP_PATH); w.buffer.writeInt(pathId); };
+}
+
+/** MODIFIER_PROPERTY_BUNDLE (95, androidx experimental): integer properties attached to the
+ *  component, each a property id and the id of the integer variable holding its value (at most
+ *  256). Read by PROPERTY_BUNDLE_LOOKUP. */
+export function modPropertyBundle(bundleId: number, parentBundleId: number, propertyIds: number[], valueIds: number[]): Emit {
+    if (propertyIds.length !== valueIds.length) throw new Error(`propertyBundle: ${propertyIds.length} property ids, ${valueIds.length} values`);
+    if (propertyIds.length > 256) throw new Error(`propertyBundle: ${propertyIds.length} entries, 256 at most`);
+    return (w) => {
+        w.buffer.start(OP.MODIFIER_PROPERTY_BUNDLE);
+        w.buffer.writeInt(0);   // version
+        w.buffer.writeInt(bundleId);
+        w.buffer.writeInt(parentBundleId);
+        w.buffer.writeInt(propertyIds.length);
+        for (let i = 0; i < propertyIds.length; i++) { w.buffer.writeInt(propertyIds[i]); w.buffer.writeInt(valueIds[i]); }
+    };
 }
 
 /** MODIFIER_ROUNDED_CLIP_RECT (54): four corner radii, as plain floats. */

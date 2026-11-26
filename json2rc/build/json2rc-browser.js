@@ -1997,7 +1997,7 @@ class Parser {
             this.parseKids(kids);
             for (const m of this.parseModifiers(component.modifiers))
                 m(this.writer);
-            this.writer.containerEnd();
+            this.writer.referencedOperationsEnd();
             this.variables.set(String(component.name), (0, WireBuffer_1.floatToRawIntBits)(id));
             return true;
         }
@@ -4781,6 +4781,8 @@ exports.modScroll = modScroll;
 exports.modVisibility = modVisibility;
 exports.modGraphicsLayer = modGraphicsLayer;
 exports.modClipRect = modClipRect;
+exports.modClipPath = modClipPath;
+exports.modPropertyBundle = modPropertyBundle;
 exports.modClipRoundedRect = modClipRoundedRect;
 exports.modWidthIn = modWidthIn;
 exports.modDimensionConstraints = modDimensionConstraints;
@@ -4836,7 +4838,8 @@ exports.OP = {
     REFERENCED_OPERATIONS: 142, INCLUDE_REFERENCED_OPERATIONS: 245, DATA_INT: 140,
     MACRO_FOR_EACH: 244, MACRO_DEFINE: 246, MACRO_CALL: 247, MACRO_ARGUMENT: 248, MACRO_BLOCK: 249,
     MODIFIER_WIDTH: 16, MODIFIER_HEIGHT: 67, MODIFIER_BACKGROUND: 55,
-    MODIFIER_PADDING: 58, MODIFIER_CLIP_RECT: 108, MODIFIER_ROUNDED_CLIP_RECT: 54,
+    MODIFIER_PADDING: 58, MODIFIER_CLIP_RECT: 108, MODIFIER_ROUNDED_CLIP_RECT: 54, MODIFIER_CLIP_PATH: 109,
+    MODIFIER_PROPERTY_BUNDLE: 95, PROPERTY_BUNDLE_LOOKUP: 96,
     DATA_FLOAT: 80, ANIMATED_FLOAT: 81, COLOR_CONSTANT: 138, NAMED_VARIABLE: 137,
     PAINT_VALUES: 40, DRAW_RECT: 42, DRAW_CIRCLE: 46, DRAW_LINE: 47, DRAW_OVAL: 56,
     DRAW_BITMAP: 44, DRAW_BITMAP_INT: 66, DRAW_BITMAP_SCALED: 149,
@@ -5050,8 +5053,20 @@ class Writer {
     // RemoteComposeWriter / RemoteComposeBuffer: definePattern, patternInflation,
     // addPatternBlock, addPatternArgument, addPatternForEach and their ends.
     rippleModifier() { this.buffer.start(229); }
-    /** REFERENCED_OPERATIONS (142): a reusable group, closed by containerEnd(). */
-    referencedOperationsStart(id) { this.buffer.start(exports.OP.REFERENCED_OPERATIONS); this.buffer.writeInt(id); }
+    /** REFERENCED_OPERATIONS (142): a reusable group, closed by referencedOperationsEnd().
+     *  RemoteComposeWriter.startReferencedOperations opens a data scope too: the group is
+     *  executed where it is included, so data first interned inside it is not defined where
+     *  it stands, and must not be reused after it. */
+    referencedOperationsStart(id) {
+        this.buffer.start(exports.OP.REFERENCED_OPERATIONS);
+        this.buffer.writeInt(id);
+        this.pushDataScope();
+    }
+    /** RemoteComposeWriter.endReferencedOperations: the container's end, and the data scope's. */
+    referencedOperationsEnd() {
+        this.containerEnd();
+        this.popDataScope();
+    }
     /** INCLUDE_REFERENCED_OPERATIONS (245): replay a group here (as a component or a modifier). */
     includeReferencedOperations(id) { this.buffer.start(exports.OP.INCLUDE_REFERENCED_OPERATIONS); this.buffer.writeInt(id); }
     /** A pattern-local id (0x4000 range): each inflation gets a fresh one at playback. */
@@ -5064,7 +5079,7 @@ class Writer {
         // interned inside the body is defined only per inflation (the body is skipped where it
         // stands), so it must not be reused once the body ends. What was interned before stays
         // visible inside.
-        this.dataScopes.push([new Map(this.textCache), new Map(this.tffCache), new Map(this.intCache)]);
+        this.pushDataScope();
         this.buffer.start(exports.OP.MACRO_DEFINE);
         this.buffer.writeInt(id);
         this.buffer.writeInt(paramIds.length);
@@ -5080,6 +5095,13 @@ class Writer {
             this.buffer.overwriteInt(offset, this.buffer.index - (offset + 4));
         this.containerEnd();
         // RemoteComposeState.popDataScope: forget what the body interned.
+        this.popDataScope();
+    }
+    /** RemoteComposeState.pushDataScope / popDataScope, over the interning caches. */
+    pushDataScope() {
+        this.dataScopes.push([new Map(this.textCache), new Map(this.tffCache), new Map(this.intCache)]);
+    }
+    popDataScope() {
         const scope = this.dataScopes.pop();
         if (scope)
             [this.textCache, this.tffCache, this.intCache] = scope;
@@ -5377,6 +5399,17 @@ class Writer {
         this.buffer.writeInt(pathId);
         this.buffer.writeInt(1);
         this.buffer.writeInt((0, WireBuffer_1.asNanBits)(15)); // PATH_CLOSE
+    }
+    /** PROPERTY_BUNDLE_LOOKUP (96, experimental): the integer `propertyId` of a component's
+     *  bundle into `valueId` (declared), else `defaultValue`. componentId -1: the enclosing
+     *  component (PropertyBundleLookupOperation.SELF_COMPONENT_ID). */
+    propertyBundleLookup(valueId, componentId, propertyId, defaultValue) {
+        this.buffer.start(exports.OP.PROPERTY_BUNDLE_LOOKUP);
+        this.buffer.writeInt(0); // version
+        this.buffer.writeInt(valueId);
+        this.buffer.writeInt(componentId);
+        this.buffer.writeInt(propertyId);
+        this.buffer.writeInt(defaultValue | 0);
     }
     /** CLIP_PATH (38). */
     clipPath(pathId) {
@@ -6489,6 +6522,31 @@ function modGraphicsLayer(attrs) {
 function modClipRect() {
     return (w) => { w.buffer.start(exports.OP.MODIFIER_CLIP_RECT); };
 }
+/** MODIFIER_CLIP_PATH (109, experimental): clip what follows (later modifiers, the content) to
+ *  a path, in the content box's coordinates after the padding before it, not scaled by density. */
+function modClipPath(pathId) {
+    return (w) => { w.buffer.start(exports.OP.MODIFIER_CLIP_PATH); w.buffer.writeInt(pathId); };
+}
+/** MODIFIER_PROPERTY_BUNDLE (95, androidx experimental): integer properties attached to the
+ *  component, each a property id and the id of the integer variable holding its value (at most
+ *  256). Read by PROPERTY_BUNDLE_LOOKUP. */
+function modPropertyBundle(bundleId, parentBundleId, propertyIds, valueIds) {
+    if (propertyIds.length !== valueIds.length)
+        throw new Error(`propertyBundle: ${propertyIds.length} property ids, ${valueIds.length} values`);
+    if (propertyIds.length > 256)
+        throw new Error(`propertyBundle: ${propertyIds.length} entries, 256 at most`);
+    return (w) => {
+        w.buffer.start(exports.OP.MODIFIER_PROPERTY_BUNDLE);
+        w.buffer.writeInt(0); // version
+        w.buffer.writeInt(bundleId);
+        w.buffer.writeInt(parentBundleId);
+        w.buffer.writeInt(propertyIds.length);
+        for (let i = 0; i < propertyIds.length; i++) {
+            w.buffer.writeInt(propertyIds[i]);
+            w.buffer.writeInt(valueIds[i]);
+        }
+    };
+}
 /** MODIFIER_ROUNDED_CLIP_RECT (54): four corner radii, as plain floats. */
 function modClipRoundedRect(topStart, topEnd, bottomStart, bottomEnd) {
     return (w) => {
@@ -7301,7 +7359,7 @@ exports.ExpressionParser = ExpressionParser;
 "Profiles": function (module, exports, require) {
 "use strict";
 // Generated by tools/gen-profiles.cjs from androidx Operations.java — do not edit.
-// Source: eb1a5ecd54a 2026-11-21 Add 3D rendering to RemoteCompose
+// Source: eb1a5ecd54a 2026-11-21 Add 3D rendering to RemoteCompose; 0594f962db8 2026-11-25 Merge changes from topics "rc_propbundle_mod", "rc_proplookup_op", "rc_proplookup_op_dynsupport" into androidx-main
 //
 // The operations an apiLevel 7 document may contain, by its header's profiles (Operations
 // createMapV7): the baseline, plus each requested family's operations (and its experimental and
@@ -7314,10 +7372,10 @@ exports.PROFILE_WIDGETS = 0x100;
 exports.PROFILE_ANDROIDX = 0x200;
 exports.BASELINE_OPS = [0, 2, 14, 16, 38, 39, 40, 42, 43, 44, 46, 47, 48, 51, 52, 53, 54, 55, 56, 58, 59, 63, 64, 66, 67, 80, 81, 101, 102, 103, 107, 108, 123, 124, 125, 126, 127, 128, 129, 130, 131, 133, 134, 135, 136, 137, 138, 139, 140, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 185, 186, 187, 188, 200, 201, 202, 203, 204, 205, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 250];
 exports.FAMILIES = {
-    androidx: { bit: exports.PROFILE_ANDROIDX, ops: [181, 182, 183, 49, 184, 45, 189, 190, 191, 192, 193, 194, 197, 198, 241, 239, 242, 199, 196, 237], experimental: [238, 60, 240, 83, 243, 142, 245, 246, 247, 248, 249, 244, 93, 169, 206, 141, 100, 104, 105, 106, 121, 122, 41, 110, 111, 112, 113, 114, 115, 117, 118, 120, 116], deprecated: [65] },
-    widgets: { bit: exports.PROFILE_WIDGETS, ops: [181, 182, 183, 49, 184, 190, 191, 192, 193, 194, 197, 198, 241, 239, 242, 199, 196, 237], experimental: [238, 240, 83, 243, 142, 245, 246, 247, 248, 249, 244, 169, 206, 141, 104, 105, 106, 121, 122, 41, 110, 111, 112, 113, 114, 115, 117, 118, 120, 116], deprecated: [65] },
+    androidx: { bit: exports.PROFILE_ANDROIDX, ops: [181, 182, 183, 49, 184, 45, 189, 190, 191, 192, 193, 194, 197, 198, 241, 239, 242, 199, 196, 237], experimental: [238, 60, 240, 83, 243, 142, 245, 246, 247, 248, 249, 244, 93, 169, 206, 141, 100, 104, 105, 106, 121, 122, 41, 110, 111, 112, 113, 114, 115, 117, 118, 120, 116, 109, 95, 96], deprecated: [65] },
+    widgets: { bit: exports.PROFILE_WIDGETS, ops: [181, 182, 183, 49, 184, 190, 191, 192, 193, 194, 197, 198, 241, 239, 242, 199, 196, 237], experimental: [238, 240, 83, 243, 142, 245, 246, 247, 248, 249, 244, 169, 206, 141, 104, 105, 106, 121, 122, 41, 110, 111, 112, 113, 114, 115, 117, 118, 120, 116, 109], deprecated: [65] },
 };
-exports.OP_NAMES = { "0": "HEADER", "2": "COMPONENT_START", "14": "ANIMATION_SPEC", "16": "MODIFIER_WIDTH", "38": "CLIP_PATH", "39": "CLIP_RECT", "40": "PAINT_VALUES", "41": "BINARY_DATA", "42": "DRAW_RECT", "43": "DRAW_TEXT_RUN", "44": "DRAW_BITMAP", "45": "DATA_SHADER", "46": "DRAW_CIRCLE", "47": "DRAW_LINE", "48": "DRAW_BITMAP_FONT_TEXT_RUN", "49": "DRAW_BITMAP_FONT_TEXT_RUN_ON_PATH", "51": "DRAW_ROUND_RECT", "52": "DRAW_SECTOR", "53": "DRAW_TEXT_ON_PATH", "54": "MODIFIER_ROUNDED_CLIP_RECT", "55": "MODIFIER_BACKGROUND", "56": "DRAW_OVAL", "58": "MODIFIER_PADDING", "59": "MODIFIER_CLICK", "60": "LAYOUT_TEXT_INPUT", "63": "THEME", "64": "CLICK_AREA", "65": "ROOT_CONTENT_BEHAVIOR", "66": "DRAW_BITMAP_INT", "67": "MODIFIER_HEIGHT", "80": "DATA_FLOAT", "81": "ANIMATED_FLOAT", "83": "MODIFIER_MULTI_CLICK", "93": "LAYOUT_CUSTOM", "100": "MODIFIER_EVENT_HANDLER", "101": "DATA_BITMAP", "102": "DATA_TEXT", "103": "ROOT_CONTENT_DESCRIPTION", "104": "ADD_MESH_2D", "105": "DRAW_MESH_2D", "106": "MATRIX_FROM_MESH_2D", "107": "MODIFIER_BORDER", "108": "MODIFIER_CLIP_RECT", "110": "DEFINE_MESH_3D", "111": "SET_CAMERA_3D", "112": "MATRIX_3D_OP", "113": "DRAW_MESH_3D", "114": "PAINT_3D_STATE", "115": "SET_LIGHTS_3D", "116": "VECTOR_EXPRESSION", "117": "MESH_EXPRESSION_3D", "118": "SET_TEXTURE_3D", "120": "MESH_PRIMITIVE_3D", "121": "LAYOUT_RC_DOC", "122": "MAP_RC_DOC_VARIABLES", "123": "DATA_PATH", "124": "DRAW_PATH", "125": "DRAW_TWEEN_PATH", "126": "MATRIX_SCALE", "127": "MATRIX_TRANSLATE", "128": "MATRIX_SKEW", "129": "MATRIX_ROTATE", "130": "MATRIX_SAVE", "131": "MATRIX_RESTORE", "133": "DRAW_TEXT_ANCHOR", "134": "COLOR_EXPRESSIONS", "135": "TEXT_FROM_FLOAT", "136": "TEXT_MERGE", "137": "NAMED_VARIABLE", "138": "COLOR_CONSTANT", "139": "DRAW_CONTENT", "140": "DATA_INT", "141": "PLAY_SOUND", "142": "REFERENCED_OPERATIONS", "143": "DATA_BOOLEAN", "144": "INTEGER_EXPRESSION", "145": "ID_MAP", "146": "ID_LIST", "147": "FLOAT_LIST", "148": "DATA_LONG", "149": "DRAW_BITMAP_SCALED", "150": "COMPONENT_VALUE", "151": "TEXT_LOOKUP", "152": "DRAW_ARC", "153": "TEXT_LOOKUP_INT", "154": "DATA_MAP_LOOKUP", "155": "TEXT_MEASURE", "156": "TEXT_LENGTH", "157": "TOUCH_EXPRESSION", "158": "PATH_TWEEN", "159": "PATH_CREATE", "160": "PATH_ADD", "161": "PARTICLE_DEFINE", "163": "PARTICLE_LOOP", "164": "IMPULSE_START", "165": "IMPULSE_PROCESS", "166": "FUNCTION_CALL", "167": "DATA_BITMAP_FONT", "168": "FUNCTION_DEFINE", "169": "DATA_SOUND", "170": "ATTRIBUTE_TEXT", "171": "ATTRIBUTE_IMAGE", "172": "ATTRIBUTE_TIME", "173": "CANVAS_OPERATIONS", "174": "MODIFIER_DRAW_CONTENT", "175": "PATH_COMBINE", "176": "LAYOUT_FIT_BOX", "177": "HAPTIC_FEEDBACK", "178": "CONDITIONAL_OPERATIONS", "179": "DEBUG_MESSAGE", "180": "ATTRIBUTE_COLOR", "181": "MATRIX_FROM_PATH", "182": "TEXT_SUBTEXT", "183": "BITMAP_TEXT_MEASURE", "184": "DRAW_BITMAP_TEXT_ANCHORED", "185": "REM", "186": "MATRIX_CONSTANT", "187": "MATRIX_EXPRESSION", "188": "MATRIX_VECTOR_MATH", "189": "DATA_FONT", "190": "DRAW_TO_BITMAP", "191": "WAKE_IN", "192": "ID_LOOKUP", "193": "PATH_EXPRESSION", "194": "PARTICLE_COMPARE", "196": "COLOR_THEME", "197": "DYNAMIC_FLOAT_LIST", "198": "UPDATE_DYNAMIC_FLOAT_LIST", "199": "TEXT_TRANSFORM", "200": "LAYOUT_ROOT", "201": "LAYOUT_CONTENT", "202": "LAYOUT_BOX", "203": "LAYOUT_ROW", "204": "LAYOUT_COLUMN", "205": "LAYOUT_CANVAS", "206": "SOUND_EXPRESSION", "207": "LAYOUT_CANVAS_CONTENT", "208": "LAYOUT_TEXT", "209": "HOST_ACTION", "210": "HOST_NAMED_ACTION", "211": "MODIFIER_VISIBILITY", "212": "VALUE_INTEGER_CHANGE_ACTION", "213": "VALUE_STRING_CHANGE_ACTION", "214": "CONTAINER_END", "215": "LOOP_START", "216": "HOST_METADATA_ACTION", "217": "LAYOUT_STATE", "218": "VALUE_INTEGER_EXPRESSION_CHANGE_ACTION", "219": "MODIFIER_TOUCH_DOWN", "220": "MODIFIER_TOUCH_UP", "221": "MODIFIER_OFFSET", "222": "VALUE_FLOAT_CHANGE_ACTION", "223": "MODIFIER_ZINDEX", "224": "MODIFIER_GRAPHICS_LAYER", "225": "MODIFIER_TOUCH_CANCEL", "226": "MODIFIER_SCROLL", "227": "VALUE_FLOAT_EXPRESSION_CHANGE_ACTION", "228": "MODIFIER_MARQUEE", "229": "MODIFIER_RIPPLE", "230": "LAYOUT_COLLAPSIBLE_ROW", "231": "MODIFIER_WIDTH_IN", "232": "MODIFIER_HEIGHT_IN", "233": "LAYOUT_COLLAPSIBLE_COLUMN", "234": "LAYOUT_IMAGE", "235": "MODIFIER_COLLAPSIBLE_PRIORITY", "236": "RUN_ACTION", "237": "MODIFIER_ALIGN_BY", "238": "LAYOUT_COMPUTE", "239": "CORE_TEXT", "240": "LAYOUT_FLOW", "241": "SKIP", "242": "TEXT_STYLE", "243": "MODIFIER_DIMENSION_CONSTRAINTS", "244": "MACRO_FOR_EACH", "245": "INCLUDE_REFERENCED_OPERATIONS", "246": "MACRO_DEFINE", "247": "MACRO_CALL", "248": "MACRO_ARGUMENT", "249": "MACRO_BLOCK", "250": "ACCESSIBILITY_SEMANTICS" };
+exports.OP_NAMES = { "0": "HEADER", "2": "COMPONENT_START", "14": "ANIMATION_SPEC", "16": "MODIFIER_WIDTH", "38": "CLIP_PATH", "39": "CLIP_RECT", "40": "PAINT_VALUES", "41": "BINARY_DATA", "42": "DRAW_RECT", "43": "DRAW_TEXT_RUN", "44": "DRAW_BITMAP", "45": "DATA_SHADER", "46": "DRAW_CIRCLE", "47": "DRAW_LINE", "48": "DRAW_BITMAP_FONT_TEXT_RUN", "49": "DRAW_BITMAP_FONT_TEXT_RUN_ON_PATH", "51": "DRAW_ROUND_RECT", "52": "DRAW_SECTOR", "53": "DRAW_TEXT_ON_PATH", "54": "MODIFIER_ROUNDED_CLIP_RECT", "55": "MODIFIER_BACKGROUND", "56": "DRAW_OVAL", "58": "MODIFIER_PADDING", "59": "MODIFIER_CLICK", "60": "LAYOUT_TEXT_INPUT", "63": "THEME", "64": "CLICK_AREA", "65": "ROOT_CONTENT_BEHAVIOR", "66": "DRAW_BITMAP_INT", "67": "MODIFIER_HEIGHT", "80": "DATA_FLOAT", "81": "ANIMATED_FLOAT", "83": "MODIFIER_MULTI_CLICK", "93": "LAYOUT_CUSTOM", "95": "MODIFIER_PROPERTY_BUNDLE", "96": "PROPERTY_BUNDLE_LOOKUP", "100": "MODIFIER_EVENT_HANDLER", "101": "DATA_BITMAP", "102": "DATA_TEXT", "103": "ROOT_CONTENT_DESCRIPTION", "104": "ADD_MESH_2D", "105": "DRAW_MESH_2D", "106": "MATRIX_FROM_MESH_2D", "107": "MODIFIER_BORDER", "108": "MODIFIER_CLIP_RECT", "109": "MODIFIER_CLIP_PATH", "110": "DEFINE_MESH_3D", "111": "SET_CAMERA_3D", "112": "MATRIX_3D_OP", "113": "DRAW_MESH_3D", "114": "PAINT_3D_STATE", "115": "SET_LIGHTS_3D", "116": "VECTOR_EXPRESSION", "117": "MESH_EXPRESSION_3D", "118": "SET_TEXTURE_3D", "120": "MESH_PRIMITIVE_3D", "121": "LAYOUT_RC_DOC", "122": "MAP_RC_DOC_VARIABLES", "123": "DATA_PATH", "124": "DRAW_PATH", "125": "DRAW_TWEEN_PATH", "126": "MATRIX_SCALE", "127": "MATRIX_TRANSLATE", "128": "MATRIX_SKEW", "129": "MATRIX_ROTATE", "130": "MATRIX_SAVE", "131": "MATRIX_RESTORE", "133": "DRAW_TEXT_ANCHOR", "134": "COLOR_EXPRESSIONS", "135": "TEXT_FROM_FLOAT", "136": "TEXT_MERGE", "137": "NAMED_VARIABLE", "138": "COLOR_CONSTANT", "139": "DRAW_CONTENT", "140": "DATA_INT", "141": "PLAY_SOUND", "142": "REFERENCED_OPERATIONS", "143": "DATA_BOOLEAN", "144": "INTEGER_EXPRESSION", "145": "ID_MAP", "146": "ID_LIST", "147": "FLOAT_LIST", "148": "DATA_LONG", "149": "DRAW_BITMAP_SCALED", "150": "COMPONENT_VALUE", "151": "TEXT_LOOKUP", "152": "DRAW_ARC", "153": "TEXT_LOOKUP_INT", "154": "DATA_MAP_LOOKUP", "155": "TEXT_MEASURE", "156": "TEXT_LENGTH", "157": "TOUCH_EXPRESSION", "158": "PATH_TWEEN", "159": "PATH_CREATE", "160": "PATH_ADD", "161": "PARTICLE_DEFINE", "163": "PARTICLE_LOOP", "164": "IMPULSE_START", "165": "IMPULSE_PROCESS", "166": "FUNCTION_CALL", "167": "DATA_BITMAP_FONT", "168": "FUNCTION_DEFINE", "169": "DATA_SOUND", "170": "ATTRIBUTE_TEXT", "171": "ATTRIBUTE_IMAGE", "172": "ATTRIBUTE_TIME", "173": "CANVAS_OPERATIONS", "174": "MODIFIER_DRAW_CONTENT", "175": "PATH_COMBINE", "176": "LAYOUT_FIT_BOX", "177": "HAPTIC_FEEDBACK", "178": "CONDITIONAL_OPERATIONS", "179": "DEBUG_MESSAGE", "180": "ATTRIBUTE_COLOR", "181": "MATRIX_FROM_PATH", "182": "TEXT_SUBTEXT", "183": "BITMAP_TEXT_MEASURE", "184": "DRAW_BITMAP_TEXT_ANCHORED", "185": "REM", "186": "MATRIX_CONSTANT", "187": "MATRIX_EXPRESSION", "188": "MATRIX_VECTOR_MATH", "189": "DATA_FONT", "190": "DRAW_TO_BITMAP", "191": "WAKE_IN", "192": "ID_LOOKUP", "193": "PATH_EXPRESSION", "194": "PARTICLE_COMPARE", "196": "COLOR_THEME", "197": "DYNAMIC_FLOAT_LIST", "198": "UPDATE_DYNAMIC_FLOAT_LIST", "199": "TEXT_TRANSFORM", "200": "LAYOUT_ROOT", "201": "LAYOUT_CONTENT", "202": "LAYOUT_BOX", "203": "LAYOUT_ROW", "204": "LAYOUT_COLUMN", "205": "LAYOUT_CANVAS", "206": "SOUND_EXPRESSION", "207": "LAYOUT_CANVAS_CONTENT", "208": "LAYOUT_TEXT", "209": "HOST_ACTION", "210": "HOST_NAMED_ACTION", "211": "MODIFIER_VISIBILITY", "212": "VALUE_INTEGER_CHANGE_ACTION", "213": "VALUE_STRING_CHANGE_ACTION", "214": "CONTAINER_END", "215": "LOOP_START", "216": "HOST_METADATA_ACTION", "217": "LAYOUT_STATE", "218": "VALUE_INTEGER_EXPRESSION_CHANGE_ACTION", "219": "MODIFIER_TOUCH_DOWN", "220": "MODIFIER_TOUCH_UP", "221": "MODIFIER_OFFSET", "222": "VALUE_FLOAT_CHANGE_ACTION", "223": "MODIFIER_ZINDEX", "224": "MODIFIER_GRAPHICS_LAYER", "225": "MODIFIER_TOUCH_CANCEL", "226": "MODIFIER_SCROLL", "227": "VALUE_FLOAT_EXPRESSION_CHANGE_ACTION", "228": "MODIFIER_MARQUEE", "229": "MODIFIER_RIPPLE", "230": "LAYOUT_COLLAPSIBLE_ROW", "231": "MODIFIER_WIDTH_IN", "232": "MODIFIER_HEIGHT_IN", "233": "LAYOUT_COLLAPSIBLE_COLUMN", "234": "LAYOUT_IMAGE", "235": "MODIFIER_COLLAPSIBLE_PRIORITY", "236": "RUN_ACTION", "237": "MODIFIER_ALIGN_BY", "238": "LAYOUT_COMPUTE", "239": "CORE_TEXT", "240": "LAYOUT_FLOW", "241": "SKIP", "242": "TEXT_STYLE", "243": "MODIFIER_DIMENSION_CONSTRAINTS", "244": "MACRO_FOR_EACH", "245": "INCLUDE_REFERENCED_OPERATIONS", "246": "MACRO_DEFINE", "247": "MACRO_CALL", "248": "MACRO_ARGUMENT", "249": "MACRO_BLOCK", "250": "ACCESSIBILITY_SEMANTICS" };
 
 },
 "Compress": function (module, exports, require) {
