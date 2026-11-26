@@ -895,6 +895,52 @@ static int run(int argc, char* argv[]) {
             canvas->clear(bg);   // a frame replaces the last one: no ghosts where nothing paints a background
             doc.paint(context, theme);
         }
+        // A still shows the layout settled, as a screen does a moment after it opens. A layout
+        // can need more than one pass: a LazyList's rows record their measured heights on the
+        // first, and the list places them from those on the next, so a one-frame still showed
+        // the header with no rows. Paint again while the laid-out bounds keep changing (the
+        // document's layout store, which particles and other per-frame drawing don't touch),
+        // with layout animations off: what appears on those passes is part of the first
+        // layout, not an entrance. RC_FRAMES given explicitly paints exactly that many.
+        // A document whose layout settled on the first frame keeps that frame's pixels: the
+        // probe frame would otherwise move what advances every frame (particles, impulses).
+        if (!std::getenv("RC_FRAMES")) {
+            SkPixmap firstPm;
+            std::vector<uint8_t> firstPixels;
+            if (surface->peekPixels(&firstPm)) {
+                firstPixels.resize(firstPm.computeByteSize());
+                std::memcpy(firstPixels.data(), firstPm.addr(), firstPixels.size());
+            }
+            const SkImageInfo firstInfo = firstPm.info();
+            const size_t firstRowBytes = firstPm.rowBytes();
+            int settlePasses = 0;
+            auto layoutSignature = [&]() {
+                uint64_t sig = 0;
+                for (const auto& [cid, st] : doc.animStore()) {
+                    const rccore::ComponentMeasure& m = st.live;
+                    uint64_t h = 1469598103934665603ull ^ (uint32_t) cid;
+                    for (float v : {m.x, m.y, m.w, m.h, (float) m.visibility}) {
+                        uint32_t bits; std::memcpy(&bits, &v, 4);
+                        h = (h ^ bits) * 1099511628211ull;
+                    }
+                    sig += h;   // order-independent
+                }
+                return sig;
+            };
+            const bool animWas = rccore::isLayoutAnimationEnabled();
+            rccore::setLayoutAnimationEnabled(false);
+            for (int pass = 0; pass < 8; pass++) {
+                const uint64_t before = layoutSignature();
+                rccore::resetTextOverflowCounts();
+                canvas->clear(bg);
+                doc.paint(context, theme);
+                if (layoutSignature() == before) break;
+                settlePasses++;
+            }
+            rccore::setLayoutAnimationEnabled(animWas);
+            if (settlePasses == 0 && !firstPixels.empty())
+                surface->writePixels(SkPixmap(firstInfo, firstPixels.data(), firstRowBytes), 0, 0);
+        }
     }
 
     // Encode to PNG
