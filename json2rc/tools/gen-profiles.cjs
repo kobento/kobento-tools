@@ -3,18 +3,21 @@
 //
 //   node tools/gen-profiles.cjs [Operations.java ...]
 //
-// Default: the androidx checkout at $ANDROIDX (~/androidx), worktrees frameworks/support-3d
-// (androidx-main with the 3D change, which json2rc writes) and frameworks/support.
+// Default: the androidx checkout at $ANDROIDX (~/androidx): frameworks/support, plus the
+// frameworks/support-3d worktree while support lacks the 3D change (which json2rc writes).
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
 const ANDROIDX = process.env.ANDROIDX ?? path.join(process.env.HOME, "androidx");
 const REL = "compose/remote/remote-core/src/main/java/androidx/compose/remote/core/Operations.java";
-// Every checkout found (or every path given) is read, and the tables are their union: the 3D
-// worktree has the 3D operations, androidx-main the ones merged since it branched.
+// Every path given is read, and the tables are their union. By default: frameworks/support; and,
+// while it lacks the 3D change, the 3D worktree too (androidx-main has the operations merged
+// since that branched, the worktree the 3D ones).
+const main = path.join(ANDROIDX, "frameworks/support", REL), worktree3d = path.join(ANDROIDX, "frameworks/support-3d", REL);
+const has3d = (f) => fs.existsSync(f) && /map\.put\(\s*DEFINE_MESH_3D\b|put\(DEFINE_MESH_3D\b/.test(fs.readFileSync(f, "utf8"));
 const files = process.argv.length > 2 ? process.argv.slice(2)
-    : [path.join(ANDROIDX, "frameworks/support-3d", REL), path.join(ANDROIDX, "frameworks/support", REL)].filter(fs.existsSync);
+    : has3d(main) ? [main] : [worktree3d, main].filter(fs.existsSync);
 if (!files.length) throw new Error("Operations.java not found: pass its path");
 
 function sourceOf(file) {

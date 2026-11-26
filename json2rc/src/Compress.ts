@@ -2,9 +2,10 @@
  * Compressed documents, as androidx remote-core Header.compressDocument writes them: the header
  * stays as it is (so a player can still read its version and properties), with a COMPRESS
  * property (tag 31, INT) = 1 (DEFLATE) appended and the property count raised by one; every byte
- * after the header becomes ONE zlib (RFC 1950) stream. Players that know the flag (androidx with
- * Header.COMPRESS, Kobento's TypeScript and C++ players) inflate it while loading; others stop on
- * opcode 120 (0x78, the zlib stream's first byte, reserved for this in Operations).
+ * after the header becomes the byte COMPRESSED_STREAM_MARKER (0x77) and ONE zlib (RFC 1950)
+ * stream. Players that know the flag (androidx with Header.COMPRESS, Kobento's TypeScript and C++
+ * players) inflate it while loading; others stop on opcode 119 (0x77, reserved for this in
+ * Operations). Readers also take a stream without the marker, as written before it existed.
  *
  * The deflate function is passed in (node's zlib.deflateSync, or any zlib encoder), so the
  * converter itself stays free of platform modules. Java uses java.util.zip.Deflater with its
@@ -49,6 +50,9 @@ export function isCompressedDocument(doc: Uint8Array): boolean {
  * The document compressed (Header.compressDocument). A document that is already compressed comes
  * back as a copy; one without a properties header (API level < 7) cannot be compressed.
  */
+/** Header.COMPRESSED_STREAM_MARKER: the byte before the zlib stream (androidx 3D change, 4256202). */
+export const COMPRESSED_STREAM_MARKER = 0x77;
+
 export function compressDocument(doc: Uint8Array, deflate: (bytes: Uint8Array) => Uint8Array): Uint8Array {
     const h = readHeader(doc);
     if (!h) throw new Error("compressDocument: compression needs a header with properties (API level 7+)");
@@ -68,6 +72,7 @@ export function compressDocument(doc: Uint8Array, deflate: (bytes: Uint8Array) =
     pv.setUint16(2, 4);
     pv.setInt32(4, COMPRESSION_DEFLATE);
     parts.push(prop);
+    parts.push(Uint8Array.of(COMPRESSED_STREAM_MARKER));
     parts.push(deflate(doc.subarray(h.size)));
     const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
     let o = 0;
