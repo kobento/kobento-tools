@@ -65,6 +65,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.CubicBezierEasing
 
 /**
  * An app made of several published pages (kobento-mcp's `apps` tool), played screen by screen:
@@ -234,7 +237,15 @@ private fun AppStack(app: AppSpec, base: String, fetch: suspend (String) -> Byte
             val heightPx = with(LocalDensity.current) { maxHeight.toPx() }
             // Every tab's stack stays composed (its players alive); the one showing is on top.
             for ((t, st) in stacks.withIndex()) key("tab$t") {
-                Box(Modifier.fillMaxSize().zIndex(if (t == cur) 1f else 0f).graphicsLayer { alpha = if (t == cur) 1f else 0f }) {
+                // A tab switch fades through (Material): the tab left fades out (90 ms), the one
+                // chosen fades in after it while growing from 92% (210 ms). The first showing
+                // starts at its target: no animation.
+                val showing = t == cur
+                val alpha by animateFloatAsState(if (showing) 1f else 0f,
+                    if (showing) tween(210, delayMillis = 90, easing = FadeThroughEasing) else tween(90, easing = LinearEasing), label = "tabAlpha")
+                val scale by animateFloatAsState(if (showing) 1f else 0.92f,
+                    if (showing) tween(210, delayMillis = 90, easing = FadeThroughEasing) else tween(0, delayMillis = 90), label = "tabScale")
+                Box(Modifier.fillMaxSize().zIndex(if (showing) 1f else 0f).graphicsLayer { this.alpha = alpha; scaleX = scale; scaleY = scale }) {
                     if (t == cur || st.any { it.player != null }) StackView(st, app, documents, state, widthPx, heightPx, live = t == cur, onAction = { e, n, v -> onAction(e, n, v) }, onScrim = { pop() })
                 }
             }
@@ -251,6 +262,9 @@ private fun AppStack(app: AppSpec, base: String, fetch: suspend (String) -> Byte
         }
     }
 }
+
+/** Material's emphasized-decelerate curve, for the fade through's incoming tab. */
+private val FadeThroughEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
 /** One stack's screens, each sliding in over the last (a sheet rising over a dim). */
 @Composable

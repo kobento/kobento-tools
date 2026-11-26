@@ -128,9 +128,14 @@ private struct AppStack: View {
             GeometryReader { g in
                 ZStack {
                     // Every tab's stack stays (its players alive); the one showing is on top.
+                    // A tab switch fades through (Material): the tab left fades out (90 ms), the
+                    // one chosen fades in after it while growing from 92% (210 ms).
                     ForEach(stacks.indices, id: \.self) { t in
                         stackView(stacks[t], size: g.size)
+                            .scaleEffect(t == cur ? 1 : 0.92)
+                            .animation(t == cur ? Self.fadeIn : .linear(duration: 0.01).delay(0.09), value: cur)   // shrinks once faded out (a zero-length animation ignores its delay)
                             .opacity(t == cur ? 1 : 0)
+                            .animation(t == cur ? Self.fadeIn : .linear(duration: 0.09), value: cur)
                             .allowsHitTesting(t == cur)
                             .zIndex(t == cur ? 1 : 0)
                     }
@@ -233,6 +238,9 @@ private struct AppStack: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(.systemBackground))
         }
     }
+
+    /// The fade through's incoming tab: Material's emphasized decelerate, after the outgoing fade.
+    private static let fadeIn = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.21).delay(0.09)
 
     /// Shows tab i; again on the tab showing: back to its first screen.
     private func selectTab(_ i: Int) {
